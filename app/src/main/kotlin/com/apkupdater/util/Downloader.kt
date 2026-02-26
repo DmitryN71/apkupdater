@@ -45,6 +45,15 @@ class Downloader(
         null
     }
 
+    fun cleanUp() = runCatching {
+        // Delete downloaded APK/APKS files
+        dir.listFiles()?.forEach { it.delete() }
+        // Evict OkHttp cache to remove cached APK responses
+        client.cache?.evictAll()
+    }.getOrElse {
+        Log.e("Downloader", "Error during cleanup", it)
+    }
+
     private fun downloadRequest(url: String) = Request.Builder().url(url).build()
 
 }

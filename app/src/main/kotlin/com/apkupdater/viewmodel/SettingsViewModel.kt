@@ -67,6 +67,8 @@ class SettingsViewModel(
 	fun setAndroidTvUi(b: Boolean) = prefs.androidTvUi.put(b)
 	fun getEnableAlarm() = prefs.enableAlarm.get()
 	fun getRootInstall() = prefs.rootInstall.get()
+	fun getCleanUpAfterInstall() = prefs.cleanUpAfterInstall.get()
+	fun setCleanUpAfterInstall(b: Boolean) = prefs.cleanUpAfterInstall.put(b)
 	fun getAlarmHour() = prefs.alarmHour.get()
 	fun getAlarmFrequency() = prefs.alarmFrequency.get()
 	fun getTheme() = prefs.theme.get()

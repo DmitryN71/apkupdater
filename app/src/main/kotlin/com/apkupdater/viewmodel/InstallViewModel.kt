@@ -47,6 +47,7 @@ abstract class InstallViewModel(
     protected fun subscribeToInstallStatus(updates: List<AppUpdate>) = installLog.status().onEach {
         sendInstallSnack(updates, it)
         if (it.success) {
+            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
             finishInstall(it.id).join()
         } else {
             installLog.emitProgress(AppInstallProgress(it.id, 0L))

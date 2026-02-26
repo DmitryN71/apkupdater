@@ -259,6 +259,12 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_root
 		)
 		SwitchSetting(
+			{ viewModel.getCleanUpAfterInstall() },
+			{ viewModel.setCleanUpAfterInstall(it) },
+			stringResource(R.string.clean_up_after_install),
+			R.drawable.ic_cleanup
+		)
+		SwitchSetting(
 			{ viewModel.getIgnoreAlpha() },
 			{ viewModel.setIgnoreAlpha(it) },
 			stringResource(R.string.ignore_alpha),

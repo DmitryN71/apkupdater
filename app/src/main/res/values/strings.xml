@@ -41,6 +41,7 @@
     <string name="ignore_preRelease">Ignore Pre-release</string>
     <string name="use_safe_stores">Use Safe Stores (Aptoide)</string>
     <string name="root_install">Root Install</string>
+    <string name="clean_up_after_install">Clean Up After Install</string>
     <string name="source_apkmirror" translatable="false">ApkMirror</string>
     <string name="source_fdroid" translatable="false">F-Droid Main</string>
     <string name="source_izzy" translatable="false">F-Droid Izzy</string>

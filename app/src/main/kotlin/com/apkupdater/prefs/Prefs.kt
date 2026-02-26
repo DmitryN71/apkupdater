@@ -37,6 +37,7 @@ class Prefs(
 	val androidTvUi = boolean("androidTvUi", defValue = true, backed = true)
 	val rootInstall = boolean("rootInstall", defValue = false, backed = true)
 	val theme = int("theme", defValue = 0, backed = true)
+	val cleanUpAfterInstall = boolean("cleanUpAfterInstall", defValue = true, backed = true)
 	val lastTab = string("lastTab", defValue = Screen.Updates.route, backed = true)
 	val playAuthData = json("playAuthData", AuthData("", ""), true)
 	val lastPlayCheck = long("lastPlayCheck", 0L, true)
