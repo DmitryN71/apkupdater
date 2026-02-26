@@ -14,6 +14,7 @@ import com.apkupdater.repository.FdroidRepository
 import com.apkupdater.repository.GitHubRepository
 import com.apkupdater.repository.GitLabRepository
 import com.apkupdater.repository.PlayRepository
+import com.apkupdater.repository.RuStoreRepository
 import com.apkupdater.repository.SearchRepository
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.service.ApkMirrorService
@@ -22,6 +23,7 @@ import com.apkupdater.service.AptoideService
 import com.apkupdater.service.FdroidService
 import com.apkupdater.service.GitHubService
 import com.apkupdater.service.GitLabService
+import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Clipboard
 import com.apkupdater.util.Downloader
@@ -133,6 +135,15 @@ val mainModule = module {
 	}
 
 	single {
+		Retrofit.Builder()
+			.client(get())
+			.baseUrl("https://backapi.rustore.ru/")
+			.addConverterFactory(GsonConverterFactory.create(get()))
+			.build()
+			.create(RuStoreService::class.java)
+	}
+
+	single {
 		val client = OkHttpClient.Builder().followRedirects(true).cache(get()).build()
 		val auroraClient = OkHttpClient.Builder().followRedirects(true).cache(get()).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
 		val apkPureClient = OkHttpClient.Builder().followRedirects(true).cache(get()).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
@@ -154,13 +165,15 @@ val mainModule = module {
 
 	single { PlayRepository(get(), get(), get(), get()) }
 
+	single { RuStoreRepository(get(), get()) }
+
 	single(named("main")) { FdroidRepository(get(), "https://f-droid.org/repo/", FdroidSource, get()) }
 
 	single(named("izzy")) { FdroidRepository(get(), "https://apt.izzysoft.de/fdroid/repo/", IzzySource, get()) }
 
-	single { UpdatesRepository(get(), get(), get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get()) }
+	single { UpdatesRepository(get(), get(), get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get()) }
 
-	single { SearchRepository(get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get()) }
+	single { SearchRepository(get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get(), get()) }
 
 	single { KryptoBuilder.nocrypt(get(), androidContext().getString(R.string.app_name)) }
 
