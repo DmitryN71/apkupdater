@@ -37,6 +37,8 @@ abstract class InstallViewModel(
             else -> {
                 if (prefs.rootInstall.get()) {
                     downloadAndRootInstall(update)
+                } else if (prefs.shizukuInstall.get()) {
+                    downloadAndShizukuInstall(update)
                 } else {
                     downloadAndInstall(update)
                 }
@@ -80,6 +82,26 @@ abstract class InstallViewModel(
         cancelInstall(id)
     }
 
+    protected fun downloadAndShizukuInstall(id: Int, link: Link) = runCatching {
+        when (link) {
+            is Link.Url -> {
+                if (installer.shizukuInstall(downloader.download(link.link))) {
+                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+                    finishInstall(id)
+                } else {
+                    cancelInstall(id)
+                }
+            }
+            else -> snackBar.snackBar(
+                viewModelScope,
+                TextSnack(stringer.get(R.string.shizuku_install_not_supported))
+            )
+        }
+    }.getOrElse {
+        Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
+        cancelInstall(id)
+    }
+
     protected suspend fun downloadAndInstall(id: Int, packageName: String, link: Link) = runCatching {
         when (link) {
             Link.Empty -> { Log.e("InstallViewModel", "downloadAndInstall: Unsupported.")}
@@ -89,10 +111,23 @@ abstract class InstallViewModel(
                 installer.playInstall(id, packageName, files.map { downloader.downloadStream(it.url)!! })
             }
             is Link.Url -> {
-                installLog.emitProgress(AppInstallProgress(id, 0L, link.size))
-                installer.install(id, packageName, downloader.downloadStream(link.link)!!)
+                val result = downloader.downloadStreamWithSize(link.link)!!
+                val totalSize = if (link.size > 0) link.size else result.size
+                installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
+                installer.install(id, packageName, result.stream)
             }
-            is Link.Xapk -> installer.installXapk(id, packageName, downloader.downloadStream(link.link)!!)
+            is Link.Xapk -> {
+                val result = downloader.downloadStreamWithSize(link.link)
+                if (result != null) {
+                    if (result.size > 0) {
+                        installLog.emitProgress(AppInstallProgress(id, 0L, result.size))
+                    }
+                    installer.installXapk(id, packageName, result.stream, result.size)
+                } else {
+                    Log.e("InstallViewModel", "Failed to download XAPK")
+                    cancelInstall(id)
+                }
+            }
         }
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndInstall.", it)
@@ -110,6 +145,7 @@ abstract class InstallViewModel(
 
     protected abstract fun downloadAndInstall(update: AppUpdate): Job
     protected abstract fun downloadAndRootInstall(update: AppUpdate): Job
+    protected abstract fun downloadAndShizukuInstall(update: AppUpdate): Job
     protected abstract fun cancelInstall(id: Int): Job
     protected abstract fun finishInstall(id: Int): Job
 }

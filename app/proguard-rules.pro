@@ -17,3 +17,6 @@
 
 # Models
 -keep class com.apkupdater.data.** { *; }
+
+# Shizuku
+-keep class rikka.shizuku.** { *; }

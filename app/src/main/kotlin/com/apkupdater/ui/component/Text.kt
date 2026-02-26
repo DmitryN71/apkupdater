@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import com.apkupdater.prefs.Prefs
+import kotlinx.coroutines.delay
 import org.koin.androidx.compose.get
 
 
@@ -119,11 +120,13 @@ fun ScrollableText(
     val outer = remember { mutableStateOf(IntSize.Zero) }
 
     if (get<Prefs>().playTextAnimations.get()) {
-        val effect: suspend (ScrollState) -> Unit = {
-            state.scrollTo(0)
-            val scroll = (inner.value.width - outer.value.width)
+        LaunchedEffect(Unit) {
+            // Wait for layout measurement and skip items that scroll past quickly
+            delay(500)
+            val scroll = inner.value.width - outer.value.width
             if (scroll > 0) {
-                while(true) {
+                state.scrollTo(0)
+                while (true) {
                     state.animateScrollTo(
                         scroll,
                         tween(delayMillis = 1000, durationMillis = scroll * 10, easing = LinearEasing)
@@ -133,12 +136,10 @@ fun ScrollableText(
                         tween(delayMillis = 1000, durationMillis = scroll * 10, easing = LinearEasing)
                     )
                 }
-
             }
         }
-        LaunchedEffect(outer.value) { effect(state) }
     }
-    
+
     Row(Modifier.onSizeChanged { outer.value = it }) {
         Row(
             modifier = Modifier

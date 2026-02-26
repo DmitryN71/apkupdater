@@ -75,6 +75,11 @@ class UpdatesViewModel(
 		downloadAndRootInstall(update.id, update.link)
 	}
 
+	override fun downloadAndShizukuInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
+		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+		downloadAndShizukuInstall(update.id, update.link)
+	}
+
 	override fun downloadAndInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
 		if(installer.checkPermission()) {
 			state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))

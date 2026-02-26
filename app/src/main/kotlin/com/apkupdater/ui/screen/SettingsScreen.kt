@@ -265,6 +265,12 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_root
 		)
 		SwitchSetting(
+			{ viewModel.getShizukuInstall() },
+			{ viewModel.setShizukuInstall(it) },
+			stringResource(R.string.shizuku_install),
+			R.drawable.ic_shizuku
+		)
+		SwitchSetting(
 			{ viewModel.getCleanUpAfterInstall() },
 			{ viewModel.setCleanUpAfterInstall(it) },
 			stringResource(R.string.clean_up_after_install),

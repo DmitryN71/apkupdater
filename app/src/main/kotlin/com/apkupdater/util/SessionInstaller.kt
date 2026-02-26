@@ -12,7 +12,9 @@ import androidx.core.content.ContextCompat.startActivity
 import com.apkupdater.BuildConfig
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.ui.activity.MainActivity
+import android.util.Log
 import com.topjohnwu.superuser.Shell
+import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -34,7 +36,7 @@ class SessionInstaller(
     suspend fun install(id: Int, packageName: String, stream: InputStream) =
         install(id, packageName, listOf(stream))
 
-    private suspend fun install(id: Int, packageName: String, streams: List<InputStream>) {
+    private suspend fun install(id: Int, packageName: String, streams: List<InputStream>, trackProgress: Boolean = true) {
         val packageInstaller: PackageInstaller = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(packageName)
@@ -56,7 +58,11 @@ class SessionInstaller(
         packageInstaller.openSession(sessionId).use { session ->
             streams.forEach {
                 session.openWrite("$packageName.${randomUUID()}", 0, -1).use { output ->
-                    bytes += it.copyToAndNotify(output, id, installLog, bytes)
+                    if (trackProgress) {
+                        bytes += it.copyToAndNotify(output, id, installLog, bytes)
+                    } else {
+                        it.copyTo(output)
+                    }
                     it.close()
                     session.fsync(output)
                 }
@@ -79,6 +85,27 @@ class SessionInstaller(
         return res
     }
 
+    @Suppress("DEPRECATION")
+    fun shizukuInstall(file: File): Boolean {
+        return try {
+            val size = file.length()
+            val process = Shizuku.newProcess(arrayOf("pm", "install", "-S", size.toString()), null, null)
+            file.inputStream().use { input ->
+                process.outputStream.use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                }
+            }
+            val exitCode = process.waitFor()
+            file.delete()
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.e("SessionInstaller", "Shizuku install failed", e)
+            file.delete()
+            false
+        }
+    }
+
     fun finish() = installMutex.unlock()
 
     fun checkPermission(): Boolean {
@@ -95,21 +122,33 @@ class SessionInstaller(
     }
 
     @Suppress("BlockingMethodInNonBlockingContext")
-    suspend fun installXapk(id: Int, packageName: String, stream: InputStream) {
-        // Copy file to disk.
-        // TODO: Find a way to do this without saving file
+    suspend fun installXapk(id: Int, packageName: String, stream: InputStream, totalSize: Long = 0L) {
+        // Copy file to disk with progress tracking
         val file = File(context.cacheDir, randomUUID())
-        stream.copyTo(file.outputStream())
+        file.outputStream().use { output ->
+            var bytesCopied = 0L
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var bytes = stream.read(buffer)
+            while (bytes >= 0) {
+                output.write(buffer, 0, bytes)
+                bytesCopied += bytes
+                if (totalSize > 0) {
+                    installLog.emitProgress(AppInstallProgress(id, bytesCopied, totalSize))
+                }
+                bytes = stream.read(buffer)
+            }
+        }
+        stream.close()
 
         // Get entries
         val zip = ZipFile(file)
         val entries = zip.entries().toList()
 
-        // Install all the apks
+        // Install all the apks (skip progress tracking — download phase already tracked)
         // TODO: Try to install only needed apks
         // TODO: Add root install support
         val apks = entries.filter { it.name.contains(".apk") }.map { zip.getInputStream(it) }
-        install(id, packageName, apks)
+        install(id, packageName, apks, trackProgress = false)
 
         // Cleanup
         zip.close()

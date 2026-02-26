@@ -14,7 +14,9 @@ import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.worker.UpdatesWorker
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import android.content.pm.PackageManager
 import com.topjohnwu.superuser.Shell
+import rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -32,6 +34,22 @@ class SettingsViewModel(
 ) : ViewModel() {
 
 	val state = MutableStateFlow<SettingsUiState>(SettingsUiState.Settings)
+
+	private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+		if (grantResult == PackageManager.PERMISSION_GRANTED) {
+			prefs.shizukuInstall.put(true)
+			prefs.rootInstall.put(false)
+		}
+	}
+
+	init {
+		try { Shizuku.addRequestPermissionResultListener(shizukuPermissionListener) } catch (_: Exception) {}
+	}
+
+	override fun onCleared() {
+		super.onCleared()
+		try { Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener) } catch (_: Exception) {}
+	}
 
 	fun setPortraitColumns(n: Int) = prefs.portraitColumns.put(n)
 	fun getPortraitColumns() = prefs.portraitColumns.get()
@@ -83,8 +101,33 @@ class SettingsViewModel(
 	fun setRootInstall(b: Boolean) {
 		if (b && Shell.isAppGrantedRoot() == true) {
 			prefs.rootInstall.put(true)
+			prefs.shizukuInstall.put(false)
 		} else {
 			prefs.rootInstall.put(false)
+		}
+	}
+
+	fun getShizukuInstall() = prefs.shizukuInstall.get()
+
+	fun setShizukuInstall(b: Boolean) {
+		if (b) {
+			try {
+				if (Shizuku.pingBinder()) {
+					if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
+						prefs.shizukuInstall.put(true)
+						prefs.rootInstall.put(false)
+					} else {
+						Shizuku.requestPermission(0)
+						prefs.shizukuInstall.put(false)
+					}
+				} else {
+					prefs.shizukuInstall.put(false)
+				}
+			} catch (e: Exception) {
+				prefs.shizukuInstall.put(false)
+			}
+		} else {
+			prefs.shizukuInstall.put(false)
 		}
 	}
 
