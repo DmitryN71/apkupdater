@@ -22,12 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
 import com.apkupdater.R
-import com.apkupdater.data.ui.ApkMirrorSource
-import com.apkupdater.data.ui.ApkPureSource
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Source
@@ -164,11 +161,7 @@ fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}) = Card {
 @Composable
 fun WhatsNew(whatsNew: String, source: Source) {
     if (whatsNew.isNotEmpty()) {
-        val text = if (source == ApkMirrorSource || source == ApkPureSource) {
-            HtmlCompat.fromHtml(whatsNew.trim(), HtmlCompat.FROM_HTML_MODE_COMPACT).toAnnotatedString()
-        } else {
-            AnnotatedString(whatsNew)
-        }
+        val text = HtmlCompat.fromHtml(whatsNew.trim(), HtmlCompat.FROM_HTML_MODE_COMPACT).toAnnotatedString()
         ExpandingAnnotatedText(text, Modifier.padding(8.dp).fillMaxWidth())
     }
 }
