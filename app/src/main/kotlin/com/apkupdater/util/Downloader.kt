@@ -24,6 +24,37 @@ class Downloader(
         return file
     }
 
+    fun downloadFile(url: String, onProgress: ((bytesDownloaded: Long, totalBytes: Long) -> Unit)? = null): File {
+        val c = when {
+            url.contains("apkpure") -> apkPureClient
+            url.contains("aurora") -> auroraClient
+            else -> client
+        }
+        val file = File(dir, randomUUID())
+        val response = c.newCall(downloadRequest(url)).execute()
+        if (response.isSuccessful) {
+            response.body?.let { body ->
+                val totalSize = body.contentLength().let { if (it > 0) it else 0L }
+                file.outputStream().use { output ->
+                    val stream = body.byteStream()
+                    var bytesCopied = 0L
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var bytes = stream.read(buffer)
+                    while (bytes >= 0) {
+                        output.write(buffer, 0, bytes)
+                        bytesCopied += bytes
+                        if (totalSize > 0) onProgress?.invoke(bytesCopied, totalSize)
+                        bytes = stream.read(buffer)
+                    }
+                }
+            }
+        } else {
+            Log.e("Downloader", "Download failed with error code: ${response.code}")
+        }
+        response.close()
+        return file
+    }
+
     data class StreamWithSize(val stream: InputStream, val size: Long)
 
     fun downloadStreamWithSize(url: String): StreamWithSize? = runCatching {

@@ -86,7 +86,10 @@ abstract class InstallViewModel(
     protected fun downloadAndShizukuInstall(id: Int, link: Link) = runCatching {
         when (link) {
             is Link.Url -> {
-                if (installer.shizukuInstall(downloader.download(link.link))) {
+                val file = downloader.downloadFile(link.link) { progress, total ->
+                    installLog.emitProgress(AppInstallProgress(id, progress, total))
+                }
+                if (installer.shizukuInstall(file)) {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
                 } else {
@@ -95,7 +98,17 @@ abstract class InstallViewModel(
             }
             is Link.Play -> {
                 val files = link.getInstallFiles()
-                val tempFiles = files.map { downloader.download(it.url) }
+                val totalSize = files.sumOf { it.size }
+                if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
+                var downloadedSoFar = 0L
+                val tempFiles = files.map { playFile ->
+                    val offset = downloadedSoFar
+                    val file = downloader.downloadFile(playFile.url) { progress, _ ->
+                        if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
+                    }
+                    downloadedSoFar += file.length()
+                    file
+                }
                 if (installer.shizukuInstallSplit(tempFiles)) {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
@@ -104,7 +117,10 @@ abstract class InstallViewModel(
                 }
             }
             is Link.Xapk -> {
-                if (installer.shizukuInstallXapk(downloader.download(link.link))) {
+                val file = downloader.downloadFile(link.link) { progress, total ->
+                    installLog.emitProgress(AppInstallProgress(id, progress, total))
+                }
+                if (installer.shizukuInstallXapk(file)) {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
                 } else {
