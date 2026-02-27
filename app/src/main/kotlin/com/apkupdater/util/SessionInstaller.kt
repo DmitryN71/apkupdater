@@ -106,6 +106,80 @@ class SessionInstaller(
         }
     }
 
+    @Suppress("DEPRECATION")
+    fun shizukuInstallSplit(files: List<File>): Boolean {
+        return try {
+            val totalSize = files.sumOf { it.length() }
+
+            // Create install session
+            val createProcess = Shizuku.newProcess(
+                arrayOf("pm", "install-create", "-S", totalSize.toString()), null, null
+            )
+            val createOutput = createProcess.inputStream.bufferedReader().readText()
+            createProcess.waitFor()
+
+            // Parse session ID from "Success: created install session [123456789]"
+            val sessionId = Regex("\\[(\\d+)]").find(createOutput)?.groupValues?.get(1)
+            if (sessionId == null) {
+                Log.e("SessionInstaller", "Failed to parse session ID from: $createOutput")
+                files.forEach { it.delete() }
+                return false
+            }
+
+            // Write each APK to session
+            files.forEachIndexed { index, file ->
+                val writeProcess = Shizuku.newProcess(
+                    arrayOf("pm", "install-write", "-S", file.length().toString(), sessionId, "$index.apk"),
+                    null, null
+                )
+                file.inputStream().use { input ->
+                    writeProcess.outputStream.use { output ->
+                        input.copyTo(output)
+                        output.flush()
+                    }
+                }
+                writeProcess.waitFor()
+            }
+
+            // Commit session
+            val commitProcess = Shizuku.newProcess(
+                arrayOf("pm", "install-commit", sessionId), null, null
+            )
+            val exitCode = commitProcess.waitFor()
+
+            files.forEach { it.delete() }
+            exitCode == 0
+        } catch (e: Exception) {
+            Log.e("SessionInstaller", "Shizuku split install failed", e)
+            files.forEach { it.delete() }
+            false
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun shizukuInstallXapk(xapkFile: File): Boolean {
+        return try {
+            // Extract APKs from XAPK (zip)
+            val zip = ZipFile(xapkFile)
+            val apkEntries = zip.entries().toList().filter { it.name.contains(".apk") }
+            val tempFiles = apkEntries.map { entry ->
+                val apkFile = File(context.cacheDir, randomUUID())
+                zip.getInputStream(entry).use { input ->
+                    apkFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                apkFile
+            }
+            zip.close()
+            xapkFile.delete()
+
+            shizukuInstallSplit(tempFiles)
+        } catch (e: Exception) {
+            Log.e("SessionInstaller", "Shizuku XAPK install failed", e)
+            xapkFile.delete()
+            false
+        }
+    }
+
     fun finish() = installMutex.unlock()
 
     fun checkPermission(): Boolean {

@@ -52,6 +52,7 @@ abstract class InstallViewModel(
             if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
             finishInstall(it.id).join()
         } else {
+            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
             installLog.emitProgress(AppInstallProgress(it.id, 0L))
             cancelInstall(it.id).join()
         }
@@ -86,6 +87,24 @@ abstract class InstallViewModel(
         when (link) {
             is Link.Url -> {
                 if (installer.shizukuInstall(downloader.download(link.link))) {
+                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+                    finishInstall(id)
+                } else {
+                    cancelInstall(id)
+                }
+            }
+            is Link.Play -> {
+                val files = link.getInstallFiles()
+                val tempFiles = files.map { downloader.download(it.url) }
+                if (installer.shizukuInstallSplit(tempFiles)) {
+                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+                    finishInstall(id)
+                } else {
+                    cancelInstall(id)
+                }
+            }
+            is Link.Xapk -> {
+                if (installer.shizukuInstallXapk(downloader.download(link.link))) {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
                 } else {
