@@ -1,6 +1,8 @@
 package com.apkupdater.repository
 
 import android.util.Log
+import com.apkupdater.data.rustore.RuStoreBatchEntry
+import com.apkupdater.data.rustore.RuStoreBatchRequest
 import com.apkupdater.data.rustore.RuStoreDownloadRequest
 import com.apkupdater.data.rustore.toAppUpdate
 import com.apkupdater.data.ui.AppInstalled
@@ -8,11 +10,10 @@ import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.RuStoreService
-import com.apkupdater.util.combine
-import io.github.g00fy2.versioncompare.Version
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 
 
@@ -22,19 +23,40 @@ class RuStoreRepository(
 ) {
 
 	suspend fun updates(apps: List<AppInstalled>) = flow {
-		val checks = mutableListOf<Flow<List<AppUpdate>>>()
+		// Step 1: Batch check all apps at once (single request)
+		val batchRequest = RuStoreBatchRequest(
+			apps.map { RuStoreBatchEntry(it.packageName, it.versionCode) }
+		)
+		val batchResponse = service.getBatchUpdates(batchRequest)
+		val appsWithUpdates = batchResponse.body.content
 
-		apps.forEach { app ->
-			checks.add(checkApp(apps, app.packageName, app.version))
-		}
-
-		if (checks.isNotEmpty()) {
-			checks.combine { all ->
-				emit(all.flatMap { it })
-			}.collect()
-		} else {
+		if (appsWithUpdates.isEmpty()) {
 			emit(emptyList())
+			return@flow
 		}
+
+		// Step 2: For each app with an update, fetch details + download link (in parallel)
+		val updates = coroutineScope {
+			appsWithUpdates.map { batchApp ->
+				async {
+					runCatching {
+						val detailResponse = service.getAppInfo(batchApp.packageName)
+						if (detailResponse.code != "OK" || detailResponse.body.appId == 0L) return@async null
+
+						val ruStoreApp = detailResponse.body
+						if (!filterAlpha(ruStoreApp.versionName) || !filterBeta(ruStoreApp.versionName)) return@async null
+
+						val downloadResponse = service.getDownloadLink(RuStoreDownloadRequest(ruStoreApp.appId))
+						if (downloadResponse.code != "OK" || downloadResponse.body.apkUrl.isEmpty()) return@async null
+
+						val app = apps.getApp(batchApp.packageName)
+						ruStoreApp.toAppUpdate(app, downloadResponse.body.apkUrl)
+					}.getOrNull()
+				}
+			}.awaitAll().filterNotNull()
+		}
+
+		emit(updates)
 	}.catch {
 		emit(emptyList())
 		Log.e("RuStoreRepository", "Error looking for updates.", it)
@@ -46,36 +68,6 @@ class RuStoreRepository(
 	}.catch {
 		emit(Result.failure(it))
 		Log.e("RuStoreRepository", "Error searching.", it)
-	}
-
-	private fun checkApp(
-		apps: List<AppInstalled>,
-		packageName: String,
-		currentVersion: String
-	) = flow {
-		val response = service.getAppInfo(packageName)
-		if (response.code == "OK" && response.body.appId != 0L) {
-			val ruStoreApp = response.body
-			if (ruStoreApp.versionName.isNotEmpty() && Version(ruStoreApp.versionName) > Version(currentVersion)) {
-				if (filterAlpha(ruStoreApp.versionName) && filterBeta(ruStoreApp.versionName)) {
-					val downloadResponse = service.getDownloadLink(RuStoreDownloadRequest(ruStoreApp.appId))
-					if (downloadResponse.code == "OK" && downloadResponse.body.apkUrl.isNotEmpty()) {
-						val app = apps.getApp(packageName)
-						emit(listOf(ruStoreApp.toAppUpdate(app, downloadResponse.body.apkUrl)))
-					} else {
-						emit(emptyList())
-					}
-				} else {
-					emit(emptyList())
-				}
-			} else {
-				emit(emptyList())
-			}
-		} else {
-			emit(emptyList())
-		}
-	}.catch {
-		emit(emptyList())
 	}
 
 	private fun filterAlpha(version: String) = when {
