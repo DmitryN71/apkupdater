@@ -85,7 +85,7 @@ class SearchViewModel(
 
     override fun downloadAndShizukuInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
         state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-        downloadAndShizukuInstall(update.id, update.link)
+        downloadAndShizukuInstall(update.id, update.name, update.link)
     }
 
     override fun downloadAndInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {

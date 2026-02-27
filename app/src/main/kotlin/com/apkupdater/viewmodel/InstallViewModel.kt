@@ -83,18 +83,13 @@ abstract class InstallViewModel(
         cancelInstall(id)
     }
 
-    protected fun downloadAndShizukuInstall(id: Int, link: Link) = runCatching {
-        when (link) {
+    protected fun downloadAndShizukuInstall(id: Int, name: String, link: Link) = runCatching {
+        val success = when (link) {
             is Link.Url -> {
                 val file = downloader.downloadFile(link.link) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
-                if (installer.shizukuInstall(file)) {
-                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-                    finishInstall(id)
-                } else {
-                    cancelInstall(id)
-                }
+                installer.shizukuInstall(file)
             }
             is Link.Play -> {
                 val files = link.getInstallFiles()
@@ -109,31 +104,34 @@ abstract class InstallViewModel(
                     downloadedSoFar += file.length()
                     file
                 }
-                if (installer.shizukuInstallSplit(tempFiles)) {
-                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-                    finishInstall(id)
-                } else {
-                    cancelInstall(id)
-                }
+                installer.shizukuInstallSplit(tempFiles)
             }
             is Link.Xapk -> {
                 val file = downloader.downloadFile(link.link) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
-                if (installer.shizukuInstallXapk(file)) {
-                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-                    finishInstall(id)
-                } else {
-                    cancelInstall(id)
-                }
+                installer.shizukuInstallXapk(file)
             }
-            else -> snackBar.snackBar(
-                viewModelScope,
-                TextSnack(stringer.get(R.string.shizuku_install_not_supported))
-            )
+            else -> {
+                snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.shizuku_install_not_supported)))
+                return@runCatching
+            }
+        }
+        if (success) {
+            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_success, name)))
+            finishInstall(id)
+        } else {
+            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_failure, name)))
+            installLog.emitProgress(AppInstallProgress(id, 0L))
+            cancelInstall(id)
         }
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
+        if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+        snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_failure, name)))
+        installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
     }
 
