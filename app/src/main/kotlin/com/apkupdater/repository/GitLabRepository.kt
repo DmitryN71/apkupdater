@@ -1,6 +1,7 @@
 package com.apkupdater.repository
 
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import com.apkupdater.data.gitlab.GitLabApps
 import com.apkupdater.data.gitlab.GitLabRelease
@@ -99,14 +100,29 @@ class GitLabRepository(
         packageName: String,
         release: GitLabRelease
     ): String {
-        // TODO: Take into account arch
-        val source = release.assets.sources.find { it.url.endsWith(".apk", true) }
-        if (source != null) return source.url
+        val allApks = mutableListOf<String>()
+        release.assets.sources.filter { it.url.endsWith(".apk", true) }.forEach { allApks.add(it.url) }
+        release.assets.links.filter { it.url.endsWith(".apk", true) }.forEach { allApks.add(it.url) }
 
-        val link = release.assets.links.find { it.url.endsWith(".apk", true) }
-        if (link != null) return link.url
+        if (allApks.isEmpty()) return ""
+        if (allApks.size == 1) return allApks.first()
 
-        return ""
+        // Try to match device architecture
+        Build.SUPPORTED_ABIS.forEach { arch ->
+            allApks.forEach { url -> if (url.contains(arch, true)) return url }
+        }
+        if (Build.SUPPORTED_ABIS.contains("arm64-v8a")) {
+            allApks.forEach { url -> if (url.contains("arm64", true)) return url }
+        }
+        if (Build.SUPPORTED_ABIS.contains("x86_64")) {
+            allApks.forEach { url -> if (url.contains("x64", true)) return url }
+        }
+        if (Build.SUPPORTED_ABIS.contains("armeabi-v7a")) {
+            allApks.forEach { url -> if (url.contains("arm", true)) return url }
+        }
+
+        // Prefer "universal" if available, otherwise return first
+        return allApks.find { it.contains("universal", true) } ?: allApks.first()
     }
 
 }

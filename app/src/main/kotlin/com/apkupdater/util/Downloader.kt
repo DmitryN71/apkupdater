@@ -16,9 +16,13 @@ class Downloader(
 
     fun download(url: String): File {
         val file = File(dir, randomUUID())
-        client.newCall(downloadRequest(url)).execute().use {
-            if (it.isSuccessful) {
-                it.body?.byteStream()?.copyTo(file.outputStream())
+        client.newCall(downloadRequest(url)).execute().use { response ->
+            if (response.isSuccessful) {
+                response.body?.byteStream()?.use { input ->
+                    file.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
             }
         }
         return file

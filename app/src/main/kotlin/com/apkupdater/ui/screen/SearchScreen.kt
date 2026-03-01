@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -39,17 +38,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.items
 import com.apkupdater.R
 import com.apkupdater.data.ui.SearchUiState
-import com.apkupdater.prefs.Prefs
 import com.apkupdater.ui.component.DefaultErrorScreen
-import com.apkupdater.ui.component.InstalledGrid
 import com.apkupdater.ui.component.LoadingGrid
-import com.apkupdater.ui.component.SearchItem
 import com.apkupdater.ui.component.TvInstalledGrid
 import com.apkupdater.ui.component.TvSearchItem
 import com.apkupdater.ui.theme.statusBarColor
 import com.apkupdater.viewmodel.SearchViewModel
 import kotlinx.coroutines.delay
-import org.koin.androidx.compose.get
 import org.koin.androidx.compose.koinViewModel
 
 
@@ -73,22 +68,11 @@ fun SearchScreenSuccess(
 	viewModel: SearchViewModel
 ) = Column {
 	val uriHandler = LocalUriHandler.current
-	val prefs: Prefs = get()
 
-	if (prefs.androidTvUi.get()) {
-		TvInstalledGrid {
-			items(state.updates) { update ->
-				TvSearchItem(update) {
-					viewModel.install(update, uriHandler)
-				}
-			}
-		}
-	} else {
-		InstalledGrid {
-			items(state.updates) { update ->
-				SearchItem(update) {
-					viewModel.install(update, uriHandler)
-				}
+	TvInstalledGrid {
+		items(state.updates, key = { it.id }) { update ->
+			TvSearchItem(update) {
+				viewModel.install(update, uriHandler)
 			}
 		}
 	}

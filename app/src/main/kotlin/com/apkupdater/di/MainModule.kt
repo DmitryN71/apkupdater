@@ -53,6 +53,7 @@ import org.koin.dsl.module
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 
 val mainModule = module {
@@ -70,6 +71,9 @@ val mainModule = module {
 	single {
 		OkHttpClient.Builder()
 			.cache(get())
+			.connectTimeout(15, TimeUnit.SECONDS)
+			.readTimeout(20, TimeUnit.SECONDS)
+			.writeTimeout(20, TimeUnit.SECONDS)
 			.addUserAgentInterceptor("APKUpdater-v" + BuildConfig.VERSION_NAME)
 			//.addInterceptor(get<HttpLoggingInterceptor>())
 			.build()
@@ -114,6 +118,8 @@ val mainModule = module {
 	single {
 		val client = OkHttpClient.Builder()
 			.cache(get())
+			.connectTimeout(15, TimeUnit.SECONDS)
+			.readTimeout(20, TimeUnit.SECONDS)
 			.addUserAgentInterceptor(AptoideRepository.UserAgent)
 			.build()
 
@@ -144,9 +150,9 @@ val mainModule = module {
 	}
 
 	single {
-		val client = OkHttpClient.Builder().followRedirects(true).cache(get()).build()
-		val auroraClient = OkHttpClient.Builder().followRedirects(true).cache(get()).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
-		val apkPureClient = OkHttpClient.Builder().followRedirects(true).cache(get()).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
+		val client = OkHttpClient.Builder().followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
+		val auroraClient = OkHttpClient.Builder().followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
+		val apkPureClient = OkHttpClient.Builder().followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
 		val dir = File(androidContext().cacheDir, "downloads").apply { mkdirs() }
 		Downloader(client, apkPureClient, auroraClient, dir)
 	}

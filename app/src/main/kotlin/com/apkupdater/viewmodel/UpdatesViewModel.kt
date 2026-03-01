@@ -1,6 +1,8 @@
 package com.apkupdater.viewmodel
 
 import androidx.lifecycle.viewModelScope
+import com.apkupdater.R
+import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.data.ui.removeId
@@ -48,7 +50,9 @@ class UpdatesViewModel(
 	fun refresh(load: Boolean = true) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 		if (load) state.value = UpdatesUiState.Loading
 		badger.changeUpdatesBadge("")
-		updatesRepository.updates().collect {
+		updatesRepository.updates { errors, total ->
+			snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.source_errors, errors, total)))
+		}.collect {
 			setSuccess(it)
 		}
 	}

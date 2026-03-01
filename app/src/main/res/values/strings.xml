@@ -23,6 +23,7 @@
     <string name="root_install_not_supported">Root install of this app is not supported.</string>
     <string name="shizuku_install" translatable="false">Shizuku Install</string>
     <string name="shizuku_install_not_supported">Shizuku install of this app is not supported.</string>
+    <string name="source_errors">%1$d of %2$d sources failed to check updates.</string>
 
     // Settings
     <string name="settings_portrait_columns">Portrait Columns</string>
@@ -30,12 +31,12 @@
     <string name="play_text_animations">Play Text Animations</string>
     <string name="settings_sources">Sources</string>
     <string name="settings_ui">UI</string>
-    <string name="settings_alarm">Alarm</string>
+    <string name="settings_alarm">Auto-Check</string>
     <string name="settings_options">Options</string>
     <string name="settings_utils">Utils</string>
-    <string name="settings_hour">Alarm Hour</string>
+    <string name="settings_hour">Check Hour</string>
     <string name="settings_alarm_daily">Daily</string>
-    <string name="settings_alarm_3day">3-Day</string>
+    <string name="settings_alarm_3day">Every 3 Days</string>
     <string name="settings_alarm_weekly">Weekly</string>
     <string name="settings_android_tv_ui" translatable="false">Android TV UI</string>
     <string name="ignore_alpha">Ignore Alpha</string>

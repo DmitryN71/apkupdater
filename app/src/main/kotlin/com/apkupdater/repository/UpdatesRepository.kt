@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import java.util.concurrent.atomic.AtomicInteger
 
 
 class UpdatesRepository(
@@ -24,7 +25,7 @@ class UpdatesRepository(
     private val prefs: Prefs
 ) {
 
-    fun updates() = flow<List<AppUpdate>> {
+    fun updates(onSourceError: ((Int, Int) -> Unit)? = null) = flow<List<AppUpdate>> {
         appsRepository.getApps().collect { result ->
             result.onSuccess { apps ->
                 val filtered = apps.filter { !it.ignored }
@@ -39,10 +40,21 @@ class UpdatesRepository(
                 if (prefs.usePlay.get()) sources.add(playRepository.updates(filtered))
                 if (prefs.useRuStore.get()) sources.add(ruStoreRepository.updates(filtered))
 
-                if (sources.isNotEmpty()) {
-                    sources
+                val totalSources = sources.size
+                if (totalSources > 0) {
+                    val errorCount = AtomicInteger(0)
+                    val wrappedSources = sources.map { source ->
+                        source.catch { e ->
+                            Log.e("UpdatesRepository", "Source error", e)
+                            errorCount.incrementAndGet()
+                            emit(emptyList())
+                        }
+                    }
+                    wrappedSources
                         .combine { updates -> emit(updates.flatMap { it }) }
                         .collect()
+                    val errors = errorCount.get()
+                    if (errors > 0) onSourceError?.invoke(errors, totalSources)
                 } else {
                     emit(emptyList())
                 }

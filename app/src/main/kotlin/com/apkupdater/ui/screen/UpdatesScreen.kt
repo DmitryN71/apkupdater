@@ -3,7 +3,6 @@ package com.apkupdater.ui.screen
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -18,25 +17,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.items
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppUpdate
-import com.apkupdater.prefs.Prefs
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.EmptyGrid
-import com.apkupdater.ui.component.InstalledGrid
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.RefreshIcon
 import com.apkupdater.ui.component.TvInstalledGrid
 import com.apkupdater.ui.component.TvUpdateItem
-import com.apkupdater.ui.component.UpdateItem
 import com.apkupdater.ui.theme.statusBarColor
 import com.apkupdater.viewmodel.UpdatesViewModel
-import org.koin.androidx.compose.get
 
 
 @Composable
@@ -84,41 +78,20 @@ fun UpdatesScreenSuccess(
 	updates: List<AppUpdate>
 ) = Column {
 	val handler = LocalUriHandler.current
-	val tv = get<Prefs>().androidTvUi.get()
 
 	UpdatesTopBar(viewModel)
 
-	when {
-		updates.isEmpty() -> EmptyGrid()
-		tv -> TvGrid(viewModel, updates, handler)
-		!tv -> Grid(viewModel, updates, handler)
-	}
-}
-
-@Composable
-fun TvGrid(
-	viewModel: UpdatesViewModel,
-	updates: List<AppUpdate>,
-	handler: UriHandler
-) = TvInstalledGrid {
-	items(updates) { update ->
-		TvUpdateItem(
-			update,
-			{ viewModel.install(update, handler) },
-			{ viewModel.ignoreVersion(update.id)}
-		)
-	}
-}
-
-@Composable
-fun Grid(
-	viewModel: UpdatesViewModel,
-	updates: List<AppUpdate>,
-	handler: UriHandler
-) = InstalledGrid {
-	items(updates) { update ->
-		UpdateItem(update) {
-			viewModel.install(update, handler)
+	if (updates.isEmpty()) {
+		EmptyGrid()
+	} else {
+		TvInstalledGrid {
+			items(updates, key = { it.id }) { update ->
+				TvUpdateItem(
+					update,
+					{ viewModel.install(update, handler) },
+					{ viewModel.ignoreVersion(update.id)}
+				)
+			}
 		}
 	}
 }
