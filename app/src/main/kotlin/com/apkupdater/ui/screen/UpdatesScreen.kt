@@ -2,22 +2,33 @@ package com.apkupdater.ui.screen
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.items
@@ -35,21 +46,20 @@ import com.apkupdater.viewmodel.UpdatesViewModel
 
 @Composable
 fun UpdatesScreen(viewModel: UpdatesViewModel) {
+	val progress = viewModel.refreshProgress.collectAsStateWithLifecycle().value
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
-		UpdatesScreenLoading(viewModel)
+		UpdatesScreenLoading(viewModel, progress)
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
-		UpdatesScreenSuccess(viewModel, it.updates)
+		UpdatesScreenSuccess(viewModel, it.updates, progress)
 	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
-	title = {
-		Text(stringResource(R.string.tab_updates))
-	},
+	title = { Text(stringResource(R.string.tab_updates)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	actions = {
 		IconButton(onClick = { viewModel.refresh() }) {
@@ -64,33 +74,73 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 )
 
 @Composable
-fun UpdatesScreenLoading(viewModel: UpdatesViewModel) = Column {
+fun ProgressBanner(text: String?) {
+	if (text != null) {
+		Text(
+			text,
+			style = MaterialTheme.typography.bodySmall,
+			color = MaterialTheme.colorScheme.onSurfaceVariant,
+			textAlign = TextAlign.Center,
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+		)
+	}
+}
+
+@Composable
+fun UpdatesScreenLoading(viewModel: UpdatesViewModel, progressSubtitle: String? = null) = Column {
 	UpdatesTopBar(viewModel)
-	LoadingGrid()
+	ProgressBanner(progressSubtitle)
+	Box(Modifier.weight(1f).fillMaxWidth()) { LoadingGrid() }
 }
 
 @Composable
 fun UpdatesScreenError() = DefaultErrorScreen()
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UpdatesScreenSuccess(
 	viewModel: UpdatesViewModel,
-	updates: List<AppUpdate>
+	updates: List<AppUpdate>,
+	progressSubtitle: String? = null
 ) = Column {
 	val handler = LocalUriHandler.current
 
 	UpdatesTopBar(viewModel)
+	ProgressBanner(progressSubtitle)
 
 	if (updates.isEmpty()) {
-		EmptyGrid()
+		Box(Modifier.weight(1f).fillMaxWidth()) { EmptyGrid() }
 	} else {
-		TvInstalledGrid {
-			items(updates, key = { it.id }) { update ->
-				TvUpdateItem(
-					update,
-					{ viewModel.install(update, handler) },
-					{ viewModel.ignoreVersion(update.id)}
-				)
+		val showFab = updates.size > 1 && !updates.any { it.isInstalling }
+		val gridPadding = if (showFab) PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
+			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+
+		Box(Modifier.weight(1f).fillMaxWidth()) {
+			TvInstalledGrid(contentPadding = gridPadding) {
+				items(updates, key = { it.id }) { update ->
+					TvUpdateItem(
+						update,
+						{ viewModel.install(update, handler) },
+						{ viewModel.ignoreVersion(update.id) }
+					)
+				}
+			}
+			if (showFab) {
+				Box(Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+					TooltipBox(
+						positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+						tooltip = { PlainTooltip { Text(stringResource(R.string.install_all)) } },
+						state = rememberTooltipState()
+					) {
+						FloatingActionButton(
+							onClick = { viewModel.installAll(handler) },
+							containerColor = MaterialTheme.colorScheme.primaryContainer,
+							contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+						) {
+							Icon(painterResource(R.drawable.ic_update_all), contentDescription = stringResource(R.string.install_all))
+						}
+					}
+				}
 			}
 		}
 	}

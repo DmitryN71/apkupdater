@@ -12,15 +12,29 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.apkupdater.data.snack.SnackType
+import com.apkupdater.data.snack.TextSnack
 import androidx.compose.material3.pullrefresh.PullRefreshIndicator
 import androidx.compose.material3.pullrefresh.pullRefresh
 import androidx.compose.material3.pullrefresh.rememberPullRefreshState
@@ -105,7 +119,40 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 
 	AppTheme(theme) {
 		Scaffold(
-			snackbarHost = { SnackbarHost(snackBarHostState) },
+			snackbarHost = {
+				SnackbarHost(snackBarHostState) { data ->
+					val snack = data.visuals as? TextSnack
+					val containerColor = when (snack?.type) {
+						SnackType.SUCCESS -> Color(0xFF2E7D32)
+						SnackType.ERROR -> Color(0xFFC62828)
+						else -> MaterialTheme.colorScheme.inverseSurface
+					}
+					val contentColor = when (snack?.type) {
+						SnackType.SUCCESS, SnackType.ERROR -> Color.White
+						else -> MaterialTheme.colorScheme.inverseOnSurface
+					}
+					val icon = when (snack?.type) {
+						SnackType.SUCCESS -> Icons.Outlined.CheckCircle
+						SnackType.ERROR -> Icons.Outlined.Warning
+						else -> null
+					}
+					Snackbar(
+						modifier = Modifier.padding(12.dp),
+						shape = RoundedCornerShape(12.dp),
+						containerColor = containerColor,
+						contentColor = contentColor,
+						dismissActionContentColor = contentColor
+					) {
+						Row(verticalAlignment = Alignment.CenterVertically) {
+							if (icon != null) {
+								Icon(icon, null, Modifier.size(20.dp))
+								Spacer(Modifier.width(8.dp))
+							}
+							Text(data.visuals.message)
+						}
+					}
+				}
+			},
 			bottomBar = { BottomBar(mainViewModel, navController) }
 		) { padding ->
 			Box(modifier = Modifier.pullRefresh(pullToRefresh)) {
@@ -113,7 +160,7 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 				PullRefreshIndicator(
 					refreshing = isRefreshing.value,
 					state = pullToRefresh,
-					modifier = Modifier.align(Alignment.TopCenter),
+					modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding(),
 					contentColor = MaterialTheme.colorScheme.primary
 				)
 			}
@@ -216,7 +263,7 @@ fun NavHost(
 ) = NavHost(
 	navController = navController,
 	startDestination = mainViewModel.getLastRoute(),
-	modifier = Modifier.padding(padding)
+	modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
 ) {
 	composable(Screen.Apps.route) { AppsScreen(appsViewModel) }
 	composable(Screen.Search.route) { SearchScreen(searchViewModel) }

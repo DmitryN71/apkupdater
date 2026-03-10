@@ -8,6 +8,7 @@ import com.apkupdater.data.ui.setIsInstalling
 import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.SearchRepository
+import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.InstallLog
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 
 class SearchViewModel(
@@ -31,10 +33,12 @@ class SearchViewModel(
     prefs: Prefs,
     snackBar: SnackBar,
     stringer: Stringer,
-    installLog: InstallLog
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog) {
+    installLog: InstallLog,
+    ruStoreService: RuStoreService
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService) {
 
     private val mutex = Mutex()
+    private val installMutex = Mutex()
     private val state = MutableStateFlow<SearchUiState>(SearchUiState.Success(emptyList()))
     private var job: Job? = null
 
@@ -80,18 +84,27 @@ class SearchViewModel(
 
     override fun downloadAndRootInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
         state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-        downloadAndRootInstall(update.id, update.link)
+        installMutex.withLock {
+            val link = resolveLink(update)
+            downloadAndRootInstall(update.id, link)
+        }
     }
 
     override fun downloadAndShizukuInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
         state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-        downloadAndShizukuInstall(update.id, update.name, update.link)
+        installMutex.withLock {
+            val link = resolveLink(update)
+            downloadAndShizukuInstall(update.id, update.name, link)
+        }
     }
 
     override fun downloadAndInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
         if(installer.checkPermission()) {
             state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-            downloadAndInstall(update.id, update.packageName, update.link)
+            installMutex.withLock {
+                val link = resolveLink(update)
+                downloadAndInstall(update.id, update.packageName, link)
+            }
         }
     }
 

@@ -5,13 +5,17 @@ import androidx.compose.ui.platform.UriHandler
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apkupdater.R
+import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.ApkMirrorSource
+import com.apkupdater.data.rustore.RuStoreDownloadRequest
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.data.ui.AppInstallStatus
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
+import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.prefs.Prefs
+import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
@@ -28,7 +32,8 @@ abstract class InstallViewModel(
     private val prefs: Prefs,
     protected val snackBar: SnackBar,
     protected val stringer: Stringer,
-    private val installLog: InstallLog
+    private val installLog: InstallLog,
+    private val ruStoreService: RuStoreService
 ): ViewModel() {
 
     fun install(update: AppUpdate, uriHandler: UriHandler) {
@@ -44,6 +49,25 @@ abstract class InstallViewModel(
                 }
             }
         }
+    }
+
+    protected suspend fun resolveLink(update: AppUpdate): Link {
+        if (update.source == RuStoreSource && update.link is Link.Url) {
+            return runCatching {
+                val appInfo = ruStoreService.getAppInfo(update.packageName)
+                if (appInfo.code == "OK" && appInfo.body.appId != 0L) {
+                    val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId))
+                    val url = download.body.downloadUrls.firstOrNull()?.url
+                    if (download.code == "OK" && !url.isNullOrEmpty()) {
+                        Link.Url(url, update.link.size)
+                    } else update.link
+                } else update.link
+            }.getOrElse {
+                Log.e("InstallViewModel", "Failed to refresh RuStore download URL", it)
+                update.link
+            }
+        }
+        return update.link
     }
 
     protected fun subscribeToInstallStatus(updates: List<AppUpdate>) = installLog.status().onEach {
@@ -68,8 +92,10 @@ abstract class InstallViewModel(
         when (link) {
             is Link.Url -> {
                 if (installer.rootInstall(downloader.download(link.link))) {
+                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
                 } else {
+                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     cancelInstall(id)
                 }
             }
@@ -80,11 +106,13 @@ abstract class InstallViewModel(
         }
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndRootInstall.", it)
+        if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
         cancelInstall(id)
     }
 
     protected fun downloadAndShizukuInstall(id: Int, name: String, link: Link) = runCatching {
-        val success = when (link) {
+        // Shizuku methods return null on success, or error message on failure
+        val error: String? = when (link) {
             is Link.Url -> {
                 val file = downloader.downloadFile(link.link) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
@@ -117,20 +145,25 @@ abstract class InstallViewModel(
                 return@runCatching
             }
         }
-        if (success) {
+        if (error == null) {
             if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_success, name)))
+            snackBar.snackBar(viewModelScope, TextSnack(
+                stringer.get(R.string.install_success, name), type = SnackType.SUCCESS
+            ))
             finishInstall(id)
         } else {
             if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_failure, name)))
+            val msg = stringer.get(R.string.install_failure, name) + "\n" + error
+            snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
             installLog.emitProgress(AppInstallProgress(id, 0L))
             cancelInstall(id)
         }
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-        snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_failure, name)))
+        val reason = it.message ?: "Unknown error"
+        val msg = stringer.get(R.string.install_failure, name) + "\n" + reason
+        snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
         installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
     }
@@ -170,8 +203,16 @@ abstract class InstallViewModel(
     private fun sendInstallSnack(updates: List<AppUpdate>, log: AppInstallStatus) {
         if (log.snack) {
             updates.find { log.id == it.id }?.let { app ->
-                val message = if (log.success) R.string.install_success else R.string.install_failure
-                snackBar.snackBar(viewModelScope, TextSnack(stringer.get(message, app.name)))
+                if (log.success) {
+                    snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.install_success, app.name),
+                        type = SnackType.SUCCESS
+                    ))
+                } else {
+                    val base = stringer.get(R.string.install_failure, app.name)
+                    val text = if (!log.reason.isNullOrBlank()) "$base\n${log.reason}" else base
+                    snackBar.snackBar(viewModelScope, TextSnack(text, type = SnackType.ERROR))
+                }
             }
         }
     }

@@ -31,14 +31,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.yield
 import okhttp3.OkHttpClient
 import java.security.MessageDigest
 import java.text.DecimalFormatSymbols
 import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -59,7 +57,7 @@ fun CoroutineScope.launchWithMutex(
 
 fun Boolean?.orFalse() = this ?: false
 
-fun PackageInfo.name(context: Context) = applicationInfo.loadLabel(context.packageManager).toString()
+fun PackageInfo.name(context: Context) = applicationInfo?.loadLabel(context.packageManager)?.toString() ?: packageName
 
 fun Context.getAppIcon(packageName: String) = runCatching {
 	packageManager.getApplicationIcon(packageName)
@@ -89,10 +87,10 @@ fun ByteArray.toSha256(): String = MessageDigest
 
 fun PackageInfo.getSignature(): ByteArray = runCatching {
 	if (Build.VERSION.SDK_INT >= 28) {
-		signingInfo.apkContentsSigners[0].toByteArray()
+		signingInfo?.apkContentsSigners?.get(0)?.toByteArray() ?: ByteArray(0)
 	} else {
 		@Suppress("DEPRECATION")
-		signatures[0].toByteArray()
+		signatures?.get(0)?.toByteArray() ?: ByteArray(0)
 	}
 }.getOrDefault(ByteArray(0))
 
@@ -107,13 +105,6 @@ fun millisUntilHour(hour: Int): Long {
 	calendar.set(Calendar.MINUTE, 0)
 	return calendar.timeInMillis - System.currentTimeMillis()
 }
-
-suspend fun AtomicBoolean.lock() {
-	while (get()) yield()
-	set(true)
-}
-
-fun AtomicBoolean.unlock() = set(false)
 
 fun Intent.getIntentExtra(): Intent? = when {
 	Build.VERSION.SDK_INT > 33 -> getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
@@ -132,23 +123,27 @@ fun randomUUID() = UUID.randomUUID().toString()
 
 fun isDark() = Resources.getSystem().configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
-fun Spanned.toAnnotatedString(): AnnotatedString = buildAnnotatedString {
-	val spanned = this@toAnnotatedString
-	append(spanned.toString())
-	getSpans(0, spanned.length, Any::class.java).forEach { span ->
-		val start = getSpanStart(span)
-		val end = getSpanEnd(span)
-		when (span) {
-			is StyleSpan -> when (span.style) {
-				Typeface.BOLD -> addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, end)
-				Typeface.ITALIC -> addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, end)
-				Typeface.BOLD_ITALIC -> addStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic), start, end)
+fun Spanned.toAnnotatedString(): AnnotatedString = runCatching {
+	buildAnnotatedString {
+		val spanned = this@toAnnotatedString
+		val text = spanned.toString()
+		append(text)
+		getSpans(0, spanned.length, Any::class.java).forEach { span ->
+			val start = getSpanStart(span)
+			val end = getSpanEnd(span)
+			if (start < 0 || end < 0 || start > end || end > text.length) return@forEach
+			when (span) {
+				is StyleSpan -> when (span.style) {
+					Typeface.BOLD -> addStyle(SpanStyle(fontWeight = FontWeight.Bold), start, end)
+					Typeface.ITALIC -> addStyle(SpanStyle(fontStyle = FontStyle.Italic), start, end)
+					Typeface.BOLD_ITALIC -> addStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic), start, end)
+				}
+				is UnderlineSpan -> addStyle(SpanStyle(textDecoration = TextDecoration.Underline), start, end)
+				is ForegroundColorSpan -> addStyle(SpanStyle(color = Color(span.foregroundColor)), start, end)
 			}
-			is UnderlineSpan -> addStyle(SpanStyle(textDecoration = TextDecoration.Underline), start, end)
-			is ForegroundColorSpan -> addStyle(SpanStyle(color = Color(span.foregroundColor)), start, end)
 		}
 	}
-}
+}.getOrElse { AnnotatedString(this.toString()) }
 
 fun OkHttpClient.Builder.addUserAgentInterceptor(agent: String) = addNetworkInterceptor {
 	it.proceed(it.request().newBuilder().header("User-Agent", agent).build())

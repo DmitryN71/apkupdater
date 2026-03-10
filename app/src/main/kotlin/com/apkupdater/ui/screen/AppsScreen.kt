@@ -2,6 +2,7 @@ package com.apkupdater.ui.screen
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -50,9 +51,11 @@ fun AppsScreen(
 @Composable
 fun AppsScreenSuccess(viewModel: AppsViewModel, state: AppsUiState.Success) = Column {
 	AppsTopBar(viewModel, state.excludeSystem, state.excludeAppStore, state.excludeDisabled)
-	TvInstalledGrid {
-		items(state.apps, key = { it.packageName }) {
-			TvInstalledItem(it) { app -> viewModel.ignore(app) }
+	Box(Modifier.weight(1f).fillMaxWidth()) {
+		TvInstalledGrid {
+			items(state.apps, key = { it.packageName }) {
+				TvInstalledItem(it) { app -> viewModel.ignore(app) }
+			}
 		}
 	}
 }
@@ -60,7 +63,7 @@ fun AppsScreenSuccess(viewModel: AppsViewModel, state: AppsUiState.Success) = Co
 @Composable
 fun AppsScreenLoading(viewModel: AppsViewModel, state: AppsUiState.Loading) = Column {
 	AppsTopBar(viewModel, state.excludeSystem, state.excludeAppStore, state.excludeDisabled)
-	LoadingGrid()
+	Box(Modifier.weight(1f).fillMaxWidth()) { LoadingGrid() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

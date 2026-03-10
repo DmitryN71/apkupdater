@@ -24,6 +24,7 @@
     <string name="shizuku_install" translatable="false">Shizuku Install</string>
     <string name="shizuku_install_not_supported">Shizuku install of this app is not supported.</string>
     <string name="source_errors">%1$d of %2$d sources failed to check updates.</string>
+    <string name="checking_sources">Checking: %1$s</string>
 
     // Settings
     <string name="settings_portrait_columns">Portrait Columns</string>
@@ -65,6 +66,22 @@
     <string name="copy_to_clipboard">Copy to clipboard</string>
     <string name="copy_app_list">Copy App List</string>
     <string name="copy_app_logs">Copy App Logs</string>
+    <string name="settings_custom_repos">Custom Repositories</string>
+    <string name="custom_repo_hint">github.com/user/repo</string>
+    <string name="add_repo">Add</string>
+    <string name="invalid_repo_url">Invalid repository URL. Use github.com/user/repo or gitlab.com/user/repo</string>
+    <string name="delete">Delete</string>
+    <string name="link_installed_app">Link to installed app (optional)</string>
+    <string name="all_up_to_date">All apps are up to date!</string>
+    <string name="install_all">Update All</string>
+    <string name="export_config">Export Configuration</string>
+    <string name="import_config">Import Configuration</string>
+    <string name="config_exported">Configuration exported successfully</string>
+    <string name="config_imported">Configuration imported successfully</string>
+    <string name="config_import_failed">Failed to import configuration</string>
+    <string name="clear_ignored_versions">Clear Ignored Versions (%1$d)</string>
+    <string name="ignored_versions_cleared">Ignored versions cleared</string>
+    <string name="no_ignored_versions">No ignored versions</string>
 
     // Notifications
     <string name="notification_channel_name">Updates</string>

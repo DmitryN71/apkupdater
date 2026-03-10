@@ -18,7 +18,7 @@ import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.sync.Mutex
 import java.util.zip.ZipFile
 
 
@@ -31,7 +31,7 @@ class SessionInstaller(
         const val INSTALL_ACTION = "installAction"
     }
 
-    private val installMutex = AtomicBoolean(false)
+    private val installMutex = Mutex()
 
     suspend fun install(id: Int, packageName: String, stream: InputStream) =
         install(id, packageName, listOf(stream))
@@ -73,7 +73,7 @@ class SessionInstaller(
             }
 
             installMutex.lock()
-            val pending = PendingIntent.getActivity(context, 0, intent, FLAG_MUTABLE)
+            val pending = PendingIntent.getActivity(context, id, intent, FLAG_MUTABLE)
             session.commit(pending.intentSender)
             session.close()
         }
@@ -85,35 +85,53 @@ class SessionInstaller(
         return res
     }
 
-    @Suppress("DEPRECATION")
-    fun shizukuInstall(file: File): Boolean {
+    private fun shizukuProcess(args: Array<String>): Process {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java, Array<String>::class.java, String::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(null, args, null, null) as Process
+    }
+
+    /** Returns null on success, or error message on failure. */
+    fun shizukuInstall(file: File): String? {
         return try {
             val size = file.length()
-            val process = Shizuku.newProcess(arrayOf("pm", "install", "-S", size.toString()), null, null)
+            if (size == 0L) {
+                Log.e("SessionInstaller", "Shizuku install failed: downloaded file is empty")
+                file.delete()
+                return "Downloaded file is empty"
+            }
+            val process = shizukuProcess(arrayOf("pm", "install", "-r", "-d", "-S", size.toString()))
             file.inputStream().use { input ->
                 process.outputStream.use { output ->
                     input.copyTo(output)
                     output.flush()
                 }
             }
+            val error = process.errorStream.bufferedReader().readText()
             val exitCode = process.waitFor()
             file.delete()
-            exitCode == 0
+            if (exitCode != 0) {
+                Log.e("SessionInstaller", "pm install failed (exit $exitCode): $error")
+                parseInstallError(error)
+            } else null
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku install failed", e)
             file.delete()
-            false
+            e.message ?: "Unknown error"
         }
     }
 
-    @Suppress("DEPRECATION")
-    fun shizukuInstallSplit(files: List<File>): Boolean {
+    /** Returns null on success, or error message on failure. */
+    fun shizukuInstallSplit(files: List<File>): String? {
         return try {
             val totalSize = files.sumOf { it.length() }
 
             // Create install session
-            val createProcess = Shizuku.newProcess(
-                arrayOf("pm", "install-create", "-S", totalSize.toString()), null, null
+            val createProcess = shizukuProcess(
+                arrayOf("pm", "install-create", "-r", "-d", "-S", totalSize.toString())
             )
             val createOutput = createProcess.inputStream.bufferedReader().readText()
             createProcess.waitFor()
@@ -123,14 +141,13 @@ class SessionInstaller(
             if (sessionId == null) {
                 Log.e("SessionInstaller", "Failed to parse session ID from: $createOutput")
                 files.forEach { it.delete() }
-                return false
+                return "Failed to create install session"
             }
 
             // Write each APK to session
             files.forEachIndexed { index, file ->
-                val writeProcess = Shizuku.newProcess(
-                    arrayOf("pm", "install-write", "-S", file.length().toString(), sessionId, "$index.apk"),
-                    null, null
+                val writeProcess = shizukuProcess(
+                    arrayOf("pm", "install-write", "-S", file.length().toString(), sessionId, "$index.apk")
                 )
                 file.inputStream().use { input ->
                     writeProcess.outputStream.use { output ->
@@ -142,22 +159,24 @@ class SessionInstaller(
             }
 
             // Commit session
-            val commitProcess = Shizuku.newProcess(
-                arrayOf("pm", "install-commit", sessionId), null, null
-            )
+            val commitProcess = shizukuProcess(arrayOf("pm", "install-commit", sessionId))
+            val commitOutput = commitProcess.errorStream.bufferedReader().readText()
             val exitCode = commitProcess.waitFor()
 
             files.forEach { it.delete() }
-            exitCode == 0
+            if (exitCode != 0) {
+                Log.e("SessionInstaller", "pm install-commit output: $commitOutput")
+                parseInstallError(commitOutput)
+            } else null
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku split install failed", e)
             files.forEach { it.delete() }
-            false
+            e.message ?: "Unknown error"
         }
     }
 
-    @Suppress("DEPRECATION")
-    fun shizukuInstallXapk(xapkFile: File): Boolean {
+    /** Returns null on success, or error message on failure. */
+    fun shizukuInstallXapk(xapkFile: File): String? {
         return try {
             // Extract APKs from XAPK (zip)
             val zip = ZipFile(xapkFile)
@@ -176,11 +195,28 @@ class SessionInstaller(
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku XAPK install failed", e)
             xapkFile.delete()
-            false
+            e.message ?: "Unknown error"
         }
     }
 
-    fun finish() = installMutex.unlock()
+    /** Parses pm install error output into a human-readable message. */
+    private fun parseInstallError(error: String): String {
+        return when {
+            error.contains("INSTALL_FAILED_VERSION_DOWNGRADE") -> "Version downgrade not allowed"
+            error.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") -> "Conflicting package signature"
+            error.contains("INSTALL_FAILED_ALREADY_EXISTS") -> "Package already exists"
+            error.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") -> "Not enough storage space"
+            error.contains("INSTALL_FAILED_INVALID_APK") -> "Invalid or corrupt APK"
+            error.contains("INSTALL_FAILED_OLDER_SDK") -> "Requires newer Android version"
+            error.contains("INSTALL_FAILED_CONFLICTING_PROVIDER") -> "Conflicting content provider"
+            error.contains("INSTALL_PARSE_FAILED") -> "Failed to parse APK"
+            error.contains("INSTALL_FAILED_USER_RESTRICTED") -> "Installation restricted by user"
+            error.isNotBlank() -> error.trim().take(120)
+            else -> "Unknown error"
+        }
+    }
+
+    fun finish() = runCatching { installMutex.unlock() }
 
     fun checkPermission(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

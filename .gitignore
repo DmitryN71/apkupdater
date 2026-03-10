@@ -7,3 +7,7 @@
 .cxx
 /.idea/
 /app/build/
+*.jks
+*.zip
+.claude/
+apkupdateross-*/

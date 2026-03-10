@@ -2,6 +2,7 @@ package com.apkupdater.ui.screen
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -12,9 +13,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -28,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
@@ -53,12 +55,14 @@ fun SearchScreen(
 	viewModel: SearchViewModel = koinViewModel()
 ) = Column {
 	SearchTopBar(viewModel)
-	viewModel.state().collectAsStateWithLifecycle().value.onError {
-		DefaultErrorScreen()
-	}.onSuccess {
-		SearchScreenSuccess(it, viewModel)
-	}.onLoading {
-		LoadingGrid()
+	Box(Modifier.weight(1f).fillMaxWidth()) {
+		viewModel.state().collectAsStateWithLifecycle().value.onError {
+			DefaultErrorScreen()
+		}.onSuccess {
+			SearchScreenSuccess(it, viewModel)
+		}.onLoading {
+			LoadingGrid()
+		}
 	}
 }
 
@@ -66,7 +70,7 @@ fun SearchScreen(
 fun SearchScreenSuccess(
 	state: SearchUiState.Success,
 	viewModel: SearchViewModel
-) = Column {
+) {
 	val uriHandler = LocalUriHandler.current
 
 	TvInstalledGrid {
@@ -96,17 +100,20 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 	val keyboardController = LocalSoftwareKeyboardController.current
 	val focusRequester = remember { FocusRequester() }
 	var value by remember { mutableStateOf("") }
-	OutlinedTextField(
+	TextField(
 		value = value,
 		onValueChange = { value = it },
-		modifier = Modifier.fillMaxWidth().padding(0.dp).focusRequester(focusRequester),
-		label = { Text(stringResource(R.string.tab_search)) },
+		modifier = Modifier.fillMaxWidth().padding(end = 8.dp).focusRequester(focusRequester),
+		placeholder = { Text(stringResource(R.string.tab_search)) },
 		keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
 		keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
-		colors = OutlinedTextFieldDefaults.colors(
-			focusedBorderColor = Color.Transparent,
-			unfocusedBorderColor = Color.Transparent
+		colors = TextFieldDefaults.colors(
+			focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+			unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+			focusedIndicatorColor = Color.Transparent,
+			unfocusedIndicatorColor = Color.Transparent
 		),
+		shape = RoundedCornerShape(28.dp),
 		maxLines = 1,
 		singleLine = true
 	)

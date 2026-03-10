@@ -3,6 +3,8 @@ package com.apkupdater.repository
 import android.net.Uri
 import android.os.Build
 import android.util.Log
+import com.apkupdater.data.github.GitProvider
+import com.apkupdater.data.gitlab.GitLabApp
 import com.apkupdater.data.gitlab.GitLabApps
 import com.apkupdater.data.gitlab.GitLabRelease
 import com.apkupdater.data.ui.AppInstalled
@@ -26,11 +28,34 @@ class GitLabRepository(
     private val prefs: Prefs
 ) {
 
+    private fun loadAllApps(): List<GitLabApp> {
+        val custom = prefs.customGitRepos.get()
+            .filter { it.platform == GitProvider.GITLAB }
+            .map { GitLabApp(it.installedPackageName.ifEmpty { it.packageName }, it.user, it.repo) }
+        // Custom repos override hardcoded entries with same user/repo to prevent duplicates
+        val customKeys = custom.map { "${it.user}/${it.repo}".lowercase() }.toSet()
+        val filtered = GitLabApps.filter { "${it.user}/${it.repo}".lowercase() !in customKeys }
+        return filtered + custom
+    }
+
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
-        GitLabApps.forEach { app ->
-            apps.find { it.packageName == app.packageName }?.let {
-                checks.add(checkApp(apps, app.user, app.repo, app.packageName, it.version, null))
+        loadAllApps().forEach { app ->
+            val installedApp = apps.find { it.packageName == app.packageName }
+            if (installedApp != null) {
+                checks.add(checkApp(apps, app.user, app.repo, app.packageName, installedApp.version, null))
+            } else if (app.packageName.contains("/")) {
+                // Custom repo — try fuzzy name match against installed apps
+                val fuzzyMatch = apps.find { installed ->
+                    installed.name.equals(app.repo, ignoreCase = true) ||
+                    installed.name.replace(" ", "").equals(app.repo, ignoreCase = true) ||
+                    app.repo.contains(installed.name, ignoreCase = true) ||
+                    installed.name.contains(app.repo, ignoreCase = true)
+                }
+                if (fuzzyMatch != null) {
+                    checks.add(checkApp(apps, app.user, app.repo, fuzzyMatch.packageName, fuzzyMatch.version, null))
+                }
+                // If no match found, skip — user needs to link the repo to an installed app in Settings
             }
         }
         if (checks.isEmpty()) {
@@ -63,8 +88,8 @@ class GitLabRepository(
                 oldVersionCode = app?.versionCode ?: 0L,
                 source = GitLabSource,
                 link = Link.Url(getApkUrl(packageName, releases[0])),
-                whatsNew = releases[0].description,
-                iconUri = if (apps == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY
+                whatsNew = releases[0].description.orEmpty(),
+                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY
             )))
         } else {
             emit(emptyList())
@@ -77,7 +102,7 @@ class GitLabRepository(
     suspend fun search(text: String) = flow {
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
 
-        GitLabApps.forEach { app ->
+        loadAllApps().forEach { app ->
             if (app.repo.contains(text, true) || app.user.contains(text, true) || app.packageName.contains(text, true)) {
                 checks.add(checkApp(null, app.user, app.repo, app.packageName, "?", null))
             }

@@ -1,6 +1,5 @@
 package com.apkupdater.ui.component
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
@@ -168,14 +167,16 @@ fun ExpandingAnnotatedText(
     minLines: Int = 2,
     style: TextStyle = MaterialTheme.typography.bodySmall,
 ) {
+    if (text.text.isBlank()) return
+    val trimmed = if (text.text.lastOrNull() == '\n') text.subSequence(0, text.length - 1) else text
+    if (trimmed.text.isEmpty()) return
     var isExpanded by remember { mutableStateOf(false) }
     Text(
-        text =  if (text.text.last() == '\n') text.subSequence(0, text.length - 1) else text,
+        text = trimmed,
         maxLines = if (isExpanded) Int.MAX_VALUE else minLines,
         style = style,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
-            .clickable(true) { isExpanded = !isExpanded }
-            .animateContentSize(),
+            .clickable(true) { isExpanded = !isExpanded },
     )
 }

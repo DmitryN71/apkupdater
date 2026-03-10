@@ -25,7 +25,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Alignment.Companion.CenterVertically
@@ -37,15 +40,27 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.apkupdater.BuildConfig
 import com.apkupdater.R
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.runtime.LaunchedEffect
+import com.apkupdater.data.github.GitProvider
 import com.apkupdater.data.ui.GitHubSource
+import android.widget.Toast
 import com.apkupdater.data.ui.SettingsUiState
 import com.apkupdater.ui.component.ButtonSetting
 import com.apkupdater.ui.component.DropDownSetting
 import com.apkupdater.ui.component.LargeTitle
 import com.apkupdater.ui.component.LoadingImageApp
+import com.apkupdater.ui.component.SectionHeader
 import com.apkupdater.ui.component.MediumText
 import com.apkupdater.ui.component.MediumTitle
 import com.apkupdater.ui.component.SegmentedButtonSetting
@@ -78,51 +93,16 @@ fun About() = LazyColumn(
 			LoadingImageApp(BuildConfig.APPLICATION_ID)
 			LargeTitle(stringResource(R.string.app_name), Modifier.align(CenterHorizontally))
 			MediumText("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.align(CenterHorizontally))
-			MediumText("Copyright © 2016-${Calendar.getInstance().get(Calendar.YEAR)} rumboalla", Modifier.align(CenterHorizontally))
+			MediumText("Based on APKUpdater by rumboalla", Modifier.align(CenterHorizontally))
+			MediumText("Forked by Dmitry_N", Modifier.align(CenterHorizontally))
 		}
 	}
 	item {
 		AboutItem(
 			"GitHub - APKUpdater",
 			stringResource(R.string.about_github),
-			"https://github.com/rumboalla/apkupdater",
+			"https://github.com/DmitryN71/apkupdater",
 			{ SourceIcon(GitHubSource, Modifier.size(64.dp).align(CenterVertically)) }
-		)
-		AboutItem(
-			"Donate - Malaria Consortium",
-			stringResource(R.string.about_donate),
-			"https://www.malariaconsortium.org/support-us/donate.htm",
-			{
-				AsyncImage(
-					"https://www.malariaconsortium.org/website-2017/_images/logo-mc.png",
-					"Malaria Consortium",
-					Modifier.size(64.dp).align(CenterVertically)
-				)
-			}
-		)
-		AboutItem(
-			"Donate - New Incentives",
-			stringResource(R.string.about_donate),
-			"https://www.newincentives.org/donate",
-			{
-				AsyncImage(
-					"https://i.vimeocdn.com/portrait/81193504_60x60",
-					"New Incentives",
-					Modifier.size(64.dp).align(CenterVertically)
-				)
-			}
-		)
-		AboutItem(
-			"Donate - Sightsavers",
-			stringResource(R.string.about_donate),
-			"https://donate.sightsavers.org/smxpatron/global/donate.html",
-			{
-				AsyncImage(
-					"https://www.sightsavers.org/wp-content/uploads/2017/10/Sightsavers-Author-Placeholder.png",
-					"Sightsavers",
-					Modifier.size(64.dp).align(CenterVertically)
-				)
-			}
 		)
 	}
 }
@@ -149,7 +129,7 @@ fun AboutItem(
 @Composable
 fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 	item {
-		LargeTitle(stringResource(R.string.settings_ui), Modifier.padding(start = 16.dp, top = 16.dp))
+		SectionHeader(stringResource(R.string.settings_ui))
 		SwitchSetting(
 			{ viewModel.getPlayTextAnimations() },
 			{ viewModel.setPlayTextAnimations(it) },
@@ -170,7 +150,7 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 	}
 
 	item {
-		LargeTitle(stringResource(R.string.settings_sources), Modifier.padding(start = 16.dp, top = 16.dp))
+		SectionHeader(stringResource(R.string.settings_sources))
 		SwitchSetting(
 			{ viewModel.getUseGitHub() },
 			{ viewModel.setUseGitHub(it) },
@@ -216,7 +196,7 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 		SwitchSetting(
 			{ viewModel.getUsePlay() },
 			{ viewModel.setUsePlay(it) },
-			stringResource(R.string.source_play) + " (Alpha)",
+			stringResource(R.string.source_play),
 			R.drawable.ic_play
 		)
 		SwitchSetting(
@@ -228,7 +208,106 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 	}
 
 	item {
-		LargeTitle(stringResource(R.string.settings_options), Modifier.padding(start = 16.dp, top = 16.dp))
+		SectionHeader(stringResource(R.string.settings_custom_repos))
+		var repoUrl by remember { mutableStateOf("") }
+		var errorMsg by remember { mutableStateOf<String?>(null) }
+		var repos by remember { mutableStateOf(viewModel.getCustomGitRepos()) }
+		val invalidUrlMsg = stringResource(R.string.invalid_repo_url)
+
+		// App picker state
+		var appQuery by remember { mutableStateOf("") }
+		var selectedPkgName by remember { mutableStateOf("") }
+		var appDropdownExpanded by remember { mutableStateOf(false) }
+		LaunchedEffect(Unit) { viewModel.loadInstalledApps() }
+		val allApps = viewModel.installedApps.collectAsStateWithLifecycle().value
+
+		OutlinedTextField(
+			value = repoUrl,
+			onValueChange = { repoUrl = it; errorMsg = null },
+			label = { Text(stringResource(R.string.custom_repo_hint)) },
+			isError = errorMsg != null,
+			supportingText = errorMsg?.let { msg -> { Text(msg) } },
+			singleLine = true,
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+		)
+
+		// Installed app picker
+		Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+			OutlinedTextField(
+				value = appQuery,
+				onValueChange = {
+					appQuery = it
+					selectedPkgName = ""
+					appDropdownExpanded = it.length >= 2
+				},
+				label = { Text(stringResource(R.string.link_installed_app)) },
+				singleLine = true,
+				modifier = Modifier.fillMaxWidth()
+			)
+			val filtered = if (appQuery.length >= 2) {
+				allApps.filter { it.name.contains(appQuery, ignoreCase = true) }.take(8)
+			} else emptyList()
+			DropdownMenu(
+				expanded = appDropdownExpanded && filtered.isNotEmpty(),
+				onDismissRequest = { appDropdownExpanded = false },
+				modifier = Modifier.heightIn(max = 250.dp),
+				properties = PopupProperties(focusable = false)
+			) {
+				filtered.forEach { app ->
+					DropdownMenuItem(
+						text = { Text(app.name) },
+						onClick = {
+							appQuery = app.name
+							selectedPkgName = app.packageName
+							appDropdownExpanded = false
+						}
+					)
+				}
+			}
+		}
+
+		Row(
+			Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+			verticalAlignment = CenterVertically
+		) {
+			Spacer(Modifier.weight(1f))
+			IconButton(onClick = {
+				if (repoUrl.isBlank()) return@IconButton
+				val success = viewModel.addCustomGitRepo(repoUrl, selectedPkgName)
+				if (success) {
+					repoUrl = ""; errorMsg = null; appQuery = ""; selectedPkgName = ""
+					repos = viewModel.getCustomGitRepos()
+				} else errorMsg = invalidUrlMsg
+			}) {
+				Icon(Icons.Default.Add, stringResource(R.string.add_repo))
+			}
+		}
+
+		repos.forEach { repo ->
+			Row(
+				Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+				verticalAlignment = CenterVertically
+			) {
+				Icon(
+					painterResource(if (repo.platform == GitProvider.GITHUB) R.drawable.ic_github else R.drawable.ic_gitlab),
+					repo.platform.name,
+					Modifier.size(24.dp)
+				)
+				Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+					Text("${repo.user}/${repo.repo}", style = MaterialTheme.typography.bodyLarge)
+					if (repo.installedPackageName.isNotEmpty()) {
+						Text(repo.installedPackageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+					}
+				}
+				IconButton(onClick = { viewModel.removeCustomGitRepo(repo.id); repos = viewModel.getCustomGitRepos() }) {
+					Icon(Icons.Default.Delete, stringResource(R.string.delete))
+				}
+			}
+		}
+	}
+
+	item {
+		SectionHeader(stringResource(R.string.settings_options))
 		SwitchSetting(
 			{ viewModel.getRootInstall() },
 			{ viewModel.setRootInstall(it) },
@@ -275,45 +354,101 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 
 	item {
 		val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-		LargeTitle(stringResource(R.string.settings_alarm), Modifier.padding(start = 16.dp, top = 16.dp))
+		var alarmEnabled by remember { mutableStateOf(viewModel.getEnableAlarm()) }
+		SectionHeader(stringResource(R.string.settings_alarm))
 		SwitchSetting(
-			getValue = { viewModel.getEnableAlarm() },
-			setValue = { viewModel.setEnableAlarm(it, launcher) },
+			getValue = { alarmEnabled },
+			setValue = { viewModel.setEnableAlarm(it, launcher); alarmEnabled = it },
 			text = stringResource(R.string.settings_alarm),
 			icon = R.drawable.ic_alarm
 		)
-		if (LocalContext.current.isAndroidTv()) {
-			DropDownSetting(
-				text = stringResource(R.string.settings_hour),
-				options = (0..23).map { it.toString() },
-				getValue = { viewModel.getAlarmHour() },
-				setValue = { viewModel.setAlarmHour(it) },
-				icon = R.drawable.ic_hour
-			)
-		} else {
-			SliderSetting(
-				getValue = { viewModel.getAlarmHour().toFloat() },
-				setValue = { viewModel.setAlarmHour(it.toInt()) },
-				text = stringResource(R.string.settings_hour),
-				valueRange = 0f..23f,
-				steps = 23,
-				R.drawable.ic_hour
+		if (alarmEnabled) {
+			if (LocalContext.current.isAndroidTv()) {
+				DropDownSetting(
+					text = stringResource(R.string.settings_hour),
+					options = (0..23).map { it.toString() },
+					getValue = { viewModel.getAlarmHour() },
+					setValue = { viewModel.setAlarmHour(it) },
+					icon = R.drawable.ic_hour
+				)
+			} else {
+				SliderSetting(
+					getValue = { viewModel.getAlarmHour().toFloat() },
+					setValue = { viewModel.setAlarmHour(it.toInt()) },
+					text = stringResource(R.string.settings_hour),
+					valueRange = 0f..23f,
+					steps = 23,
+					R.drawable.ic_hour
+				)
+			}
+			SegmentedButtonSetting(
+				stringResource(R.string.frequency),
+				listOf(
+					stringResource(R.string.settings_alarm_daily),
+					stringResource(R.string.settings_alarm_3day),
+					stringResource(R.string.settings_alarm_weekly)
+				),
+				{ viewModel.getAlarmFrequency() },
+				{ viewModel.setAlarmFrequency(it) },
+				R.drawable.ic_frequency
 			)
 		}
-		SegmentedButtonSetting(
-			stringResource(R.string.frequency),
-			listOf(
-				stringResource(R.string.settings_alarm_daily),
-				stringResource(R.string.settings_alarm_3day),
-				stringResource(R.string.settings_alarm_weekly)
-			),
-			{ viewModel.getAlarmFrequency() },
-			{ viewModel.setAlarmFrequency(it) },
-			R.drawable.ic_frequency
-		)
 	}
 	item {
-		LargeTitle(stringResource(R.string.settings_utils), Modifier.padding(start = 16.dp, top = 16.dp))
+		val context = LocalContext.current
+		val exportLauncher = rememberLauncherForActivityResult(
+			ActivityResultContracts.CreateDocument("application/json")
+		) { uri ->
+			if (uri != null) {
+				val success = viewModel.exportConfigToUri(uri)
+				Toast.makeText(
+					context,
+					context.getString(if (success) R.string.config_exported else R.string.config_import_failed),
+					Toast.LENGTH_SHORT
+				).show()
+			}
+		}
+		val importLauncher = rememberLauncherForActivityResult(
+			ActivityResultContracts.OpenDocument()
+		) { uri ->
+			if (uri != null) {
+				val success = viewModel.importConfigFromUri(uri)
+				Toast.makeText(
+					context,
+					context.getString(if (success) R.string.config_imported else R.string.config_import_failed),
+					Toast.LENGTH_SHORT
+				).show()
+			}
+		}
+
+		SectionHeader(stringResource(R.string.settings_utils))
+		ButtonSetting(
+			stringResource(R.string.export_config),
+			{ exportLauncher.launch("apkupdater-config.json") },
+			R.drawable.ic_export,
+			R.drawable.ic_export
+		)
+		ButtonSetting(
+			stringResource(R.string.import_config),
+			{ importLauncher.launch(arrayOf("application/json")) },
+			R.drawable.ic_import,
+			R.drawable.ic_import
+		)
+		val ignoredCount = remember { mutableStateOf(viewModel.getIgnoredVersionsCount()) }
+		ButtonSetting(
+			stringResource(R.string.clear_ignored_versions, ignoredCount.value),
+			{
+				if (ignoredCount.value > 0) {
+					viewModel.clearIgnoredVersions()
+					ignoredCount.value = 0
+					Toast.makeText(context, context.getString(R.string.ignored_versions_cleared), Toast.LENGTH_SHORT).show()
+				} else {
+					Toast.makeText(context, context.getString(R.string.no_ignored_versions), Toast.LENGTH_SHORT).show()
+				}
+			},
+			R.drawable.ic_cleanup,
+			R.drawable.ic_cleanup
+		)
 		ButtonSetting(
 			stringResource(R.string.copy_app_list),
 			{ viewModel.copyAppList() },

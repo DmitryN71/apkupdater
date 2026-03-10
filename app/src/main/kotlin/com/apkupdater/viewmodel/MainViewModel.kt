@@ -87,13 +87,25 @@ class MainViewModel(
 			}
 			else -> {
 				// We assume error and cancel the install
+				val status = intent.extras?.getInt(PackageInstaller.EXTRA_STATUS) ?: -1
+				val rawMessage = intent.extras?.getString(PackageInstaller.EXTRA_STATUS_MESSAGE)
+				val reason = installErrorReason(status, rawMessage)
 				intent.getAppId()?.let {
-					installLog.emitStatus(AppInstallStatus(false, it))
+					installLog.emitStatus(AppInstallStatus(false, it, reason = reason))
 				}
-				val message = intent.extras?.getString(PackageInstaller.EXTRA_STATUS_MESSAGE)
-				Log.e("MainViewModel", "Failed to install app: $message $intent")
+				Log.e("MainViewModel", "Failed to install app: $rawMessage $intent")
 			}
 		}
+	}
+
+	private fun installErrorReason(status: Int, rawMessage: String?): String? = when (status) {
+		PackageInstaller.STATUS_FAILURE_ABORTED -> "Installation was cancelled"
+		PackageInstaller.STATUS_FAILURE_BLOCKED -> "Blocked by device policy"
+		PackageInstaller.STATUS_FAILURE_CONFLICT -> "Conflicting package signature"
+		PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "Incompatible with this device"
+		PackageInstaller.STATUS_FAILURE_INVALID -> "Invalid or corrupt APK"
+		PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough storage space"
+		else -> rawMessage
 	}
 
 	private fun processUpdateIntent(

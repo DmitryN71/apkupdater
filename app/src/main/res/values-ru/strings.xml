@@ -27,10 +27,10 @@
     <string name="play_text_animations">Проигрывать анимации текста</string>
     <string name="settings_sources">Источники</string>
     <string name="settings_ui">Интерфейс</string>
-    <string name="settings_alarm">Будильник</string>
+    <string name="settings_alarm">Авто-проверка</string>
     <string name="settings_options">Настройки</string>
     <string name="settings_utils">Утилиты</string>
-    <string name="settings_hour">Время звонка</string>
+    <string name="settings_hour">Время проверки</string>
     <string name="settings_alarm_daily">Ежедневно</string>
     <string name="settings_alarm_3day">3 Дня</string>
     <string name="settings_alarm_weekly">Еженедельно</string>
@@ -57,6 +57,27 @@
     <string name="about_donate">Если вам нравится приложение, подумайте о пожертвовании на достойное дело.</string>
     <string name="copy_to_clipboard">Копировать в буфер обмена</string>
     <string name="copy_app_list">Скопировать список приложений</string>
+    <string name="copy_app_logs">Скопировать логи</string>
+    <string name="clean_up_after_install">Очистить после установки</string>
+    <string name="source_errors">%1$d из %2$d источников не удалось проверить.</string>
+    <string name="checking_sources">Проверка: %1$s</string>
+    <string name="settings_custom_repos">Пользовательские репозитории</string>
+    <string name="custom_repo_hint">github.com/user/repo</string>
+    <string name="add_repo">Добавить</string>
+    <string name="invalid_repo_url">Неверный URL. Используйте github.com/user/repo или gitlab.com/user/repo</string>
+    <string name="delete">Удалить</string>
+    <string name="link_installed_app">Привязать к приложению (опционально)</string>
+    <string name="shizuku_install_not_supported">Установка через Shizuku не поддерживается для этого приложения.</string>
+    <string name="all_up_to_date">Все приложения обновлены!</string>
+    <string name="install_all">Обновить все</string>
+    <string name="export_config">Экспорт конфигурации</string>
+    <string name="import_config">Импорт конфигурации</string>
+    <string name="config_exported">Конфигурация экспортирована</string>
+    <string name="config_imported">Конфигурация импортирована</string>
+    <string name="config_import_failed">Не удалось импортировать конфигурацию</string>
+    <string name="clear_ignored_versions">Очистить игнорируемые версии (%1$d)</string>
+    <string name="ignored_versions_cleared">Игнорируемые версии очищены</string>
+    <string name="no_ignored_versions">Нет игнорируемых версий</string>
 
     // Notifications
     <string name="notification_channel_name">Обновления</string>

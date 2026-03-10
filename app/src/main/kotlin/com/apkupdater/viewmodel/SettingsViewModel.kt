@@ -4,6 +4,9 @@ import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
+import com.apkupdater.data.github.CustomGitRepo
+import com.apkupdater.data.github.parseRepoUrl
+import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.SettingsUiState
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.AppsRepository
@@ -12,13 +15,18 @@ import com.apkupdater.util.Clipboard
 import com.apkupdater.util.Themer
 import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.worker.UpdatesWorker
+import android.content.Context
+import android.net.Uri
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import android.content.pm.PackageManager
 import com.topjohnwu.superuser.Shell
 import rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -30,10 +38,20 @@ class SettingsViewModel(
 	private val clipboard: Clipboard,
 	private val appsRepository: AppsRepository,
 	private val gson: Gson = GsonBuilder().setPrettyPrinting().create(),
-	private val themer: Themer
+	private val themer: Themer,
+	private val context: Context
 ) : ViewModel() {
 
 	val state = MutableStateFlow<SettingsUiState>(SettingsUiState.Settings)
+
+	private val _installedApps = MutableStateFlow<List<AppInstalled>>(emptyList())
+	val installedApps: StateFlow<List<AppInstalled>> = _installedApps
+
+	fun loadInstalledApps() = viewModelScope.launch(Dispatchers.IO) {
+		appsRepository.getApps().collectLatest { result ->
+			result.onSuccess { _installedApps.value = it }
+		}
+	}
 
 	private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
 		if (grantResult == PackageManager.PERMISSION_GRANTED) {
@@ -172,5 +190,105 @@ class SettingsViewModel(
 		val data = process.inputStream.readBytes()
 		clipboard.copy(data.decodeToString(), "App Logs")
 	}
+
+	fun getIgnoredVersionsCount(): Int = prefs.ignoredVersions.get().size
+
+	fun clearIgnoredVersions() = prefs.ignoredVersions.put(emptyList())
+
+	fun getCustomGitRepos(): List<CustomGitRepo> = prefs.customGitRepos.get()
+
+	fun addCustomGitRepo(url: String, installedPkgName: String = ""): Boolean {
+		val repo = parseRepoUrl(url) ?: return false
+		val current = prefs.customGitRepos.get()
+		if (current.any { it.user == repo.user && it.repo == repo.repo }) return true
+		prefs.customGitRepos.put(current + repo.copy(installedPackageName = installedPkgName))
+		return true
+	}
+
+	fun removeCustomGitRepo(id: String) {
+		val current = prefs.customGitRepos.get()
+		prefs.customGitRepos.put(current.filterNot { it.id == id })
+	}
+
+	fun exportConfig(): String {
+		val config = JsonObject().apply {
+			addProperty("excludeSystem", prefs.excludeSystem.get())
+			addProperty("excludeDisabled", prefs.excludeDisabled.get())
+			addProperty("excludeStore", prefs.excludeStore.get())
+			addProperty("playTextAnimations", prefs.playTextAnimations.get())
+			addProperty("ignoreAlpha", prefs.ignoreAlpha.get())
+			addProperty("ignoreBeta", prefs.ignoreBeta.get())
+			addProperty("ignorePreRelease", prefs.ignorePreRelease.get())
+			addProperty("useSafeStores", prefs.useSafeStores.get())
+			addProperty("useApkMirror", prefs.useApkMirror.get())
+			addProperty("useGitHub", prefs.useGitHub.get())
+			addProperty("useGitLab", prefs.useGitLab.get())
+			addProperty("useFdroid", prefs.useFdroid.get())
+			addProperty("useIzzy", prefs.useIzzy.get())
+			addProperty("useAptoide", prefs.useAptoide.get())
+			addProperty("useApkPure", prefs.useApkPure.get())
+			addProperty("usePlay", prefs.usePlay.get())
+			addProperty("useRuStore", prefs.useRuStore.get())
+			addProperty("enableAlarm", prefs.enableAlarm.get())
+			addProperty("alarmHour", prefs.alarmHour.get())
+			addProperty("alarmFrequency", prefs.alarmFrequency.get())
+			addProperty("rootInstall", prefs.rootInstall.get())
+			addProperty("shizukuInstall", prefs.shizukuInstall.get())
+			addProperty("theme", prefs.theme.get())
+			addProperty("cleanUpAfterInstall", prefs.cleanUpAfterInstall.get())
+			add("ignoredApps", gson.toJsonTree(prefs.ignoredApps.get()))
+			add("customGitRepos", gson.toJsonTree(prefs.customGitRepos.get()))
+		}
+		return gson.toJson(config)
+	}
+
+	fun exportConfigToUri(uri: Uri): Boolean = runCatching {
+		context.contentResolver.openOutputStream(uri)?.use { stream ->
+			stream.write(exportConfig().toByteArray())
+		}
+		true
+	}.getOrElse { false }
+
+	fun importConfigFromUri(uri: Uri): Boolean = runCatching {
+		val json = context.contentResolver.openInputStream(uri)?.use { stream ->
+			stream.bufferedReader().readText()
+		} ?: return false
+		importConfig(json)
+	}.getOrElse { false }
+
+	private fun importConfig(json: String): Boolean = runCatching {
+		val obj = JsonParser.parseString(json).asJsonObject
+		obj.get("excludeSystem")?.asBoolean?.let { prefs.excludeSystem.put(it) }
+		obj.get("excludeDisabled")?.asBoolean?.let { prefs.excludeDisabled.put(it) }
+		obj.get("excludeStore")?.asBoolean?.let { prefs.excludeStore.put(it) }
+		obj.get("playTextAnimations")?.asBoolean?.let { prefs.playTextAnimations.put(it) }
+		obj.get("ignoreAlpha")?.asBoolean?.let { prefs.ignoreAlpha.put(it) }
+		obj.get("ignoreBeta")?.asBoolean?.let { prefs.ignoreBeta.put(it) }
+		obj.get("ignorePreRelease")?.asBoolean?.let { prefs.ignorePreRelease.put(it) }
+		obj.get("useSafeStores")?.asBoolean?.let { prefs.useSafeStores.put(it) }
+		obj.get("useApkMirror")?.asBoolean?.let { prefs.useApkMirror.put(it) }
+		obj.get("useGitHub")?.asBoolean?.let { prefs.useGitHub.put(it) }
+		obj.get("useGitLab")?.asBoolean?.let { prefs.useGitLab.put(it) }
+		obj.get("useFdroid")?.asBoolean?.let { prefs.useFdroid.put(it) }
+		obj.get("useIzzy")?.asBoolean?.let { prefs.useIzzy.put(it) }
+		obj.get("useAptoide")?.asBoolean?.let { prefs.useAptoide.put(it) }
+		obj.get("useApkPure")?.asBoolean?.let { prefs.useApkPure.put(it) }
+		obj.get("usePlay")?.asBoolean?.let { prefs.usePlay.put(it) }
+		obj.get("useRuStore")?.asBoolean?.let { prefs.useRuStore.put(it) }
+		obj.get("enableAlarm")?.asBoolean?.let { prefs.enableAlarm.put(it) }
+		obj.get("alarmHour")?.asInt?.let { prefs.alarmHour.put(it) }
+		obj.get("alarmFrequency")?.asInt?.let { prefs.alarmFrequency.put(it) }
+		obj.get("rootInstall")?.asBoolean?.let { prefs.rootInstall.put(it) }
+		obj.get("shizukuInstall")?.asBoolean?.let { prefs.shizukuInstall.put(it) }
+		obj.get("theme")?.asInt?.let { prefs.theme.put(it); themer.setTheme(isDarkTheme(it)) }
+		obj.get("cleanUpAfterInstall")?.asBoolean?.let { prefs.cleanUpAfterInstall.put(it) }
+		obj.get("ignoredApps")?.let {
+			prefs.ignoredApps.put(gson.fromJson(it, Array<String>::class.java).toList())
+		}
+		obj.get("customGitRepos")?.let {
+			prefs.customGitRepos.put(gson.fromJson(it, Array<CustomGitRepo>::class.java).toList())
+		}
+		true
+	}.getOrElse { false }
 
 }

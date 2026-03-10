@@ -4,9 +4,12 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import com.apkupdater.BuildConfig
+import com.apkupdater.data.github.GitHubApp
 import com.apkupdater.data.github.GitHubApps
+import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.github.GitHubRelease
 import com.apkupdater.data.github.GitHubReleaseAsset
+import com.apkupdater.data.github.GitProvider
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.GitHubSource
@@ -14,8 +17,10 @@ import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.GitHubService
+import com.apkupdater.util.SnackBar
 import com.apkupdater.util.combine
 import com.apkupdater.util.filterVersionTag
+import retrofit2.HttpException
 import io.github.g00fy2.versioncompare.Version
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -26,16 +31,43 @@ import java.util.Scanner
 
 class GitHubRepository(
     private val service: GitHubService,
-    private val prefs: Prefs
+    private val prefs: Prefs,
+    private val snackBar: SnackBar
 ) {
+
+    private var rateLimitWarned = false
+
+    private fun loadAllApps(): List<GitHubApp> {
+        val custom = prefs.customGitRepos.get()
+            .filter { it.platform == GitProvider.GITHUB }
+            .map { GitHubApp(it.installedPackageName.ifEmpty { it.packageName }, it.user, it.repo) }
+        // Custom repos override hardcoded entries with same user/repo to prevent duplicates
+        val customKeys = custom.map { "${it.user}/${it.repo}".lowercase() }.toSet()
+        val filtered = GitHubApps.filter { "${it.user}/${it.repo}".lowercase() !in customKeys }
+        return filtered + custom
+    }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val checks = mutableListOf(selfCheck())
+        val allApps = loadAllApps()
 
-        GitHubApps.forEachIndexed { i, app ->
-            if (i != 0) {
-                apps.find { it.packageName == app.packageName }?.let {
-                    checks.add(checkApp(apps, app.user, app.repo, app.packageName, it.version, app.extra))
+        allApps.forEach { app ->
+            if (app.packageName != BuildConfig.APPLICATION_ID) {
+                val installedApp = apps.find { it.packageName == app.packageName }
+                if (installedApp != null) {
+                    checks.add(checkApp(apps, app.user, app.repo, app.packageName, installedApp.version, app.extra))
+                } else if (app.packageName.contains("/")) {
+                    // Custom repo — try fuzzy name match against installed apps
+                    val fuzzyMatch = apps.find { installed ->
+                        installed.name.equals(app.repo, ignoreCase = true) ||
+                        installed.name.replace(" ", "").equals(app.repo, ignoreCase = true) ||
+                        app.repo.contains(installed.name, ignoreCase = true) ||
+                        installed.name.contains(app.repo, ignoreCase = true)
+                    }
+                    if (fuzzyMatch != null) {
+                        checks.add(checkApp(apps, app.user, app.repo, fuzzyMatch.packageName, fuzzyMatch.version, null))
+                    }
+                    // If no match found, skip — user needs to link the repo to an installed app in Settings
                 }
             }
         }
@@ -44,14 +76,16 @@ class GitHubRepository(
             emit(all.flatMap { it })
         }.collect()
     }.catch {
+        handleRateLimit(it)
         emit(emptyList())
         Log.e("GitHubRepository", "Error fetching releases.", it)
     }
 
     suspend fun search(text: String) = flow {
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
+        val allApps = loadAllApps()
 
-        GitHubApps.forEach { app ->
+        allApps.forEach { app ->
             if (app.repo.contains(text, true) || app.user.contains(text, true) || app.packageName.contains(text, true)) {
                 checks.add(checkApp(null, app.user, app.repo, app.packageName, "?", null))
             }
@@ -66,6 +100,7 @@ class GitHubRepository(
             }.collect()
         }
     }.catch {
+        handleRateLimit(it)
         emit(Result.failure(it))
         Log.e("GitHubRepository", "Error searching.", it)
     }
@@ -84,7 +119,7 @@ class GitHubRepository(
                 oldVersionCode = BuildConfig.VERSION_CODE.toLong(),
                 source = GitHubSource,
                 link = Link.Url(releases[0].assets[0].browser_download_url),
-                whatsNew = releases[0].body
+                whatsNew = releases[0].body.orEmpty()
             )))
         } else {
             // We need to emit empty so it can be combined later
@@ -122,13 +157,14 @@ class GitHubRepository(
                 oldVersionCode = app?.versionCode ?: 0L,
                 source = GitHubSource,
                 link = findApkAssetArch(releases[0].assets, extra).let { Link.Url(it.browser_download_url, it.size) },
-                whatsNew = releases[0].body,
-                iconUri = if (apps == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY
+                whatsNew = releases[0].body.orEmpty(),
+                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY
             )))
         } else {
             emit(emptyList())
         }
     }.catch {
+        handleRateLimit(it)
         emit(emptyList())
         Log.e("GitHubRepository", "Error fetching releases for $packageName.", it)
     }
@@ -204,6 +240,16 @@ class GitHubRepository(
     private fun filterExtra(asset: GitHubReleaseAsset, extra: Regex?) = when(extra) {
         null -> true
         else -> asset.browser_download_url.matches(extra)
+    }
+
+    private fun handleRateLimit(t: Throwable) {
+        if (!rateLimitWarned && t is HttpException && t.code() == 403) {
+            val remaining = t.response()?.headers()?.get("X-RateLimit-Remaining")
+            if (remaining == "0") {
+                rateLimitWarned = true
+                snackBar.snackBar(message = TextSnack("GitHub API rate limit reached. Try again later."))
+            }
+        }
     }
 
 }

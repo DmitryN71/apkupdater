@@ -2,7 +2,7 @@ package com.apkupdater.data.ui
 
 
 sealed class UpdatesUiState {
-	data object Loading: UpdatesUiState()
+	data class Loading(val completed: Int = 0, val total: Int = 0): UpdatesUiState()
 	data object Error : UpdatesUiState()
 	data class Success(val updates: List<AppUpdate>): UpdatesUiState()
 

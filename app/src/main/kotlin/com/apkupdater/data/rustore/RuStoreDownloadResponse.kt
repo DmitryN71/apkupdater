@@ -8,7 +8,10 @@ data class RuStoreDownloadResponse(
 )
 
 data class RuStoreDownloadBody(
-	val appId: Long = 0L,
-	val apkUrl: String = "",
-	val versionCode: Long = 0L
+	val downloadUrls: List<RuStoreDownloadUrl> = emptyList()
+)
+
+data class RuStoreDownloadUrl(
+	val url: String = "",
+	val type: String = ""
 )
