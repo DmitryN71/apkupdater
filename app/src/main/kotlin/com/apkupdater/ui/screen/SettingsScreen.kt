@@ -157,6 +157,15 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			stringResource(R.string.source_github),
 			R.drawable.ic_github
 		)
+		var githubToken by remember { mutableStateOf(viewModel.getGitHubToken()) }
+		OutlinedTextField(
+			value = githubToken,
+			onValueChange = { githubToken = it; viewModel.setGitHubToken(it) },
+			label = { Text(stringResource(R.string.github_token)) },
+			placeholder = { Text(stringResource(R.string.github_token_hint)) },
+			singleLine = true,
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+		)
 		SwitchSetting(
 			{ viewModel.getUseGitLab() },
 			{ viewModel.setUseGitLab(it) },

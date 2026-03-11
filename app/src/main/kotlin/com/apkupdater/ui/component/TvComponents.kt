@@ -90,12 +90,18 @@ fun TvCommonItem(
 	versionCode: Long,
 	oldVersionCode: Long?,
 	uri: Uri? = null,
-	single: Boolean = false
+	single: Boolean = false,
+	source: Source? = null
 ) = Row(Modifier.padding(12.dp)) {
-	if (uri == null) {
-		LoadingImageApp(packageName, Modifier.height(100.dp).align(Alignment.CenterVertically))
-	} else {
-		LoadingImage(uri, Modifier.height(100.dp).align(Alignment.CenterVertically))
+	Column(horizontalAlignment = Alignment.CenterHorizontally) {
+		if (uri == null) {
+			LoadingImageApp(packageName, Modifier.height(100.dp))
+		} else {
+			LoadingImage(uri, Modifier.height(100.dp))
+		}
+		if (source != null) {
+			SourceChip(source, Modifier.padding(top = 6.dp))
+		}
 	}
 	Column(Modifier.align(Alignment.CenterVertically).padding(start = 12.dp)) {
 		LargeTitle(name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName })
@@ -126,7 +132,7 @@ fun TvInstallButton(
 	app: AppUpdate,
 	onInstall: (String) -> Unit
 ) = OutlinedButton(
-	modifier = Modifier.padding(4.dp).width(120.dp),
+	modifier = Modifier.padding(4.dp),
 	onClick = { onInstall(app.packageName) },
 	colors = ButtonDefaults.outlinedButtonColors(
 		contentColor = MaterialTheme.colorScheme.primary
@@ -188,7 +194,7 @@ fun TvUpdateItem(
 	onIgnoreVersion: (Int) -> Unit
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY })
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -196,10 +202,9 @@ fun TvUpdateItem(
 		)
 		Row(
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-			verticalAlignment = Alignment.CenterVertically
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.End
 		) {
-			SourceChip(app.source)
-			Spacer(Modifier.weight(1f))
 			TvIgnoreVersionButton(app, onIgnoreVersion)
 			TvInstallButton(app, onInstall)
 		}
@@ -209,7 +214,7 @@ fun TvUpdateItem(
 @Composable
 fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -217,10 +222,9 @@ fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}) = OutlinedCar
 		)
 		Row(
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-			verticalAlignment = Alignment.CenterVertically
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.End
 		) {
-			SourceChip(app.source)
-			Spacer(Modifier.weight(1f))
 			TvInstallButton(app, onInstall)
 		}
 	}

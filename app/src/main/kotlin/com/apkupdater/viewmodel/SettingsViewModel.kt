@@ -91,6 +91,8 @@ class SettingsViewModel(
 	fun setUseIzzy(b: Boolean) = prefs.useIzzy.put(b)
 	fun getUseGitHub() = prefs.useGitHub.get()
 	fun setUseGitHub(b: Boolean) = prefs.useGitHub.put(b)
+	fun getGitHubToken() = prefs.githubToken.get()
+	fun setGitHubToken(token: String) = prefs.githubToken.put(token.trim())
 	fun getUseGitLab() = prefs.useGitLab.get()
 	fun setUseGitLab(b: Boolean) = prefs.useGitLab.put(b)
 	fun getUseAptoide() = prefs.useAptoide.get()
@@ -236,6 +238,7 @@ class SettingsViewModel(
 			addProperty("shizukuInstall", prefs.shizukuInstall.get())
 			addProperty("theme", prefs.theme.get())
 			addProperty("cleanUpAfterInstall", prefs.cleanUpAfterInstall.get())
+			addProperty("githubToken", prefs.githubToken.get())
 			add("ignoredApps", gson.toJsonTree(prefs.ignoredApps.get()))
 			add("customGitRepos", gson.toJsonTree(prefs.customGitRepos.get()))
 		}
@@ -282,6 +285,7 @@ class SettingsViewModel(
 		obj.get("shizukuInstall")?.asBoolean?.let { prefs.shizukuInstall.put(it) }
 		obj.get("theme")?.asInt?.let { prefs.theme.put(it); themer.setTheme(isDarkTheme(it)) }
 		obj.get("cleanUpAfterInstall")?.asBoolean?.let { prefs.cleanUpAfterInstall.put(it) }
+		obj.get("githubToken")?.asString?.let { prefs.githubToken.put(it) }
 		obj.get("ignoredApps")?.let {
 			prefs.ignoredApps.put(gson.fromJson(it, Array<String>::class.java).toList())
 		}

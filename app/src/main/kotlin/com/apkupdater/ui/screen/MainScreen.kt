@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -35,9 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
-import androidx.compose.material3.pullrefresh.PullRefreshIndicator
-import androidx.compose.material3.pullrefresh.pullRefresh
-import androidx.compose.material3.pullrefresh.rememberPullRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -88,12 +84,9 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	// Navigation
 	val navController = rememberNavController()
 
-	// Pull to refresh
+	// Refresh
 	val isRefreshing = mainViewModel.isRefreshing.collectAsStateWithLifecycle()
-	val pullToRefresh = rememberPullRefreshState(isRefreshing.value, {
-		mainViewModel.refresh(appsViewModel, updatesViewModel)
-	})
-	LaunchedEffect(pullToRefresh) {
+	LaunchedEffect(Unit) {
 		mainViewModel.refresh(appsViewModel, updatesViewModel)
 	}
 
@@ -155,15 +148,12 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 			},
 			bottomBar = { BottomBar(mainViewModel, navController) }
 		) { padding ->
-			Box(modifier = Modifier.pullRefresh(pullToRefresh)) {
-				NavHost(navController, padding, mainViewModel, appsViewModel, updatesViewModel, searchViewModel, settingsViewModel)
-				PullRefreshIndicator(
-					refreshing = isRefreshing.value,
-					state = pullToRefresh,
-					modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding(),
-					contentColor = MaterialTheme.colorScheme.primary
-				)
-			}
+			NavHost(
+				navController, padding, mainViewModel, appsViewModel,
+				updatesViewModel, searchViewModel, settingsViewModel,
+				isRefreshing = isRefreshing.value,
+				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
+			)
 		}
 	}
 }
@@ -259,7 +249,9 @@ fun NavHost(
 	appsViewModel: AppsViewModel,
 	updatesViewModel: UpdatesViewModel,
 	searchViewModel: SearchViewModel,
-	settingsViewModel: SettingsViewModel
+	settingsViewModel: SettingsViewModel,
+	isRefreshing: Boolean = false,
+	onRefresh: () -> Unit = {}
 ) = NavHost(
 	navController = navController,
 	startDestination = mainViewModel.getLastRoute(),
@@ -267,6 +259,6 @@ fun NavHost(
 ) {
 	composable(Screen.Apps.route) { AppsScreen(appsViewModel) }
 	composable(Screen.Search.route) { SearchScreen(searchViewModel) }
-	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel) }
+	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, isRefreshing, onRefresh) }
 	composable(Screen.Settings.route) { SettingsScreen(settingsViewModel) }
 }

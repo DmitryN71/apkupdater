@@ -46,4 +46,5 @@ class Prefs(
 	val lastPlayCheck = long("lastPlayCheck", 0L, true)
 	val ruStore404Packages = json("ruStore404Packages", emptyList<RuStore404Entry>(), true)
 	val customGitRepos = json("customGitRepos", emptyList<CustomGitRepo>(), true)
+	val githubToken = string("githubToken", defValue = "", backed = true)
 }

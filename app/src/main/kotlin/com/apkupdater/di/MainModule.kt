@@ -89,8 +89,22 @@ val mainModule = module {
 	}
 
 	single {
+		val prefs: Prefs = get()
+		val githubClient = get<OkHttpClient>().newBuilder()
+			.addInterceptor { chain ->
+				val token = prefs.githubToken.get()
+				val request = if (token.isNotBlank()) {
+					chain.request().newBuilder()
+						.header("Authorization", "token $token")
+						.build()
+				} else {
+					chain.request()
+				}
+				chain.proceed(request)
+			}
+			.build()
 		Retrofit.Builder()
-			.client(get())
+			.client(githubClient)
 			.baseUrl("https://api.github.com")
 			.addConverterFactory(GsonConverterFactory.create(get()))
 			.build()

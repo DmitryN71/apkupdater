@@ -18,7 +18,8 @@ data class RuStoreApp(
 	val fullDescription: String = "",
 	val iconUrl: String = "",
 	val fileSize: Long = 0L,
-	val companyName: String = ""
+	val companyName: String = "",
+	val whatsNew: String = ""
 )
 
 fun RuStoreApp.toAppUpdate(app: AppInstalled?, downloadUrl: String) = AppUpdate(
@@ -30,5 +31,6 @@ fun RuStoreApp.toAppUpdate(app: AppInstalled?, downloadUrl: String) = AppUpdate(
 	oldVersionCode = app?.versionCode ?: 0L,
 	source = RuStoreSource,
 	iconUri = if (iconUrl.isNotEmpty()) iconUrl.toUri() else Uri.EMPTY,
-	link = Link.Url(downloadUrl, fileSize)
+	link = Link.Url(downloadUrl, fileSize),
+	whatsNew = whatsNew
 )

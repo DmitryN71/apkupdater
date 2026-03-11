@@ -6,7 +6,7 @@
     <string name="tab_updates">Обновления</string>
     <string name="tab_settings">Настройки</string>
     <string name="something_went_wrong">"Что-то пошло не так\n\uD83E\uDD26"</string>
-    <string name="ignore_version">Проигнорировать версию</string>
+    <string name="ignore_version">Игнорировать версию</string>
     <string name="ignore_cd">Игнорировать приложение</string>
     <string name="unignore_cd">Перестать игнорировать приложение</string>
     <string name="refresh_updates">Следить за обновлениями</string>
@@ -16,7 +16,7 @@
     <string name="include_app_store">Включить магазин приложений</string>
     <string name="exclude_disabled_apps">Исключить отключенные приложения</string>
     <string name="include_disabled_apps">Включить отключенные приложения</string>
-    <string name="install_cd">Установить приложение</string>
+    <string name="install_cd">Установить</string>
     <string name="app_cd">Значок приложения</string>
     <string name="install_success">%1$s установлено.</string>
     <string name="install_failure">%1$s не удалось установить.</string>

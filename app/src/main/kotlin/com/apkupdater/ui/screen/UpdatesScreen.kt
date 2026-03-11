@@ -2,7 +2,6 @@ package com.apkupdater.ui.screen
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -22,6 +21,9 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.pullrefresh.PullRefreshIndicator
+import androidx.compose.material3.pullrefresh.pullRefresh
+import androidx.compose.material3.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -45,14 +47,14 @@ import com.apkupdater.viewmodel.UpdatesViewModel
 
 
 @Composable
-fun UpdatesScreen(viewModel: UpdatesViewModel) {
+fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, onRefresh: () -> Unit = {}) {
 	val progress = viewModel.refreshProgress.collectAsStateWithLifecycle().value
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
-		UpdatesScreenLoading(viewModel, progress)
+		UpdatesScreenLoading(viewModel, progress, isRefreshing, onRefresh)
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
-		UpdatesScreenSuccess(viewModel, it.updates, progress)
+		UpdatesScreenSuccess(viewModel, it.updates, progress, isRefreshing, onRefresh)
 	}
 }
 
@@ -87,10 +89,23 @@ fun ProgressBanner(text: String?) {
 }
 
 @Composable
-fun UpdatesScreenLoading(viewModel: UpdatesViewModel, progressSubtitle: String? = null) = Column {
+fun UpdatesScreenLoading(
+	viewModel: UpdatesViewModel,
+	progressSubtitle: String? = null,
+	isRefreshing: Boolean = false,
+	onRefresh: () -> Unit = {}
+) = Column {
 	UpdatesTopBar(viewModel)
 	ProgressBanner(progressSubtitle)
-	Box(Modifier.weight(1f).fillMaxWidth()) { LoadingGrid() }
+	val pullState = rememberPullRefreshState(isRefreshing, onRefresh)
+	Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
+		LoadingGrid()
+		PullRefreshIndicator(
+			isRefreshing, pullState,
+			Modifier.align(Alignment.TopCenter),
+			contentColor = MaterialTheme.colorScheme.primary
+		)
+	}
 }
 
 @Composable
@@ -101,21 +116,31 @@ fun UpdatesScreenError() = DefaultErrorScreen()
 fun UpdatesScreenSuccess(
 	viewModel: UpdatesViewModel,
 	updates: List<AppUpdate>,
-	progressSubtitle: String? = null
+	progressSubtitle: String? = null,
+	isRefreshing: Boolean = false,
+	onRefresh: () -> Unit = {}
 ) = Column {
 	val handler = LocalUriHandler.current
 
 	UpdatesTopBar(viewModel)
 	ProgressBanner(progressSubtitle)
 
+	val pullState = rememberPullRefreshState(isRefreshing, onRefresh)
 	if (updates.isEmpty()) {
-		Box(Modifier.weight(1f).fillMaxWidth()) { EmptyGrid() }
+		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
+			EmptyGrid()
+			PullRefreshIndicator(
+				isRefreshing, pullState,
+				Modifier.align(Alignment.TopCenter),
+				contentColor = MaterialTheme.colorScheme.primary
+			)
+		}
 	} else {
 		val showFab = updates.size > 1 && !updates.any { it.isInstalling }
 		val gridPadding = if (showFab) PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
 			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
-		Box(Modifier.weight(1f).fillMaxWidth()) {
+		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
 			TvInstalledGrid(contentPadding = gridPadding) {
 				items(updates, key = { it.id }) { update ->
 					TvUpdateItem(
@@ -142,6 +167,11 @@ fun UpdatesScreenSuccess(
 					}
 				}
 			}
+			PullRefreshIndicator(
+				isRefreshing, pullState,
+				Modifier.align(Alignment.TopCenter),
+				contentColor = MaterialTheme.colorScheme.primary
+			)
 		}
 	}
 }
