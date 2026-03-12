@@ -28,6 +28,7 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -121,6 +122,7 @@ fun UpdatesScreenSuccess(
 	onRefresh: () -> Unit = {}
 ) = Column {
 	val handler = LocalUriHandler.current
+	val context = LocalContext.current
 
 	UpdatesTopBar(viewModel)
 	ProgressBanner(progressSubtitle)
@@ -136,7 +138,8 @@ fun UpdatesScreenSuccess(
 			)
 		}
 	} else {
-		val showFab = updates.size > 1 && !updates.any { it.isInstalling }
+		val pendingUpdates = updates.filter { !it.isInstalled }
+		val showFab = pendingUpdates.size > 1 && !pendingUpdates.any { it.isInstalling }
 		val gridPadding = if (showFab) PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
 			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
@@ -146,7 +149,12 @@ fun UpdatesScreenSuccess(
 					TvUpdateItem(
 						update,
 						{ viewModel.install(update, handler) },
-						{ viewModel.ignoreVersion(update.id) }
+						{ viewModel.ignoreVersion(update.id) },
+						onOpen = { packageName ->
+							context.packageManager.getLaunchIntentForPackage(packageName)?.let {
+								context.startActivity(it)
+							}
+						}
 					)
 				}
 			}

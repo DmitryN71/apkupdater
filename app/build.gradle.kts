@@ -17,8 +17,8 @@ android {
         applicationId = "com.apkupdater" + System.getenv("BUILD_TAG").orEmpty()
         minSdk = 21
         targetSdk = 35
-        versionCode = 57
-        versionName = if (buildNumber.isEmpty()) "3.4.0" else "0.0.$buildNumber"
+        versionCode = 58
+        versionName = if (buildNumber.isEmpty()) "3.5.0" else "0.0.$buildNumber"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -27,11 +27,11 @@ android {
         create("release") {
             try {
                 val props = Properties()
-                props.load(FileInputStream(file("../local.properties")))
-                storeFile = file(props.getProperty("keystore.file"))
-                storePassword = props.getProperty("keystore.password")
-                keyAlias = props.getProperty("keystore.keyalias")
-                keyPassword = props.getProperty("keystore.keypassword")
+                props.load(FileInputStream(rootProject.file("keystore.properties")))
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
             } catch (ignored: Exception) {
                 val config = signingConfigs.getByName("debug")
                 storeFile = config.storeFile

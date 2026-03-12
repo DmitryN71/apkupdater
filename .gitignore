@@ -11,3 +11,5 @@
 *.zip
 .claude/
 apkupdateross-*/
+keystore.properties
+*.jks

@@ -2,6 +2,8 @@ package com.apkupdater.ui.component
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -111,6 +114,8 @@ fun TvCommonItem(
 				verticalAlignment = Alignment.CenterVertically,
 				horizontalArrangement = Arrangement.spacedBy(4.dp),
 				modifier = Modifier.padding(top = 4.dp)
+					.horizontalScroll(rememberScrollState())
+					.basicMarquee(iterations = Int.MAX_VALUE, velocity = 30.dp)
 			) {
 				VersionChip(oldVersion, isNew = false)
 				Text("→", style = MaterialTheme.typography.labelSmall,
@@ -130,12 +135,17 @@ fun TvCommonItem(
 @Composable
 fun TvInstallButton(
 	app: AppUpdate,
-	onInstall: (String) -> Unit
+	onInstall: (String) -> Unit,
+	onOpen: (String) -> Unit = {}
 ) = OutlinedButton(
 	modifier = Modifier.padding(4.dp),
-	onClick = { onInstall(app.packageName) },
+	onClick = {
+		if (app.isInstalled) onOpen(app.packageName)
+		else onInstall(app.packageName)
+	},
 	colors = ButtonDefaults.outlinedButtonColors(
-		contentColor = MaterialTheme.colorScheme.primary
+		contentColor = if (app.isInstalled) MaterialTheme.colorScheme.tertiary
+			else MaterialTheme.colorScheme.primary
 	),
 	border = ButtonDefaults.outlinedButtonBorder(enabled = true)
 ) {
@@ -146,6 +156,8 @@ fun TvInstallButton(
 		} else {
 			CircularProgressIndicator(Modifier.size(24.dp))
 		}
+	} else if (app.isInstalled) {
+		Text(stringResource(R.string.open_cd))
 	} else {
 		Text(stringResource(R.string.install_cd))
 	}
@@ -191,7 +203,8 @@ fun TvIgnoreVersionButton(
 fun TvUpdateItem(
 	app: AppUpdate,
 	onInstall: (String) -> Unit = {},
-	onIgnoreVersion: (Int) -> Unit
+	onIgnoreVersion: (Int) -> Unit,
+	onOpen: (String) -> Unit = {}
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source)
@@ -205,14 +218,16 @@ fun TvUpdateItem(
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.End
 		) {
-			TvIgnoreVersionButton(app, onIgnoreVersion)
-			TvInstallButton(app, onInstall)
+			if (!app.isInstalled) {
+				TvIgnoreVersionButton(app, onIgnoreVersion)
+			}
+			TvInstallButton(app, onInstall, onOpen)
 		}
 	}
 }
 
 @Composable
-fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}) = OutlinedCard(Modifier.fillMaxWidth()) {
+fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}, onOpen: (String) -> Unit = {}) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source)
 		WhatsNew(app.whatsNew, app.source)
@@ -225,7 +240,7 @@ fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}) = OutlinedCar
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.End
 		) {
-			TvInstallButton(app, onInstall)
+			TvInstallButton(app, onInstall, onOpen)
 		}
 	}
 }

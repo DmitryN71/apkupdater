@@ -31,6 +31,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -72,12 +73,19 @@ fun SearchScreenSuccess(
 	viewModel: SearchViewModel
 ) {
 	val uriHandler = LocalUriHandler.current
+	val context = LocalContext.current
 
 	TvInstalledGrid {
 		items(state.updates, key = { it.id }) { update ->
-			TvSearchItem(update) {
-				viewModel.install(update, uriHandler)
-			}
+			TvSearchItem(
+				update,
+				onInstall = { viewModel.install(update, uriHandler) },
+				onOpen = { packageName ->
+					context.packageManager.getLaunchIntentForPackage(packageName)?.let {
+						context.startActivity(it)
+					}
+				}
+			)
 		}
 	}
 }

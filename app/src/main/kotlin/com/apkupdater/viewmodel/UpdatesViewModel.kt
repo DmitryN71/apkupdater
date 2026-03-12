@@ -6,6 +6,7 @@ import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.data.ui.removeId
+import com.apkupdater.data.ui.setIsInstalled
 import com.apkupdater.data.ui.setIsInstalling
 import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
@@ -88,7 +89,9 @@ class UpdatesViewModel(
 	}
 
 	override fun finishInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		setSuccess(state.value.mutableUpdates().removeId(id))
+		val updates = state.value.mutableUpdates().setIsInstalled(id)
+		state.value = UpdatesUiState.Success(updates)
+		badger.changeUpdatesBadge(updates.count { !it.isInstalled }.toString())
 		installer.finish()
 	}
 
@@ -119,7 +122,7 @@ class UpdatesViewModel(
 	}
 
 	fun installAll(uriHandler: androidx.compose.ui.platform.UriHandler) {
-		val updates = state.value.updates().filter { !it.isInstalling }
+		val updates = state.value.updates().filter { !it.isInstalling && !it.isInstalled }
 		updates.forEach { update -> install(update, uriHandler) }
 	}
 

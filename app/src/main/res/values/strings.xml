@@ -17,6 +17,7 @@
     <string name="exclude_disabled_apps">Exclude Disabled Apps</string>
     <string name="include_disabled_apps">Include Disabled Apps</string>
     <string name="install_cd">Install</string>
+    <string name="open_cd">Open</string>
     <string name="app_cd">App Icon</string>
     <string name="install_success">%1$s installed.</string>
     <string name="install_failure">%1$s failed to install.</string>

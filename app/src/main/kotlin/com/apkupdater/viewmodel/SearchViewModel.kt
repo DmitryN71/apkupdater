@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.removeId
+import com.apkupdater.data.ui.setIsInstalled
 import com.apkupdater.data.ui.setIsInstalling
 import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
@@ -76,9 +77,9 @@ class SearchViewModel(
     }
 
     override fun finishInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-        val updates = state.value.mutableUpdates().removeId(id)
+        val updates = state.value.mutableUpdates().setIsInstalled(id)
         state.value = SearchUiState.Success(updates)
-        badger.changeSearchBadge(updates.size.toString())
+        badger.changeSearchBadge(updates.count { !it.isInstalled }.toString())
         installer.finish()
     }
 
