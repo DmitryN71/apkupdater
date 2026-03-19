@@ -24,5 +24,9 @@ fun FdroidUpdate.toAppUpdate(current: AppInstalled?, source: Source, url: String
     else
         "${url}icons-640/${app.icon}".toUri(),
     Link.Url("$url${apk.apkName}"),
-    if (current != null) app.localized["en-US"]?.whatsNew.orEmpty() else app.localized["en-US"]?.summary.orEmpty()
+    if (current != null) app.localized["en-US"]?.whatsNew.orEmpty() else app.localized["en-US"]?.summary.orEmpty(),
+    sourceUrl = if (url.contains("izzy", true))
+        "https://apt.izzysoft.de/fdroid/index/apk/${app.packageName}"
+    else
+        "https://f-droid.org/packages/${app.packageName}"
 )

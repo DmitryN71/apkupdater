@@ -119,7 +119,8 @@ class GitHubRepository(
                 oldVersionCode = BuildConfig.VERSION_CODE.toLong(),
                 source = GitHubSource,
                 link = Link.Url(releases[0].assets[0].browser_download_url),
-                whatsNew = releases[0].body.orEmpty()
+                whatsNew = releases[0].body.orEmpty(),
+                sourceUrl = "https://github.com/rumboalla/apkupdater/releases/tag/${releases[0].tag_name}"
             )))
         } else {
             // We need to emit empty so it can be combined later
@@ -158,7 +159,8 @@ class GitHubRepository(
                 source = GitHubSource,
                 link = findApkAssetArch(releases[0].assets, extra).let { Link.Url(it.browser_download_url, it.size) },
                 whatsNew = releases[0].body.orEmpty(),
-                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY
+                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
+                sourceUrl = "https://github.com/$user/$repo/releases/tag/${releases[0].tag_name}"
             )))
         } else {
             emit(emptyList())

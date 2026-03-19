@@ -17,6 +17,7 @@ data class AppUpdate(
 	val isInstalled: Boolean = false,
 	val total: Long = 0L,
 	val progress: Long = 0L,
+	val sourceUrl: String = "",
 	val id: Int = "${source.name}.$packageName.$versionCode.$version".hashCode()
 )
 
@@ -47,8 +48,14 @@ fun MutableList<AppUpdate>.setIsInstalled(id: Int): List<AppUpdate> {
 fun MutableList<AppUpdate>.setProgress(progress: AppInstallProgress): MutableList<AppUpdate> {
 	val index = this.indexOf(progress.id)
 	if (index != -1) {
-		progress.progress?.let { this[index] = this[index].copy(progress = it) }
-		progress.total?.let { this[index] = this[index].copy(total = it) }
+		var item = this[index]
+		progress.total?.let { item = item.copy(total = it) }
+		progress.progress?.let { p ->
+			// If downloaded bytes exceed reported total (e.g. RuStore size mismatch), update total
+			val newTotal = if (item.total in 1 until p) p else item.total
+			item = item.copy(progress = p, total = newTotal)
+		}
+		this[index] = item
 	}
 	return this
 }

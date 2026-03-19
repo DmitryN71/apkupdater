@@ -9,8 +9,11 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
 
+
+private const val SOURCE_TIMEOUT_MS = 90_000L // 90 seconds per source
 
 class UpdatesRepository(
     private val appsRepository: AppsRepository,
@@ -53,7 +56,20 @@ class UpdatesRepository(
                     val lock = Any()
                     onSourceComplete?.invoke(0, totalSources, remaining.toList())
                     val wrappedSources = sourceFlows.mapIndexed { index, source ->
-                        source.catch { e ->
+                        flow {
+                            val result = withTimeoutOrNull(SOURCE_TIMEOUT_MS) {
+                                val items = mutableListOf<AppUpdate>()
+                                source.collect { items.addAll(it) }
+                                items
+                            }
+                            if (result != null) {
+                                emit(result)
+                            } else {
+                                Log.w("UpdatesRepository", "${sourceNames[index]} timed out after ${SOURCE_TIMEOUT_MS / 1000}s")
+                                errorCount.incrementAndGet()
+                                emit(emptyList())
+                            }
+                        }.catch { e ->
                             Log.e("UpdatesRepository", "Source error", e)
                             errorCount.incrementAndGet()
                             emit(emptyList())

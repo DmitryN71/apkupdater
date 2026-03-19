@@ -32,5 +32,6 @@ fun RuStoreApp.toAppUpdate(app: AppInstalled?, downloadUrl: String) = AppUpdate(
 	source = RuStoreSource,
 	iconUri = if (iconUrl.isNotEmpty()) iconUrl.toUri() else Uri.EMPTY,
 	link = Link.Url(downloadUrl, fileSize),
-	whatsNew = whatsNew
+	whatsNew = whatsNew,
+	sourceUrl = "https://apps.rustore.ru/app/$packageName"
 )

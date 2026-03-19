@@ -71,7 +71,8 @@ class ApkMirrorRepository(
                 versionCode = 0L,
                 oldVersionCode = 0L,
                 source = ApkMirrorSource,
-                packageName = a[it].text() // Developer name in this case
+                packageName = a[it].text(),
+                sourceUrl = "$baseUrl${h5[it].selectFirst("a")?.attr("href")}"
             )
         }
         emit(Result.success(result))

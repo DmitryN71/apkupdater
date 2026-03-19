@@ -127,6 +127,9 @@ class SettingsViewModel(
 		}
 	}
 
+	fun getFakePlayStore() = prefs.fakePlayStore.get()
+	fun setFakePlayStore(b: Boolean) = prefs.fakePlayStore.put(b)
+
 	fun getShizukuInstall() = prefs.shizukuInstall.get()
 
 	fun setShizukuInstall(b: Boolean) {
@@ -236,6 +239,7 @@ class SettingsViewModel(
 			addProperty("alarmFrequency", prefs.alarmFrequency.get())
 			addProperty("rootInstall", prefs.rootInstall.get())
 			addProperty("shizukuInstall", prefs.shizukuInstall.get())
+			addProperty("fakePlayStore", prefs.fakePlayStore.get())
 			addProperty("theme", prefs.theme.get())
 			addProperty("cleanUpAfterInstall", prefs.cleanUpAfterInstall.get())
 			addProperty("githubToken", prefs.githubToken.get())
@@ -283,6 +287,7 @@ class SettingsViewModel(
 		obj.get("alarmFrequency")?.asInt?.let { prefs.alarmFrequency.put(it) }
 		obj.get("rootInstall")?.asBoolean?.let { prefs.rootInstall.put(it) }
 		obj.get("shizukuInstall")?.asBoolean?.let { prefs.shizukuInstall.put(it) }
+		obj.get("fakePlayStore")?.asBoolean?.let { prefs.fakePlayStore.put(it) }
 		obj.get("theme")?.asInt?.let { prefs.theme.put(it); themer.setTheme(isDarkTheme(it)) }
 		obj.get("cleanUpAfterInstall")?.asBoolean?.let { prefs.cleanUpAfterInstall.put(it) }
 		obj.get("githubToken")?.asString?.let { prefs.githubToken.put(it) }

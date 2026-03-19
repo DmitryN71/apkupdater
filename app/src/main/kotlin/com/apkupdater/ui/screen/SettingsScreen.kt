@@ -158,13 +158,17 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_github
 		)
 		var githubToken by remember { mutableStateOf(viewModel.getGitHubToken()) }
+		val isTv = LocalContext.current.isAndroidTv()
+		var githubTokenEditing by remember { mutableStateOf(false) }
 		OutlinedTextField(
 			value = githubToken,
 			onValueChange = { githubToken = it; viewModel.setGitHubToken(it) },
 			label = { Text(stringResource(R.string.github_token)) },
 			placeholder = { Text(stringResource(R.string.github_token_hint)) },
 			singleLine = true,
+			readOnly = isTv && !githubTokenEditing,
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+				.then(if (isTv) Modifier.clickable { githubTokenEditing = true } else Modifier)
 		)
 		SwitchSetting(
 			{ viewModel.getUseGitLab() },
@@ -230,6 +234,8 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 		LaunchedEffect(Unit) { viewModel.loadInstalledApps() }
 		val allApps = viewModel.installedApps.collectAsStateWithLifecycle().value
 
+		var repoUrlEditing by remember { mutableStateOf(false) }
+		val isTvRepo = LocalContext.current.isAndroidTv()
 		OutlinedTextField(
 			value = repoUrl,
 			onValueChange = { repoUrl = it; errorMsg = null },
@@ -237,10 +243,13 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			isError = errorMsg != null,
 			supportingText = errorMsg?.let { msg -> { Text(msg) } },
 			singleLine = true,
+			readOnly = isTvRepo && !repoUrlEditing,
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+				.then(if (isTvRepo) Modifier.clickable { repoUrlEditing = true } else Modifier)
 		)
 
 		// Installed app picker
+		var appQueryEditing by remember { mutableStateOf(false) }
 		Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
 			OutlinedTextField(
 				value = appQuery,
@@ -251,7 +260,9 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 				},
 				label = { Text(stringResource(R.string.link_installed_app)) },
 				singleLine = true,
+				readOnly = isTvRepo && !appQueryEditing,
 				modifier = Modifier.fillMaxWidth()
+					.then(if (isTvRepo) Modifier.clickable { appQueryEditing = true } else Modifier)
 			)
 			val filtered = if (appQuery.length >= 2) {
 				allApps.filter { it.name.contains(appQuery, ignoreCase = true) }.take(8)
@@ -328,6 +339,12 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			{ viewModel.setShizukuInstall(it) },
 			stringResource(R.string.shizuku_install),
 			R.drawable.ic_shizuku
+		)
+		SwitchSetting(
+			{ viewModel.getFakePlayStore() },
+			{ viewModel.setFakePlayStore(it) },
+			stringResource(R.string.fake_play_store),
+			R.drawable.ic_play
 		)
 		SwitchSetting(
 			{ viewModel.getCleanUpAfterInstall() },

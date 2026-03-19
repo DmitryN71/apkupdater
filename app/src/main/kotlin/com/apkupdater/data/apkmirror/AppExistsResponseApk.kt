@@ -31,5 +31,6 @@ fun AppExistsResponseApk.toAppUpdate(app: AppInstalled, release: AppExistsRespon
 	ApkMirrorSource,
 	app.iconUri,
 	Link.Url("https://www.apkmirror.com$link"),
-	release.whatsNew.orEmpty()
+	release.whatsNew.orEmpty(),
+	sourceUrl = "https://www.apkmirror.com$link"
 )

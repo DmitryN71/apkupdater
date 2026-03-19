@@ -1,8 +1,10 @@
 package com.apkupdater.ui.component
 
 import android.net.Uri
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,15 +18,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -35,12 +50,16 @@ import androidx.core.text.HtmlCompat
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.ApkMirrorSource
+import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.Source
 import com.apkupdater.util.getAppName
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
 import com.apkupdater.util.to2f
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
+import kotlinx.coroutines.launch
 
 
 @Composable
@@ -65,11 +84,15 @@ fun VersionChip(
 }
 
 @Composable
-fun SourceChip(source: Source, modifier: Modifier = Modifier) {
+fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
 	val shape = RoundedCornerShape(50)
 	Row(
 		modifier = modifier
-			.background(MaterialTheme.colorScheme.secondaryContainer, shape)
+			.background(
+				if (onClick != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+				shape
+			)
+			.then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
 			.padding(horizontal = 10.dp, vertical = 5.dp),
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -79,7 +102,7 @@ fun SourceChip(source: Source, modifier: Modifier = Modifier) {
 			source.name,
 			style = MaterialTheme.typography.labelMedium,
 			fontWeight = FontWeight.Bold,
-			color = MaterialTheme.colorScheme.onSecondaryContainer
+			color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSecondaryContainer
 		)
 	}
 }
@@ -94,7 +117,8 @@ fun TvCommonItem(
 	oldVersionCode: Long?,
 	uri: Uri? = null,
 	single: Boolean = false,
-	source: Source? = null
+	source: Source? = null,
+	onSourceClick: (() -> Unit)? = null
 ) = Row(Modifier.padding(12.dp)) {
 	Column(horizontalAlignment = Alignment.CenterHorizontally) {
 		if (uri == null) {
@@ -103,7 +127,7 @@ fun TvCommonItem(
 			LoadingImage(uri, Modifier.height(100.dp))
 		}
 		if (source != null) {
-			SourceChip(source, Modifier.padding(top = 6.dp))
+			SourceChip(source, Modifier.padding(top = 6.dp), onClick = onSourceClick)
 		}
 	}
 	Column(Modifier.align(Alignment.CenterVertically).padding(start = 12.dp)) {
@@ -151,7 +175,7 @@ fun TvInstallButton(
 ) {
 	if (app.isInstalling) {
 		if (app.total != 0L && app.progress != 0L) {
-			val p = (app.progress.toFloat() / app.total) * 100f
+			val p = ((app.progress.toFloat() / app.total) * 100f).coerceAtMost(100f)
 			Text("${p.to2f()}%")
 		} else {
 			CircularProgressIndicator(Modifier.size(24.dp))
@@ -184,19 +208,90 @@ fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = Outlin
 	}
 }
 
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TvIgnoreVersionButton(
 	app: AppUpdate,
 	onIgnoreVersion: (Int) -> Unit,
-) = OutlinedButton(
-	modifier = Modifier.padding(4.dp),
-	onClick = { onIgnoreVersion(app.id) },
-	colors = ButtonDefaults.outlinedButtonColors(
-		contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-	),
-	border = ButtonDefaults.outlinedButtonBorder(enabled = true)
 ) {
-	Text(stringResource(R.string.ignore_version))
+	val tooltipState = rememberTooltipState()
+	val scope = rememberCoroutineScope()
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(stringResource(R.string.ignore_version)) } },
+		state = tooltipState
+	) {
+		OutlinedIconButton(
+			modifier = Modifier.padding(4.dp).combinedClickable(
+				onClick = { onIgnoreVersion(app.id) },
+				onLongClick = { scope.launch { tooltipState.show() } }
+			),
+			onClick = { onIgnoreVersion(app.id) },
+			colors = IconButtonDefaults.outlinedIconButtonColors(
+				contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+			)
+		) {
+			Icon(Icons.Default.Close, contentDescription = stringResource(R.string.ignore_version))
+		}
+	}
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun TvHideButton(
+	onHide: () -> Unit
+) {
+	val tooltipState = rememberTooltipState()
+	val scope = rememberCoroutineScope()
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(stringResource(R.string.hide_cd)) } },
+		state = tooltipState
+	) {
+		OutlinedIconButton(
+			modifier = Modifier.padding(4.dp).combinedClickable(
+				onClick = onHide,
+				onLongClick = { scope.launch { tooltipState.show() } }
+			),
+			onClick = onHide,
+			colors = IconButtonDefaults.outlinedIconButtonColors(
+				contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+			)
+		) {
+			Icon(Icons.Default.Close, contentDescription = stringResource(R.string.hide_cd))
+		}
+	}
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun TvDownloadButton(
+	app: AppUpdate,
+	onDownload: (AppUpdate) -> Unit
+) {
+	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play) && app.source != ApkMirrorSource
+	if (hasLink && !app.isInstalling) {
+		val tooltipState = rememberTooltipState()
+		val scope = rememberCoroutineScope()
+		TooltipBox(
+			positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+			tooltip = { PlainTooltip { Text(stringResource(R.string.download_cd)) } },
+			state = tooltipState
+		) {
+			OutlinedIconButton(
+				modifier = Modifier.padding(4.dp).combinedClickable(
+					onClick = { onDownload(app) },
+					onLongClick = { scope.launch { tooltipState.show() } }
+				),
+				onClick = { onDownload(app) },
+				colors = IconButtonDefaults.outlinedIconButtonColors(
+					contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+				)
+			) {
+				Icon(painterResource(R.drawable.ic_save), contentDescription = stringResource(R.string.download_cd))
+			}
+		}
+	}
 }
 
 @Composable
@@ -204,10 +299,13 @@ fun TvUpdateItem(
 	app: AppUpdate,
 	onInstall: (String) -> Unit = {},
 	onIgnoreVersion: (Int) -> Unit,
-	onOpen: (String) -> Unit = {}
+	onOpen: (String) -> Unit = {},
+	onHide: (Int) -> Unit = {},
+	onSourceClick: (() -> Unit)? = null,
+	onDownload: (AppUpdate) -> Unit = {}
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -220,16 +318,25 @@ fun TvUpdateItem(
 		) {
 			if (!app.isInstalled) {
 				TvIgnoreVersionButton(app, onIgnoreVersion)
+			} else {
+				TvHideButton { onHide(app.id) }
 			}
+			TvDownloadButton(app, onDownload)
 			TvInstallButton(app, onInstall, onOpen)
 		}
 	}
 }
 
 @Composable
-fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}, onOpen: (String) -> Unit = {}) = OutlinedCard(Modifier.fillMaxWidth()) {
+fun TvSearchItem(
+	app: AppUpdate,
+	onInstall: (String) -> Unit = {},
+	onOpen: (String) -> Unit = {},
+	onSourceClick: (() -> Unit)? = null,
+	onDownload: (AppUpdate) -> Unit = {}
+) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -240,6 +347,7 @@ fun TvSearchItem(app: AppUpdate, onInstall: (String) -> Unit = {}, onOpen: (Stri
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.End
 		) {
+			TvDownloadButton(app, onDownload)
 			TvInstallButton(app, onInstall, onOpen)
 		}
 	}

@@ -89,7 +89,8 @@ class GitLabRepository(
                 source = GitLabSource,
                 link = Link.Url(getApkUrl(packageName, releases[0])),
                 whatsNew = releases[0].description.orEmpty(),
-                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY
+                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
+                sourceUrl = "https://gitlab.com/$user/$repo/-/releases/${releases[0].tag_name}"
             )))
         } else {
             emit(emptyList())

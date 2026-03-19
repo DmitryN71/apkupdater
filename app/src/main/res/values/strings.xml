@@ -6,7 +6,7 @@
     <string name="tab_updates">Updates</string>
     <string name="tab_settings">Settings</string>
     <string name="something_went_wrong">"Something went wrong\n\uD83E\uDD26"</string>
-    <string name="ignore_version">Ignore version</string>
+    <string name="ignore_version">Skip version</string>
     <string name="ignore_cd">Ignore App</string>
     <string name="unignore_cd">Unignore App</string>
     <string name="refresh_updates">Look for Updates</string>
@@ -46,6 +46,13 @@
     <string name="ignore_preRelease">Ignore Pre-release</string>
     <string name="use_safe_stores">Use Safe Stores (Aptoide)</string>
     <string name="root_install">Root Install</string>
+    <string name="fake_play_store">Set Installer as Play Store</string>
+    <string name="hide_cd">Hide</string>
+    <string name="download_cd">Save to Downloads</string>
+    <string name="download_not_supported">Download not available for this source.</string>
+    <string name="downloading_file">Downloading %1$s…</string>
+    <string name="download_failed">Download failed.</string>
+    <string name="saved_to_downloads">Saved: %1$s</string>
     <string name="clean_up_after_install">Clean Up After Install</string>
     <string name="source_apkmirror" translatable="false">ApkMirror</string>
     <string name="source_fdroid" translatable="false">F-Droid Main</string>

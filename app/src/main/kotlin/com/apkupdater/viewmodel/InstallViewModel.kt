@@ -1,5 +1,10 @@
 package com.apkupdater.viewmodel
 
+import android.content.ContentValues
+import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.ui.platform.UriHandler
 import androidx.lifecycle.ViewModel
@@ -17,13 +22,17 @@ import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.Downloader
+import com.apkupdater.util.randomUUID
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import java.io.File
 
 
 abstract class InstallViewModel(
@@ -33,7 +42,8 @@ abstract class InstallViewModel(
     protected val snackBar: SnackBar,
     protected val stringer: Stringer,
     private val installLog: InstallLog,
-    private val ruStoreService: RuStoreService
+    private val ruStoreService: RuStoreService,
+    private val context: Context
 ): ViewModel() {
 
     fun install(update: AppUpdate, uriHandler: UriHandler) {
@@ -89,9 +99,10 @@ abstract class InstallViewModel(
     }.launchIn(viewModelScope)
 
     protected fun downloadAndRootInstall(id: Int, link: Link) = runCatching {
+        val fake = prefs.fakePlayStore.get()
         when (link) {
             is Link.Url -> {
-                if (installer.rootInstall(downloader.download(link.link))) {
+                if (installer.rootInstall(downloader.download(link.link), fake)) {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
                 } else {
@@ -111,13 +122,14 @@ abstract class InstallViewModel(
     }
 
     protected fun downloadAndShizukuInstall(id: Int, name: String, link: Link) = runCatching {
+        val fake = prefs.fakePlayStore.get()
         // Shizuku methods return null on success, or error message on failure
         val error: String? = when (link) {
             is Link.Url -> {
                 val file = downloader.downloadFile(link.link) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
-                installer.shizukuInstall(file)
+                installer.shizukuInstall(file, fake)
             }
             is Link.Play -> {
                 val files = link.getInstallFiles()
@@ -132,13 +144,13 @@ abstract class InstallViewModel(
                     downloadedSoFar += file.length()
                     file
                 }
-                installer.shizukuInstallSplit(tempFiles)
+                installer.shizukuInstallSplit(tempFiles, fake)
             }
             is Link.Xapk -> {
                 val file = downloader.downloadFile(link.link) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
-                installer.shizukuInstallXapk(file)
+                installer.shizukuInstallXapk(file, fake)
             }
             else -> {
                 snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.shizuku_install_not_supported)))
@@ -161,9 +173,11 @@ abstract class InstallViewModel(
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-        val reason = it.message ?: "Unknown error"
-        val msg = stringer.get(R.string.install_failure, name) + "\n" + reason
-        snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
+        if (!isNetworkError(it)) {
+            val reason = it.message ?: "Unknown error"
+            val msg = stringer.get(R.string.install_failure, name) + "\n" + reason
+            snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
+        }
         installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
     }
@@ -178,7 +192,7 @@ abstract class InstallViewModel(
             }
             is Link.Url -> {
                 val result = downloader.downloadStreamWithSize(link.link)!!
-                val totalSize = if (link.size > 0) link.size else result.size
+                val totalSize = if (result.size > 0) result.size else link.size
                 installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
                 installer.install(id, packageName, result.stream)
             }
@@ -217,9 +231,145 @@ abstract class InstallViewModel(
         }
     }
 
+    private fun isNetworkError(e: Throwable): Boolean {
+        val msg = e.message?.lowercase() ?: return false
+        return msg.contains("unable to resolve host") ||
+            msg.contains("failed to connect") ||
+            msg.contains("network is unreachable") ||
+            msg.contains("connection reset") ||
+            msg.contains("connection refused") ||
+            msg.contains("timeout") ||
+            e is java.net.UnknownHostException ||
+            e is java.net.SocketTimeoutException ||
+            e is java.net.ConnectException
+    }
+
+    fun downloadToFolder(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching {
+            val link = resolveLink(update)
+            val safeName = update.name.replace(Regex("[^\\p{L}\\p{N}._\\- ]"), "").trim().ifEmpty { update.packageName }
+
+            startDownloadProgress(update.id)
+
+            when (link) {
+                is Link.Play -> downloadPlayToFolder(update.id, safeName, update.version, link)
+                is Link.Url, is Link.Xapk -> {
+                    val url = when (link) {
+                        is Link.Url -> link.link
+                        is Link.Xapk -> link.link
+                        else -> return@launch
+                    }
+                    val isXapk = link is Link.Xapk || url.contains(".xapk", true)
+                    val ext = if (isXapk) "xapk" else "apk"
+                    val fileName = "$safeName-${update.version}.$ext"
+
+                    val tempFile = downloader.downloadFile(url) { bytesDownloaded, totalBytes ->
+                        installLog.emitProgress(AppInstallProgress(update.id, bytesDownloaded, totalBytes))
+                    }
+
+                    if (tempFile.length() == 0L) {
+                        tempFile.delete()
+                        finishDownloadProgress(update.id)
+                        snackBar.snackBar(viewModelScope, TextSnack(
+                            stringer.get(R.string.download_failed), type = SnackType.ERROR
+                        ))
+                        return@launch
+                    }
+
+                    val mime = if (isXapk) "application/zip" else "application/vnd.android.package-archive"
+                    saveToDownloads(tempFile, fileName, mime)
+                    tempFile.delete()
+                    downloader.cleanUp()
+                    finishDownloadProgress(update.id)
+
+                    snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.saved_to_downloads, fileName), type = SnackType.SUCCESS
+                    ))
+                }
+                else -> {
+                    finishDownloadProgress(update.id)
+                    snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.download_not_supported), type = SnackType.ERROR
+                    ))
+                }
+            }
+        }.onFailure {
+            Log.e("InstallViewModel", "Error downloading to folder", it)
+            downloader.cleanUp()
+            finishDownloadProgress(update.id)
+            if (!isNetworkError(it)) {
+                snackBar.snackBar(viewModelScope, TextSnack(
+                    stringer.get(R.string.download_failed), type = SnackType.ERROR
+                ))
+            }
+        }
+    }
+
+    private fun downloadPlayToFolder(id: Int, safeName: String, version: String, link: Link.Play) {
+        val files = link.getInstallFiles()
+        val totalSize = files.sumOf { it.size }
+        if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
+
+        // Download all split APKs to temp files
+        var downloadedSoFar = 0L
+        val tempFiles = files.mapIndexed { index, playFile ->
+            val offset = downloadedSoFar
+            val tempFile = downloader.downloadFile(playFile.url) { progress, _ ->
+                if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
+            }
+            downloadedSoFar += tempFile.length()
+            Pair("$index.apk", tempFile)
+        }
+
+        // Pack into .apks (zip) file
+        val apksFile = File(context.cacheDir, randomUUID())
+        java.util.zip.ZipOutputStream(apksFile.outputStream()).use { zip ->
+            tempFiles.forEach { (name, file) ->
+                zip.putNextEntry(java.util.zip.ZipEntry(name))
+                file.inputStream().use { it.copyTo(zip) }
+                zip.closeEntry()
+                file.delete()
+            }
+        }
+
+        val fileName = "$safeName-${version}.apks"
+        saveToDownloads(apksFile, fileName, "application/octet-stream")
+        apksFile.delete()
+        downloader.cleanUp()
+        finishDownloadProgress(id)
+
+        snackBar.snackBar(viewModelScope, TextSnack(
+            stringer.get(R.string.saved_to_downloads, fileName), type = SnackType.SUCCESS
+        ))
+    }
+
+    private fun saveToDownloads(file: File, fileName: String, mimeType: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + File.separator + "APKUpdater")
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            uri?.let {
+                context.contentResolver.openOutputStream(it)?.use { output ->
+                    file.inputStream().use { input -> input.copyTo(output) }
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val targetDir = File(downloadsDir, "APKUpdater").apply { if (!exists()) mkdirs() }
+            val dest = File(targetDir, fileName)
+            file.copyTo(dest, overwrite = true)
+        }
+    }
+
     protected abstract fun downloadAndInstall(update: AppUpdate): Job
     protected abstract fun downloadAndRootInstall(update: AppUpdate): Job
     protected abstract fun downloadAndShizukuInstall(update: AppUpdate): Job
     protected abstract fun cancelInstall(id: Int): Job
     protected abstract fun finishInstall(id: Int): Job
+    protected abstract fun startDownloadProgress(id: Int)
+    protected abstract fun finishDownloadProgress(id: Int)
 }

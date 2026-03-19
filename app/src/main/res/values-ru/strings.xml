@@ -6,7 +6,7 @@
     <string name="tab_updates">Обновления</string>
     <string name="tab_settings">Настройки</string>
     <string name="something_went_wrong">"Что-то пошло не так\n\uD83E\uDD26"</string>
-    <string name="ignore_version">Игнорировать версию</string>
+    <string name="ignore_version">Пропустить версию</string>
     <string name="ignore_cd">Игнорировать приложение</string>
     <string name="unignore_cd">Перестать игнорировать приложение</string>
     <string name="refresh_updates">Следить за обновлениями</string>
@@ -59,6 +59,13 @@
     <string name="copy_to_clipboard">Копировать в буфер обмена</string>
     <string name="copy_app_list">Скопировать список приложений</string>
     <string name="copy_app_logs">Скопировать логи</string>
+    <string name="fake_play_store">Установщик — Play Store</string>
+    <string name="hide_cd">Скрыть</string>
+    <string name="download_cd">Сохранить в Загрузки</string>
+    <string name="download_not_supported">Скачивание недоступно для этого источника.</string>
+    <string name="downloading_file">Скачивание %1$s…</string>
+    <string name="download_failed">Ошибка скачивания.</string>
+    <string name="saved_to_downloads">Сохранено: %1$s</string>
     <string name="clean_up_after_install">Очистить после установки</string>
     <string name="source_errors">%1$d из %2$d источников не удалось проверить.</string>
     <string name="checking_sources">Проверка: %1$s</string>

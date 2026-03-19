@@ -1,5 +1,6 @@
 package com.apkupdater.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.viewModelScope
 import com.apkupdater.R
 import com.apkupdater.data.snack.TextSnack
@@ -36,8 +37,9 @@ class UpdatesViewModel(
 	snackBar: SnackBar,
 	stringer: Stringer,
 	installLog: InstallLog,
-	ruStoreService: RuStoreService
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService) {
+	ruStoreService: RuStoreService,
+	context: Context
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context) {
 
 	private val mutex = Mutex()
 	private val installMutex = Mutex()
@@ -74,6 +76,12 @@ class UpdatesViewModel(
 			setSuccess(it)
 			_refreshProgress.value = null
 		}
+	}
+
+	fun hideUpdate(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+		val updates = state.value.mutableUpdates().removeId(id)
+		state.value = UpdatesUiState.Success(updates)
+		badger.changeUpdatesBadge(updates.size.toString())
 	}
 
 	fun ignoreVersion(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
@@ -124,6 +132,14 @@ class UpdatesViewModel(
 	fun installAll(uriHandler: androidx.compose.ui.platform.UriHandler) {
 		val updates = state.value.updates().filter { !it.isInstalling && !it.isInstalled }
 		updates.forEach { update -> install(update, uriHandler) }
+	}
+
+	override fun startDownloadProgress(id: Int) {
+		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(id, true))
+	}
+
+	override fun finishDownloadProgress(id: Int) {
+		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(id, false))
 	}
 
 	private fun List<AppUpdate>.filterIgnoredVersions(ignoredVersions: List<Int>) = this

@@ -154,7 +154,10 @@ fun UpdatesScreenSuccess(
 							context.packageManager.getLaunchIntentForPackage(packageName)?.let {
 								context.startActivity(it)
 							}
-						}
+						},
+						onHide = { viewModel.hideUpdate(it) },
+						onSourceClick = if (update.sourceUrl.isNotEmpty()) {{ handler.openUri(update.sourceUrl) }} else null,
+						onDownload = { viewModel.downloadToFolder(it) }
 					)
 				}
 			}

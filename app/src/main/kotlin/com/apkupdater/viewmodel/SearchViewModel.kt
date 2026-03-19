@@ -1,5 +1,6 @@
 package com.apkupdater.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.viewModelScope
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
@@ -35,8 +36,9 @@ class SearchViewModel(
     snackBar: SnackBar,
     stringer: Stringer,
     installLog: InstallLog,
-    ruStoreService: RuStoreService
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService) {
+    ruStoreService: RuStoreService,
+    context: Context
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context) {
 
     private val mutex = Mutex()
     private val installMutex = Mutex()
@@ -107,6 +109,14 @@ class SearchViewModel(
                 downloadAndInstall(update.id, update.packageName, link)
             }
         }
+    }
+
+    override fun startDownloadProgress(id: Int) {
+        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(id, true))
+    }
+
+    override fun finishDownloadProgress(id: Int) {
+        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(id, false))
     }
 
 }

@@ -39,6 +39,7 @@ class Prefs(
 	val androidTvUi = boolean("androidTvUi", defValue = true, backed = true)
 	val rootInstall = boolean("rootInstall", defValue = false, backed = true)
 	val shizukuInstall = boolean("shizukuInstall", defValue = false, backed = true)
+	val fakePlayStore = boolean("fakePlayStore", defValue = false, backed = true)
 	val theme = int("theme", defValue = 0, backed = true)
 	val cleanUpAfterInstall = boolean("cleanUpAfterInstall", defValue = true, backed = true)
 	val lastTab = string("lastTab", defValue = Screen.Updates.route, backed = true)

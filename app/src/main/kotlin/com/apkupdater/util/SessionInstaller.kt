@@ -79,8 +79,13 @@ class SessionInstaller(
         }
     }
 
-    fun rootInstall(file: File): Boolean {
-        val res = Shell.cmd("pm install -r ${file.absolutePath}").exec().isSuccess
+    fun rootInstall(file: File, fakePlayStore: Boolean = false): Boolean {
+        val cmd = if (fakePlayStore) {
+            "pm install -r -i com.android.vending ${file.absolutePath}"
+        } else {
+            "pm install -r ${file.absolutePath}"
+        }
+        val res = Shell.cmd(cmd).exec().isSuccess
         file.delete()
         return res
     }
@@ -95,7 +100,7 @@ class SessionInstaller(
     }
 
     /** Returns null on success, or error message on failure. */
-    fun shizukuInstall(file: File): String? {
+    fun shizukuInstall(file: File, fakePlayStore: Boolean = false): String? {
         return try {
             val size = file.length()
             if (size == 0L) {
@@ -103,7 +108,10 @@ class SessionInstaller(
                 file.delete()
                 return "Downloaded file is empty"
             }
-            val process = shizukuProcess(arrayOf("pm", "install", "-r", "-d", "-S", size.toString()))
+            val args = mutableListOf("pm", "install", "-r", "-d")
+            if (fakePlayStore) args.addAll(listOf("-i", "com.android.vending"))
+            args.addAll(listOf("-S", size.toString()))
+            val process = shizukuProcess(args.toTypedArray())
             file.inputStream().use { input ->
                 process.outputStream.use { output ->
                     input.copyTo(output)
@@ -125,14 +133,15 @@ class SessionInstaller(
     }
 
     /** Returns null on success, or error message on failure. */
-    fun shizukuInstallSplit(files: List<File>): String? {
+    fun shizukuInstallSplit(files: List<File>, fakePlayStore: Boolean = false): String? {
         return try {
             val totalSize = files.sumOf { it.length() }
 
             // Create install session
-            val createProcess = shizukuProcess(
-                arrayOf("pm", "install-create", "-r", "-d", "-S", totalSize.toString())
-            )
+            val args = mutableListOf("pm", "install-create", "-r", "-d")
+            if (fakePlayStore) args.addAll(listOf("-i", "com.android.vending"))
+            args.addAll(listOf("-S", totalSize.toString()))
+            val createProcess = shizukuProcess(args.toTypedArray())
             val createOutput = createProcess.inputStream.bufferedReader().readText()
             createProcess.waitFor()
 
@@ -176,7 +185,7 @@ class SessionInstaller(
     }
 
     /** Returns null on success, or error message on failure. */
-    fun shizukuInstallXapk(xapkFile: File): String? {
+    fun shizukuInstallXapk(xapkFile: File, fakePlayStore: Boolean = false): String? {
         return try {
             // Extract APKs from XAPK (zip)
             val zip = ZipFile(xapkFile)
@@ -191,7 +200,7 @@ class SessionInstaller(
             zip.close()
             xapkFile.delete()
 
-            shizukuInstallSplit(tempFiles)
+            shizukuInstallSplit(tempFiles, fakePlayStore)
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku XAPK install failed", e)
             xapkFile.delete()

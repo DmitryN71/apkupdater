@@ -84,7 +84,9 @@ fun SearchScreenSuccess(
 					context.packageManager.getLaunchIntentForPackage(packageName)?.let {
 						context.startActivity(it)
 					}
-				}
+				},
+				onSourceClick = if (update.sourceUrl.isNotEmpty()) {{ uriHandler.openUri(update.sourceUrl) }} else null,
+				onDownload = { viewModel.downloadToFolder(it) }
 			)
 		}
 	}
