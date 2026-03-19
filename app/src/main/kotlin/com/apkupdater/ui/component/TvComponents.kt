@@ -359,7 +359,8 @@ fun WhatsNew(whatsNew: String, source: Source) {
 		val text = remember(whatsNew) {
 			runCatching {
 				val truncated = if (whatsNew.length > 1500) whatsNew.take(1500) + "\u2026" else whatsNew
-				HtmlCompat.fromHtml(truncated.trim(), HtmlCompat.FROM_HTML_MODE_COMPACT).toAnnotatedString()
+				val html = markdownToHtml(truncated.trim())
+				HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toAnnotatedString()
 			}.getOrElse { AnnotatedString(whatsNew.take(1500)) }
 		}
 		if (text.text.isNotBlank()) {
@@ -367,3 +368,50 @@ fun WhatsNew(whatsNew: String, source: Source) {
 		}
 	}
 }
+
+/** Simple Markdown to HTML converter for changelogs. */
+private fun markdownToHtml(md: String): String {
+	// If it already looks like HTML, return as-is
+	if (md.trimStart().startsWith("<")) return md
+
+	val sb = StringBuilder()
+	var inList = false
+
+	for (line in md.lines()) {
+		val trimmed = line.trim()
+		when {
+			trimmed.isEmpty() -> {
+				if (inList) { sb.append("</ul>"); inList = false }
+				sb.append("<br>")
+			}
+			trimmed.startsWith("### ") -> {
+				if (inList) { sb.append("</ul>"); inList = false }
+				sb.append("<b>").append(inlineMd(trimmed.removePrefix("### "))).append("</b><br>")
+			}
+			trimmed.startsWith("## ") -> {
+				if (inList) { sb.append("</ul>"); inList = false }
+				sb.append("<b>").append(inlineMd(trimmed.removePrefix("## "))).append("</b><br>")
+			}
+			trimmed.startsWith("# ") -> {
+				if (inList) { sb.append("</ul>"); inList = false }
+				sb.append("<b>").append(inlineMd(trimmed.removePrefix("# "))).append("</b><br>")
+			}
+			trimmed.startsWith("- ") || trimmed.startsWith("* ") -> {
+				if (!inList) { sb.append("<ul>"); inList = true }
+				sb.append("<li>").append(inlineMd(trimmed.drop(2))).append("</li>")
+			}
+			else -> {
+				if (inList) { sb.append("</ul>"); inList = false }
+				sb.append(inlineMd(trimmed)).append("<br>")
+			}
+		}
+	}
+	if (inList) sb.append("</ul>")
+	return sb.toString()
+}
+
+/** Convert inline markdown: **bold**, *italic*, `code` */
+private fun inlineMd(text: String): String = text
+	.replace(Regex("\\*\\*(.+?)\\*\\*"), "<b>$1</b>")
+	.replace(Regex("\\*(.+?)\\*"), "<i>$1</i>")
+	.replace(Regex("`(.+?)`"), "<tt>$1</tt>")
