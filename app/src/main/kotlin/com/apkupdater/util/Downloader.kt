@@ -56,6 +56,10 @@ class Downloader(
             Log.e("Downloader", "Download failed with error code: ${response.code}")
         }
         response.close()
+        if (!file.exists() || file.length() == 0L) {
+            file.delete()
+            throw java.io.IOException("Download failed: empty or missing file")
+        }
         return file
     }
 
