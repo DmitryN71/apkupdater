@@ -47,6 +47,7 @@
     <string name="use_safe_stores">Use Safe Stores (Aptoide)</string>
     <string name="root_install">Root Install</string>
     <string name="fake_play_store">Set Installer as Play Store</string>
+    <string name="skip_cd">Skip</string>
     <string name="hide_cd">Hide</string>
     <string name="download_cd">Save to Downloads</string>
     <string name="download_not_supported">Download not available for this source.</string>

@@ -208,58 +208,40 @@ fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = Outlin
 	}
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TvIgnoreVersionButton(
 	app: AppUpdate,
 	onIgnoreVersion: (Int) -> Unit,
 ) {
-	val tooltipState = rememberTooltipState()
-	val scope = rememberCoroutineScope()
-	TooltipBox(
-		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-		tooltip = { PlainTooltip { Text(stringResource(R.string.ignore_version)) } },
-		state = tooltipState
+	OutlinedButton(
+		modifier = Modifier.padding(2.dp),
+		onClick = { onIgnoreVersion(app.id) },
+		contentPadding = ButtonDefaults.ContentPadding.let {
+			androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = it.calculateTopPadding())
+		},
+		colors = ButtonDefaults.outlinedButtonColors(
+			contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+		)
 	) {
-		OutlinedIconButton(
-			modifier = Modifier.padding(4.dp).combinedClickable(
-				onClick = { onIgnoreVersion(app.id) },
-				onLongClick = { scope.launch { tooltipState.show() } }
-			),
-			onClick = { onIgnoreVersion(app.id) },
-			colors = IconButtonDefaults.outlinedIconButtonColors(
-				contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-			)
-		) {
-			Icon(Icons.Default.Close, contentDescription = stringResource(R.string.ignore_version))
-		}
+		Text(stringResource(R.string.skip_cd))
 	}
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun TvHideButton(
 	onHide: () -> Unit
 ) {
-	val tooltipState = rememberTooltipState()
-	val scope = rememberCoroutineScope()
-	TooltipBox(
-		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-		tooltip = { PlainTooltip { Text(stringResource(R.string.hide_cd)) } },
-		state = tooltipState
+	OutlinedButton(
+		modifier = Modifier.padding(2.dp),
+		onClick = onHide,
+		contentPadding = ButtonDefaults.ContentPadding.let {
+			androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = it.calculateTopPadding())
+		},
+		colors = ButtonDefaults.outlinedButtonColors(
+			contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+		)
 	) {
-		OutlinedIconButton(
-			modifier = Modifier.padding(4.dp).combinedClickable(
-				onClick = onHide,
-				onLongClick = { scope.launch { tooltipState.show() } }
-			),
-			onClick = onHide,
-			colors = IconButtonDefaults.outlinedIconButtonColors(
-				contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-			)
-		) {
-			Icon(Icons.Default.Close, contentDescription = stringResource(R.string.hide_cd))
-		}
+		Text(stringResource(R.string.hide_cd))
 	}
 }
 
@@ -279,7 +261,7 @@ fun TvDownloadButton(
 			state = tooltipState
 		) {
 			OutlinedIconButton(
-				modifier = Modifier.padding(4.dp).combinedClickable(
+				modifier = Modifier.padding(2.dp).combinedClickable(
 					onClick = { onDownload(app) },
 					onLongClick = { scope.launch { tooltipState.show() } }
 				),
@@ -312,7 +294,7 @@ fun TvUpdateItem(
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 		)
 		Row(
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.End
 		) {
@@ -343,7 +325,7 @@ fun TvSearchItem(
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 		)
 		Row(
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.End
 		) {
