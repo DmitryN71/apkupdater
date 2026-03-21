@@ -162,7 +162,7 @@ fun TvInstallButton(
 	onInstall: (String) -> Unit,
 	onOpen: (String) -> Unit = {}
 ) = OutlinedButton(
-	modifier = Modifier.padding(4.dp),
+	modifier = Modifier.padding(2.dp),
 	onClick = {
 		if (app.isInstalled) onOpen(app.packageName)
 		else onInstall(app.packageName)
@@ -216,6 +216,7 @@ fun TvIgnoreVersionButton(
 	OutlinedButton(
 		modifier = Modifier.padding(2.dp),
 		onClick = { onIgnoreVersion(app.id) },
+		enabled = !app.isInstalling,
 		contentPadding = ButtonDefaults.ContentPadding.let {
 			androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = it.calculateTopPadding())
 		},
@@ -252,7 +253,7 @@ fun TvDownloadButton(
 	onDownload: (AppUpdate) -> Unit
 ) {
 	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play) && app.source != ApkMirrorSource
-	if (hasLink && !app.isInstalling) {
+	if (hasLink) {
 		val tooltipState = rememberTooltipState()
 		val scope = rememberCoroutineScope()
 		TooltipBox(
@@ -262,10 +263,11 @@ fun TvDownloadButton(
 		) {
 			OutlinedIconButton(
 				modifier = Modifier.padding(2.dp).combinedClickable(
-					onClick = { onDownload(app) },
+					onClick = { if (!app.isInstalling) onDownload(app) },
 					onLongClick = { scope.launch { tooltipState.show() } }
 				),
-				onClick = { onDownload(app) },
+				onClick = { if (!app.isInstalling) onDownload(app) },
+				enabled = !app.isInstalling,
 				colors = IconButtonDefaults.outlinedIconButtonColors(
 					contentColor = MaterialTheme.colorScheme.onSurfaceVariant
 				)
