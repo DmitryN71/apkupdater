@@ -4,6 +4,7 @@ import android.util.Log
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.util.combine
+import com.apkupdater.util.isVersionDowngrade
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -85,7 +86,9 @@ class UpdatesRepository(
                         }
                     }
                     wrappedSources
-                        .combine { updates -> emit(updates.flatMap { it }) }
+                        .combine { updates ->
+                            emit(updates.flatMap { it }.filter { !isVersionDowngrade(it.oldVersion, it.version) })
+                        }
                         .collect()
                     val errors = errorCount.get()
                     if (errors > 0) onSourceError?.invoke(errors, totalSources)

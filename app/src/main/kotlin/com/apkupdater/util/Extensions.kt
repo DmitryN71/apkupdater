@@ -156,3 +156,21 @@ fun filterVersionTag(version: String) = version
 fun Float.to2f() = String
 	.format("%.2f", this)
 	.replace('.', DecimalFormatSymbols.getInstance(Locale.getDefault()).decimalSeparator)
+
+/**
+ * Returns true if [newVersion] looks like a downgrade compared to [oldVersion].
+ * Compares numeric segments left-to-right: "16.21.22" vs "16.15.10" → 21 > 15 → downgrade.
+ * Returns false (not a downgrade) if either version is empty or non-parseable.
+ */
+fun isVersionDowngrade(oldVersion: String, newVersion: String): Boolean {
+	if (oldVersion.isBlank() || newVersion.isBlank()) return false
+	val oldParts = oldVersion.split(Regex("[.\\-_+]")).mapNotNull { it.filter(Char::isDigit).toLongOrNull() }
+	val newParts = newVersion.split(Regex("[.\\-_+]")).mapNotNull { it.filter(Char::isDigit).toLongOrNull() }
+	if (oldParts.isEmpty() || newParts.isEmpty()) return false
+	val len = minOf(oldParts.size, newParts.size)
+	for (i in 0 until len) {
+		if (newParts[i] < oldParts[i]) return true
+		if (newParts[i] > oldParts[i]) return false
+	}
+	return false
+}
