@@ -10,6 +10,7 @@ import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.millisUntilHour
+import okhttp3.OkHttpClient
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.util.concurrent.TimeUnit
@@ -51,6 +52,7 @@ class UpdatesWorker(
 
     private val updatesRepository: UpdatesRepository by inject()
     private val notification: UpdatesNotification by inject()
+    private val okHttpClient: OkHttpClient by inject()
 
     override suspend fun doWork(): Result {
         updatesRepository.updates().collect {
@@ -58,6 +60,8 @@ class UpdatesWorker(
                 notification.showUpdateNotification(it.size)
             }
         }
+        // Release idle connections so Android doesn't count the app as "background active"
+        okHttpClient.connectionPool.evictAll()
         return Result.success()
     }
 
