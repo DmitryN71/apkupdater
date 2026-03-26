@@ -3,7 +3,6 @@ package com.apkupdater.ui.component
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +36,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -84,6 +89,26 @@ fun VersionChip(
 }
 
 @Composable
+fun SizeChip(sizeBytes: Long, modifier: Modifier = Modifier) {
+	if (sizeBytes > 0) {
+		val text = when {
+			sizeBytes >= 1_073_741_824 -> "%.1f GB".format(sizeBytes / 1_073_741_824.0)
+			sizeBytes >= 1_048_576 -> "%.1f MB".format(sizeBytes / 1_048_576.0)
+			sizeBytes >= 1024 -> "%.0f KB".format(sizeBytes / 1024.0)
+			else -> "$sizeBytes B"
+		}
+		Text(
+			text,
+			color = MaterialTheme.colorScheme.onSurfaceVariant,
+			style = MaterialTheme.typography.labelSmall,
+			modifier = modifier
+				.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+				.padding(horizontal = 8.dp, vertical = 2.dp)
+		)
+	}
+}
+
+@Composable
 fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
 	val shape = RoundedCornerShape(50)
 	Row(
@@ -118,7 +143,8 @@ fun TvCommonItem(
 	uri: Uri? = null,
 	single: Boolean = false,
 	source: Source? = null,
-	onSourceClick: (() -> Unit)? = null
+	onSourceClick: (() -> Unit)? = null,
+	fileSize: Long = 0L
 ) = Row(Modifier.padding(12.dp)) {
 	Column(horizontalAlignment = Alignment.CenterHorizontally) {
 		if (uri == null) {
@@ -134,12 +160,28 @@ fun TvCommonItem(
 		LargeTitle(name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName })
 		MediumText(packageName, Modifier.alpha(0.6f))
 		if (oldVersion != null && !single) {
+			val scrollState = rememberScrollState()
+			val overflow = scrollState.maxValue
+
+			if (overflow > 0) {
+				val transition = rememberInfiniteTransition(label = "bounce")
+				val fraction by transition.animateFloat(
+					initialValue = 0f, targetValue = 1f,
+					animationSpec = infiniteRepeatable(
+						animation = tween(durationMillis = 3000, delayMillis = 1500),
+						repeatMode = RepeatMode.Reverse
+					), label = "scroll"
+				)
+				androidx.compose.runtime.LaunchedEffect(fraction) {
+					scrollState.scrollTo((overflow * fraction).toInt())
+				}
+			}
+
 			Row(
 				verticalAlignment = Alignment.CenterVertically,
 				horizontalArrangement = Arrangement.spacedBy(4.dp),
 				modifier = Modifier.padding(top = 4.dp)
-					.horizontalScroll(rememberScrollState())
-					.basicMarquee(iterations = Int.MAX_VALUE, velocity = 30.dp)
+					.horizontalScroll(scrollState)
 			) {
 				VersionChip(oldVersion, isNew = false)
 				Text("→", style = MaterialTheme.typography.labelSmall,
@@ -153,6 +195,7 @@ fun TvCommonItem(
 			val code = if (versionCode == 0L) "?" else versionCode.toString()
 			MediumText("$oldVersionCode → $code", Modifier.alpha(0.4f).padding(top = 2.dp))
 		}
+		SizeChip(fileSize, Modifier.padding(top = 2.dp))
 	}
 }
 
@@ -289,7 +332,7 @@ fun TvUpdateItem(
 	onDownload: (AppUpdate) -> Unit = {}
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -320,7 +363,7 @@ fun TvSearchItem(
 	onDownload: (AppUpdate) -> Unit = {}
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),

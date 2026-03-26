@@ -118,7 +118,7 @@ class GitHubRepository(
                 versionCode = versions.second,
                 oldVersionCode = BuildConfig.VERSION_CODE.toLong(),
                 source = GitHubSource,
-                link = Link.Url(releases[0].assets[0].browser_download_url),
+                link = Link.Url(releases[0].assets[0].browser_download_url, releases[0].assets[0].size),
                 whatsNew = releases[0].body.orEmpty(),
                 sourceUrl = "https://github.com/rumboalla/apkupdater/releases/tag/${releases[0].tag_name}"
             )))
