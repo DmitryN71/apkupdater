@@ -44,6 +44,7 @@ import com.apkupdater.viewmodel.UpdatesViewModel
 import com.google.gson.GsonBuilder
 import com.kryptoprefs.preferences.KryptoBuilder
 import okhttp3.Cache
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.android.ext.koin.androidContext
@@ -62,6 +63,8 @@ val mainModule = module {
 
 	single { Cache(androidContext().cacheDir, 1024 * 1024 * 1024) }
 
+	single { ConnectionPool(5, 30, TimeUnit.SECONDS) }
+
 	single {
 		HttpLoggingInterceptor().apply {
 			level = HttpLoggingInterceptor.Level.BODY
@@ -70,6 +73,7 @@ val mainModule = module {
 
 	single {
 		OkHttpClient.Builder()
+			.connectionPool(get())
 			.cache(get())
 			.connectTimeout(15, TimeUnit.SECONDS)
 			.readTimeout(20, TimeUnit.SECONDS)
@@ -131,6 +135,7 @@ val mainModule = module {
 
 	single {
 		val client = OkHttpClient.Builder()
+			.connectionPool(get())
 			.cache(get())
 			.connectTimeout(15, TimeUnit.SECONDS)
 			.readTimeout(20, TimeUnit.SECONDS)
@@ -164,9 +169,10 @@ val mainModule = module {
 	}
 
 	single {
-		val client = OkHttpClient.Builder().followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
-		val auroraClient = OkHttpClient.Builder().followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
-		val apkPureClient = OkHttpClient.Builder().followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
+		val pool: ConnectionPool = get()
+		val client = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
+		val auroraClient = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
+		val apkPureClient = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
 		val dir = File(androidContext().cacheDir, "downloads").apply { mkdirs() }
 		Downloader(client, apkPureClient, auroraClient, dir)
 	}
