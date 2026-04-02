@@ -17,5 +17,7 @@ class MainActivity : ComponentActivity() {
 	/** Clean up leftover APK downloads from previous installs (e.g. after self-update). */
 	private fun cleanUpDownloadCache() = runCatching {
 		File(cacheDir, "downloads").listFiles()?.forEach { it.delete() }
+		// Remove large OkHttp-cached APK responses from cacheDir root (files > 1MB)
+		cacheDir.listFiles()?.filter { it.isFile && it.length() > 1_000_000 }?.forEach { it.delete() }
 	}
 }

@@ -36,12 +36,12 @@ import java.io.File
 
 
 abstract class InstallViewModel(
-    private val downloader: Downloader,
+    protected val downloader: Downloader,
     private val installer: SessionInstaller,
     private val prefs: Prefs,
     protected val snackBar: SnackBar,
     protected val stringer: Stringer,
-    private val installLog: InstallLog,
+    protected val installLog: InstallLog,
     private val ruStoreService: RuStoreService,
     private val context: Context
 ): ViewModel() {

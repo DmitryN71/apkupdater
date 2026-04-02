@@ -170,9 +170,10 @@ val mainModule = module {
 
 	single {
 		val pool: ConnectionPool = get()
-		val client = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
-		val auroraClient = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
-		val apkPureClient = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).cache(get()).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
+		// No HTTP cache for Downloader clients — APKs are large one-time downloads, caching wastes disk space
+		val client = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
+		val auroraClient = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36").build()
+		val apkPureClient = OkHttpClient.Builder().connectionPool(pool).followRedirects(true).connectTimeout(15, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).addUserAgentInterceptor("APKPure/3.19.39 (Aegon)").build()
 		val dir = File(androidContext().cacheDir, "downloads").apply { mkdirs() }
 		Downloader(client, apkPureClient, auroraClient, dir)
 	}
