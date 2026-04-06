@@ -64,8 +64,12 @@ class SearchViewModel(
         badger.changeSearchBadge("")
         searchRepository.search(text).collect {
             it.onSuccess { apps ->
-                state.value = SearchUiState.Success(apps)
-                badger.changeSearchBadge(apps.size.toString())
+                val enriched = apps.map { app ->
+                    val installed = getInstalledVersionCode(app.packageName)
+                    if (installed > 0L) app.copy(oldVersionCode = installed) else app
+                }
+                state.value = SearchUiState.Success(enriched)
+                badger.changeSearchBadge(enriched.size.toString())
             }.onFailure {
                 badger.changeSearchBadge("!")
                 state.value = SearchUiState.Error

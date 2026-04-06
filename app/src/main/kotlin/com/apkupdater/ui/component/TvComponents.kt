@@ -203,30 +203,46 @@ fun TvCommonItem(
 fun TvInstallButton(
 	app: AppUpdate,
 	onInstall: (String) -> Unit,
-	onOpen: (String) -> Unit = {}
-) = OutlinedButton(
-	modifier = Modifier.padding(2.dp),
-	onClick = {
-		if (app.isInstalled) onOpen(app.packageName)
-		else onInstall(app.packageName)
-	},
-	colors = ButtonDefaults.outlinedButtonColors(
-		contentColor = if (app.isInstalled) MaterialTheme.colorScheme.tertiary
-			else MaterialTheme.colorScheme.primary
-	),
-	border = ButtonDefaults.outlinedButtonBorder(enabled = true)
+	onOpen: (String) -> Unit = {},
+	isSearch: Boolean = false
 ) {
-	if (app.isInstalling) {
-		if (app.total != 0L && app.progress != 0L) {
-			val p = ((app.progress.toFloat() / app.total) * 100f).coerceAtMost(100f)
-			Text("${p.to2f()}%")
+	// For search: oldVersionCode > 0 means app is installed
+	val isInstalledElsewhere = isSearch && app.oldVersionCode > 0L && !app.isInstalled
+	val isUpToDate = isInstalledElsewhere && app.oldVersionCode >= app.versionCode
+	val isUpdate = isInstalledElsewhere && app.oldVersionCode < app.versionCode
+
+	OutlinedButton(
+		modifier = Modifier.padding(2.dp),
+		onClick = {
+			if (app.isInstalled) onOpen(app.packageName)
+			else if (!isUpToDate) onInstall(app.packageName)
+		},
+		enabled = !isUpToDate && !app.isInstalling,
+		colors = ButtonDefaults.outlinedButtonColors(
+			contentColor = when {
+				app.isInstalled -> MaterialTheme.colorScheme.tertiary
+				isUpToDate -> MaterialTheme.colorScheme.outline
+				else -> MaterialTheme.colorScheme.primary
+			}
+		),
+		border = ButtonDefaults.outlinedButtonBorder(enabled = !isUpToDate)
+	) {
+		if (app.isInstalling) {
+			if (app.total != 0L && app.progress != 0L) {
+				val p = ((app.progress.toFloat() / app.total) * 100f).coerceAtMost(100f)
+				Text("${p.to2f()}%")
+			} else {
+				CircularProgressIndicator(Modifier.size(24.dp))
+			}
+		} else if (app.isInstalled) {
+			Text(stringResource(R.string.open_cd))
+		} else if (isUpToDate) {
+			Text(stringResource(R.string.installed_cd))
+		} else if (isUpdate || !isSearch) {
+			Text(stringResource(R.string.update_cd))
 		} else {
-			CircularProgressIndicator(Modifier.size(24.dp))
+			Text(stringResource(R.string.install_cd))
 		}
-	} else if (app.isInstalled) {
-		Text(stringResource(R.string.open_cd))
-	} else {
-		Text(stringResource(R.string.install_cd))
 	}
 }
 
@@ -375,7 +391,7 @@ fun TvSearchItem(
 			horizontalArrangement = Arrangement.End
 		) {
 			TvDownloadButton(app, onDownload)
-			TvInstallButton(app, onInstall, onOpen)
+			TvInstallButton(app, onInstall, onOpen, isSearch = true)
 		}
 	}
 }

@@ -50,6 +50,10 @@ abstract class InstallViewModel(
         when (update.source) {
             ApkMirrorSource -> uriHandler.openUri((update.link as Link.Url).link)
             else -> {
+                if (isAlreadyUpToDate(update)) {
+                    snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.already_up_to_date)))
+                    return
+                }
                 if (prefs.rootInstall.get()) {
                     downloadAndRootInstall(update)
                 } else if (prefs.shizukuInstall.get()) {
@@ -59,6 +63,29 @@ abstract class InstallViewModel(
                 }
             }
         }
+    }
+
+    fun getInstalledVersionCode(packageName: String): Long = runCatching {
+        if (Build.VERSION.SDK_INT >= 28) {
+            context.packageManager.getPackageInfo(packageName, 0).longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(packageName, 0).versionCode.toLong()
+        }
+    }.getOrElse { 0L }
+
+    /** Returns true if the installed versionCode is already >= what we're about to install. */
+    private fun isAlreadyUpToDate(update: AppUpdate): Boolean {
+        if (update.versionCode <= 0L) return false
+        val installed = runCatching {
+            if (Build.VERSION.SDK_INT >= 28) {
+                context.packageManager.getPackageInfo(update.packageName, 0).longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(update.packageName, 0).versionCode.toLong()
+            }
+        }.getOrElse { return false }
+        return installed >= update.versionCode
     }
 
     protected suspend fun resolveLink(update: AppUpdate): Link {

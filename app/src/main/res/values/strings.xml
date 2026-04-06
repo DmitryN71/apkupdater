@@ -17,9 +17,12 @@
     <string name="exclude_disabled_apps">Exclude Disabled Apps</string>
     <string name="include_disabled_apps">Include Disabled Apps</string>
     <string name="install_cd">Install</string>
+    <string name="update_cd">Update</string>
+    <string name="installed_cd">Installed</string>
     <string name="open_cd">Open</string>
     <string name="app_cd">App Icon</string>
     <string name="install_success">%1$s installed.</string>
+    <string name="already_up_to_date">Already up to date.</string>
     <string name="install_failure">%1$s failed to install.</string>
     <string name="root_install_not_supported">Root install of this app is not supported.</string>
     <string name="shizuku_install" translatable="false">Shizuku Install</string>
