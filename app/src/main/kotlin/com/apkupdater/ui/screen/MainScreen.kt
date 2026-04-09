@@ -111,49 +111,51 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	val snackBarHostState = handleSnackBar()
 
 	AppTheme(theme) {
-		Scaffold(
-			snackbarHost = {
-				SnackbarHost(snackBarHostState) { data ->
-					val snack = data.visuals as? TextSnack
-					val containerColor = when (snack?.type) {
-						SnackType.SUCCESS -> Color(0xFF2E7D32)
-						SnackType.ERROR -> Color(0xFFC62828)
-						else -> MaterialTheme.colorScheme.inverseSurface
-					}
-					val contentColor = when (snack?.type) {
-						SnackType.SUCCESS, SnackType.ERROR -> Color.White
-						else -> MaterialTheme.colorScheme.inverseOnSurface
-					}
-					val icon = when (snack?.type) {
-						SnackType.SUCCESS -> Icons.Outlined.CheckCircle
-						SnackType.ERROR -> Icons.Outlined.Warning
-						else -> null
-					}
-					Snackbar(
-						modifier = Modifier.padding(12.dp),
-						shape = RoundedCornerShape(12.dp),
-						containerColor = containerColor,
-						contentColor = contentColor,
-						dismissActionContentColor = contentColor
-					) {
-						Row(verticalAlignment = Alignment.CenterVertically) {
-							if (icon != null) {
-								Icon(icon, null, Modifier.size(20.dp))
-								Spacer(Modifier.width(8.dp))
-							}
-							Text(data.visuals.message)
+		Box {
+			Scaffold(
+				bottomBar = { BottomBar(mainViewModel, navController) }
+			) { padding ->
+				NavHost(
+					navController, padding, mainViewModel, appsViewModel,
+					updatesViewModel, searchViewModel, settingsViewModel,
+					isRefreshing = isRefreshing.value,
+					onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
+				)
+			}
+			SnackbarHost(
+				hostState = snackBarHostState,
+				modifier = Modifier.align(Alignment.BottomCenter)
+			) { data ->
+				val snack = data.visuals as? TextSnack
+				val containerColor = when (snack?.type) {
+					SnackType.ERROR -> Color(0xDDC62828)
+					else -> MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.5f)
+				}
+				val contentColor = when (snack?.type) {
+					SnackType.ERROR -> Color.White
+					else -> MaterialTheme.colorScheme.inverseOnSurface
+				}
+				val icon = when (snack?.type) {
+					SnackType.SUCCESS -> Icons.Outlined.CheckCircle
+					SnackType.ERROR -> Icons.Outlined.Warning
+					else -> null
+				}
+				Snackbar(
+					modifier = Modifier.padding(12.dp),
+					shape = RoundedCornerShape(12.dp),
+					containerColor = containerColor,
+					contentColor = contentColor,
+					dismissActionContentColor = contentColor
+				) {
+					Row(verticalAlignment = Alignment.CenterVertically) {
+						if (icon != null) {
+							Icon(icon, null, Modifier.size(20.dp))
+							Spacer(Modifier.width(8.dp))
 						}
+						Text(data.visuals.message)
 					}
 				}
-			},
-			bottomBar = { BottomBar(mainViewModel, navController) }
-		) { padding ->
-			NavHost(
-				navController, padding, mainViewModel, appsViewModel,
-				updatesViewModel, searchViewModel, settingsViewModel,
-				isRefreshing = isRefreshing.value,
-				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
-			)
+			}
 		}
 	}
 }
