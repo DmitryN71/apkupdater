@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.res.painterResource
-import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -71,7 +71,7 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 	},
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.ThumbUp, "Tab Icon")
+			Icon(Icons.Filled.Sync, "Tab Icon")
 		}
 	}
 )

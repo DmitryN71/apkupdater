@@ -87,7 +87,14 @@ class UpdatesRepository(
                     }
                     wrappedSources
                         .combine { updates ->
-                            emit(updates.flatMap { it }.filter { !isVersionDowngrade(it.oldVersion, it.version) })
+                            val all = updates.flatMap { it }
+                                .filter { !isVersionDowngrade(it.oldVersion, it.version) }
+                            // Deduplicate: keep highest versionCode per package
+                            val deduped = all
+                                .groupBy { it.packageName }
+                                .values
+                                .map { dupes -> dupes.maxByOrNull { it.versionCode } ?: dupes.first() }
+                            emit(deduped)
                         }
                         .collect()
                     val errors = errorCount.get()
