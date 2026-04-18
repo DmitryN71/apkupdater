@@ -193,9 +193,17 @@ class GitHubRepository(
         assets: List<GitHubReleaseAsset>,
         extra: Regex?
     ): GitHubReleaseAsset {
-        val apks = assets
+        val allApks = assets
             .filter { it.browser_download_url.endsWith(".apk", true) }
             .filter { filterExtra(it, extra) }
+
+        // Prefer non-fdroid variants — F-Droid builds use different signing keys
+        // which would cause "install copy" instead of "update" on regular-signed installs.
+        // Check filename only (not full URL) to avoid false matches on repo paths like fdroid/fdroidclient.
+        val nonFdroid = allApks.filter {
+            !it.browser_download_url.substringAfterLast('/').contains("fdroid", true)
+        }
+        val apks = if (nonFdroid.isNotEmpty()) nonFdroid else allApks
 
         when {
             apks.isEmpty() -> return GitHubReleaseAsset(0L, "")
