@@ -345,7 +345,12 @@ abstract class InstallViewModel(
                 if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
             }
             downloadedSoFar += tempFile.length()
-            Pair("$index.apk", tempFile)
+            // Use the real split APK name from Google Play (base.apk, config.ru.apk, etc.)
+            // Fall back to numeric index if name is missing or malformed
+            val zipName = playFile.name
+                .takeIf { it.isNotBlank() && it.endsWith(".apk", true) }
+                ?: "$index.apk"
+            Pair(zipName, tempFile)
         }
 
         // Pack into .apks (zip) file
