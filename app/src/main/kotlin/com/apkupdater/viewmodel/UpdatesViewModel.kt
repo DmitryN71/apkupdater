@@ -248,6 +248,7 @@ class UpdatesViewModel(
 	private fun setSuccess(updates: List<AppUpdate>) = updates
 		.filterIgnoredVersions(prefs.ignoredVersions.get())
 		.distinctBy { it.id }
+		.sortedBy { it.name.lowercase() }
 		.let {
 			state.value = UpdatesUiState.Success(it)
 			badger.changeUpdatesBadge(it.size.toString())

@@ -87,14 +87,10 @@ class UpdatesRepository(
                     }
                     wrappedSources
                         .combine { updates ->
-                            val all = updates.flatMap { it }
-                                .filter { !isVersionDowngrade(it.oldVersion, it.version) }
-                            // Deduplicate: keep highest versionCode per package
-                            val deduped = all
-                                .groupBy { it.packageName }
-                                .values
-                                .map { dupes -> dupes.maxByOrNull { it.versionCode } ?: dupes.first() }
-                            emit(deduped)
+                            // No deduplication — show every source's update so the user
+                            // can choose where to install from (e.g. avoid ApkMirror in
+                            // favor of GitHub/F-Droid for direct install).
+                            emit(updates.flatMap { it }.filter { !isVersionDowngrade(it.oldVersion, it.version) })
                         }
                         .collect()
                     val errors = errorCount.get()
