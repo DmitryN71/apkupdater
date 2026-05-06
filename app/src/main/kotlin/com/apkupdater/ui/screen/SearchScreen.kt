@@ -86,7 +86,8 @@ fun SearchScreenSuccess(
 					}
 				},
 				onSourceClick = if (update.sourceUrl.isNotEmpty()) {{ uriHandler.openUri(update.sourceUrl) }} else null,
-				onDownload = { viewModel.downloadToFolder(it) }
+				onDownload = { viewModel.downloadToFolder(it) },
+				onCancel = { viewModel.userCancelInstall(it) }
 			)
 		}
 	}

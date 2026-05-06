@@ -157,7 +157,8 @@ fun UpdatesScreenSuccess(
 						},
 						onHide = { viewModel.hideUpdate(it) },
 						onSourceClick = if (update.sourceUrl.isNotEmpty()) {{ handler.openUri(update.sourceUrl) }} else null,
-						onDownload = { viewModel.downloadToFolder(it) }
+						onDownload = { viewModel.downloadToFolder(it) },
+						onCancel = { viewModel.userCancelInstall(it) }
 					)
 				}
 			}

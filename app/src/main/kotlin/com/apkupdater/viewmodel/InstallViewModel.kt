@@ -153,7 +153,7 @@ abstract class InstallViewModel(
         // Shizuku methods return null on success, or error message on failure
         val error: String? = when (link) {
             is Link.Url -> {
-                val file = downloader.downloadFile(link.link) { progress, total ->
+                val file = downloader.downloadFile(link.link, id) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
                 installer.shizukuInstall(file, fake)
@@ -165,7 +165,7 @@ abstract class InstallViewModel(
                 var downloadedSoFar = 0L
                 val tempFiles = files.map { playFile ->
                     val offset = downloadedSoFar
-                    val file = downloader.downloadFile(playFile.url) { progress, _ ->
+                    val file = downloader.downloadFile(playFile.url, id) { progress, _ ->
                         if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
                     }
                     downloadedSoFar += file.length()
@@ -174,7 +174,7 @@ abstract class InstallViewModel(
                 installer.shizukuInstallSplit(tempFiles, fake)
             }
             is Link.Xapk -> {
-                val file = downloader.downloadFile(link.link) { progress, total ->
+                val file = downloader.downloadFile(link.link, id) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
                 installer.shizukuInstallXapk(file, fake)
@@ -200,7 +200,7 @@ abstract class InstallViewModel(
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-        if (!isNetworkError(it)) {
+        if (!isNetworkError(it) && !isCancellation(it)) {
             val reason = it.message ?: "Unknown error"
             val msg = stringer.get(R.string.install_failure, name) + "\n" + reason
             snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
@@ -215,16 +215,16 @@ abstract class InstallViewModel(
             is Link.Play -> {
                 val files = link.getInstallFiles()
                 installLog.emitProgress(AppInstallProgress(id, 0L, files.sumOf { it.size }))
-                installer.playInstall(id, packageName, files.map { downloader.downloadStream(it.url)!! })
+                installer.playInstall(id, packageName, files.map { downloader.downloadStream(it.url, id)!! })
             }
             is Link.Url -> {
-                val result = downloader.downloadStreamWithSize(link.link)!!
+                val result = downloader.downloadStreamWithSize(link.link, id)!!
                 val totalSize = if (result.size > 0) result.size else link.size
                 installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
                 installer.install(id, packageName, result.stream)
             }
             is Link.Xapk -> {
-                val result = downloader.downloadStreamWithSize(link.link)
+                val result = downloader.downloadStreamWithSize(link.link, id)
                 if (result != null) {
                     if (result.size > 0) {
                         installLog.emitProgress(AppInstallProgress(id, 0L, result.size))
@@ -239,6 +239,15 @@ abstract class InstallViewModel(
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndInstall.", it)
         cancelInstall(id)
+    }
+
+    /**
+     * Public cancel triggered from UI. Aborts in-flight HTTP calls; the
+     * IOException that surfaces from cancellation propagates to the existing
+     * .onFailure handlers, which call cancelInstall(id) to reset UI state.
+     */
+    fun userCancelInstall(id: Int) {
+        downloader.cancel(id)
     }
 
     private fun sendInstallSnack(updates: List<AppUpdate>, log: AppInstallStatus) {
@@ -271,6 +280,12 @@ abstract class InstallViewModel(
             e is java.net.ConnectException
     }
 
+    /** Detects OkHttp Call cancellation (user pressed cancel button). */
+    protected fun isCancellation(e: Throwable): Boolean {
+        val msg = e.message?.lowercase() ?: return false
+        return msg.contains("canceled") || msg.contains("cancelled") || msg.contains("socket closed")
+    }
+
     fun downloadToFolder(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
         runCatching {
             val link = resolveLink(update)
@@ -290,7 +305,7 @@ abstract class InstallViewModel(
                     val ext = if (isXapk) "xapk" else "apk"
                     val fileName = "$safeName-${update.version}.$ext"
 
-                    val tempFile = downloader.downloadFile(url) { bytesDownloaded, totalBytes ->
+                    val tempFile = downloader.downloadFile(url, update.id) { bytesDownloaded, totalBytes ->
                         installLog.emitProgress(AppInstallProgress(update.id, bytesDownloaded, totalBytes))
                     }
 
@@ -303,7 +318,10 @@ abstract class InstallViewModel(
                         return@launch
                     }
 
-                    val mime = if (isXapk) "application/zip" else "application/vnd.android.package-archive"
+                    // Use application/octet-stream for both .apk and .xapk to prevent
+                    // MediaStore from appending an extension based on MIME type
+                    // (previously .xapk was getting saved as .xapk.zip).
+                    val mime = "application/octet-stream"
                     saveToDownloads(tempFile, fileName, mime)
                     tempFile.delete()
                     downloader.cleanUp()
@@ -324,7 +342,7 @@ abstract class InstallViewModel(
             Log.e("InstallViewModel", "Error downloading to folder", it)
             downloader.cleanUp()
             finishDownloadProgress(update.id)
-            if (!isNetworkError(it)) {
+            if (!isNetworkError(it) && !isCancellation(it)) {
                 snackBar.snackBar(viewModelScope, TextSnack(
                     stringer.get(R.string.download_failed), type = SnackType.ERROR
                 ))
@@ -341,7 +359,7 @@ abstract class InstallViewModel(
         var downloadedSoFar = 0L
         val tempFiles = files.mapIndexed { index, playFile ->
             val offset = downloadedSoFar
-            val tempFile = downloader.downloadFile(playFile.url) { progress, _ ->
+            val tempFile = downloader.downloadFile(playFile.url, id) { progress, _ ->
                 if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
             }
             downloadedSoFar += tempFile.length()

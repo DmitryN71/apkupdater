@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -204,6 +203,7 @@ fun TvInstallButton(
 	app: AppUpdate,
 	onInstall: (String) -> Unit,
 	onOpen: (String) -> Unit = {},
+	onCancel: (Int) -> Unit = {},
 	isSearch: Boolean = false
 ) {
 	// For search: oldVersionCode > 0 means app is installed
@@ -214,12 +214,16 @@ fun TvInstallButton(
 	OutlinedButton(
 		modifier = Modifier.padding(2.dp),
 		onClick = {
-			if (app.isInstalled) onOpen(app.packageName)
-			else if (!isUpToDate) onInstall(app.packageName)
+			when {
+				app.isInstalling -> onCancel(app.id)
+				app.isInstalled -> onOpen(app.packageName)
+				!isUpToDate -> onInstall(app.packageName)
+			}
 		},
-		enabled = !isUpToDate && !app.isInstalling,
+		enabled = !isUpToDate,
 		colors = ButtonDefaults.outlinedButtonColors(
 			contentColor = when {
+				app.isInstalling -> MaterialTheme.colorScheme.error
 				app.isInstalled -> MaterialTheme.colorScheme.tertiary
 				isUpToDate -> MaterialTheme.colorScheme.outline
 				else -> MaterialTheme.colorScheme.primary
@@ -230,9 +234,9 @@ fun TvInstallButton(
 		if (app.isInstalling) {
 			if (app.total != 0L && app.progress != 0L) {
 				val p = ((app.progress.toFloat() / app.total) * 100f).coerceAtMost(100f)
-				Text("${p.to2f()}%")
+				Text("✕ ${p.to2f()}%")
 			} else {
-				CircularProgressIndicator(Modifier.size(24.dp))
+				Text("✕ ${stringResource(R.string.cancel_cd)}")
 			}
 		} else if (app.isInstalled) {
 			Text(stringResource(R.string.open_cd))
@@ -345,7 +349,8 @@ fun TvUpdateItem(
 	onOpen: (String) -> Unit = {},
 	onHide: (Int) -> Unit = {},
 	onSourceClick: (() -> Unit)? = null,
-	onDownload: (AppUpdate) -> Unit = {}
+	onDownload: (AppUpdate) -> Unit = {},
+	onCancel: (Int) -> Unit = {}
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
@@ -365,7 +370,7 @@ fun TvUpdateItem(
 				TvHideButton { onHide(app.id) }
 			}
 			TvDownloadButton(app, onDownload)
-			TvInstallButton(app, onInstall, onOpen)
+			TvInstallButton(app, onInstall, onOpen, onCancel)
 		}
 	}
 }
@@ -376,7 +381,8 @@ fun TvSearchItem(
 	onInstall: (String) -> Unit = {},
 	onOpen: (String) -> Unit = {},
 	onSourceClick: (() -> Unit)? = null,
-	onDownload: (AppUpdate) -> Unit = {}
+	onDownload: (AppUpdate) -> Unit = {},
+	onCancel: (Int) -> Unit = {}
 ) = OutlinedCard(Modifier.fillMaxWidth()) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
@@ -391,7 +397,7 @@ fun TvSearchItem(
 			horizontalArrangement = Arrangement.End
 		) {
 			TvDownloadButton(app, onDownload)
-			TvInstallButton(app, onInstall, onOpen, isSearch = true)
+			TvInstallButton(app, onInstall, onOpen, onCancel, isSearch = true)
 		}
 	}
 }

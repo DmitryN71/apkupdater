@@ -123,7 +123,7 @@ class UpdatesViewModel(
 			return@launch
 		}
 		// Download in parallel (no mutex) — rootInstall() deletes the file itself
-		val file = runCatching { downloader.downloadFile(link.link) }.getOrElse {
+		val file = runCatching { downloader.downloadFile(link.link, update.id) }.getOrElse {
 			cancelInstall(update.id)
 			return@launch
 		}
@@ -155,13 +155,13 @@ class UpdatesViewModel(
 		val files = runCatching {
 			when (link) {
 				is com.apkupdater.data.ui.Link.Url -> {
-					val file = downloader.downloadFile(link.link) { progress, total ->
+					val file = downloader.downloadFile(link.link, update.id) { progress, total ->
 						installLog.emitProgress(AppInstallProgress(update.id, progress, total))
 					}
 					listOf(file)
 				}
 				is com.apkupdater.data.ui.Link.Xapk -> {
-					val file = downloader.downloadFile(link.link) { progress, total ->
+					val file = downloader.downloadFile(link.link, update.id) { progress, total ->
 						installLog.emitProgress(AppInstallProgress(update.id, progress, total))
 					}
 					listOf(file)
@@ -173,7 +173,7 @@ class UpdatesViewModel(
 					var downloadedSoFar = 0L
 					playFiles.map { playFile ->
 						val offset = downloadedSoFar
-						val file = downloader.downloadFile(playFile.url) { progress, _ ->
+						val file = downloader.downloadFile(playFile.url, update.id) { progress, _ ->
 							if (totalSize > 0) installLog.emitProgress(AppInstallProgress(update.id, offset + progress, totalSize))
 						}
 						downloadedSoFar += file.length()
