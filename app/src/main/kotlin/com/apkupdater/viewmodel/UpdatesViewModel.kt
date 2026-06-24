@@ -61,7 +61,7 @@ class UpdatesViewModel(
 
 	fun refresh(load: Boolean = true) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 		if (load) state.value = UpdatesUiState.Loading()
-		_refreshProgress.value = null
+		_refreshProgress.value = stringer.get(R.string.checking_updates)
 		badger.changeUpdatesBadge("")
 		updatesRepository.updates(
 			onSourceError = { errors, total ->

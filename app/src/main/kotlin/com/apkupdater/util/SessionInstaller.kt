@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES
 import androidx.core.content.ContextCompat.startActivity
 import com.apkupdater.BuildConfig
+import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.ui.activity.MainActivity
 import android.util.Log
@@ -118,17 +119,22 @@ class SessionInstaller(
                     output.flush()
                 }
             }
+            // pm writes "Failure [REASON]" to stdout AND/OR stderr depending on
+            // the ROM — read both so signature mismatches aren't lost (was the
+            // cause of the generic "Unknown error" before).
+            val out = process.inputStream.bufferedReader().readText()
             val error = process.errorStream.bufferedReader().readText()
             val exitCode = process.waitFor()
             file.delete()
             if (exitCode != 0) {
-                Log.e("SessionInstaller", "pm install failed (exit $exitCode): $error")
-                parseInstallError(error)
+                val combined = listOf(out, error).filter { it.isNotBlank() }.joinToString("\n")
+                Log.e("SessionInstaller", "pm install failed (exit $exitCode): $combined")
+                parseInstallError(combined)
             } else null
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku install failed", e)
             file.delete()
-            e.message ?: "Unknown error"
+            parseInstallError(e.message.orEmpty())
         }
     }
 
@@ -167,20 +173,22 @@ class SessionInstaller(
                 writeProcess.waitFor()
             }
 
-            // Commit session
+            // Commit session — read both streams (ROM-dependent, see shizukuInstall)
             val commitProcess = shizukuProcess(arrayOf("pm", "install-commit", sessionId))
-            val commitOutput = commitProcess.errorStream.bufferedReader().readText()
+            val commitOut = commitProcess.inputStream.bufferedReader().readText()
+            val commitErr = commitProcess.errorStream.bufferedReader().readText()
             val exitCode = commitProcess.waitFor()
 
             files.forEach { it.delete() }
             if (exitCode != 0) {
-                Log.e("SessionInstaller", "pm install-commit output: $commitOutput")
-                parseInstallError(commitOutput)
+                val combined = listOf(commitOut, commitErr).filter { it.isNotBlank() }.joinToString("\n")
+                Log.e("SessionInstaller", "pm install-commit failed: $combined")
+                parseInstallError(combined)
             } else null
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku split install failed", e)
             files.forEach { it.delete() }
-            e.message ?: "Unknown error"
+            parseInstallError(e.message.orEmpty())
         }
     }
 
@@ -204,26 +212,13 @@ class SessionInstaller(
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku XAPK install failed", e)
             xapkFile.delete()
-            e.message ?: "Unknown error"
+            parseInstallError(e.message.orEmpty())
         }
     }
 
-    /** Parses pm install error output into a human-readable message. */
-    private fun parseInstallError(error: String): String {
-        return when {
-            error.contains("INSTALL_FAILED_VERSION_DOWNGRADE") -> "Version downgrade not allowed"
-            error.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") -> "Conflicting package signature"
-            error.contains("INSTALL_FAILED_ALREADY_EXISTS") -> "Package already exists"
-            error.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") -> "Not enough storage space"
-            error.contains("INSTALL_FAILED_INVALID_APK") -> "Invalid or corrupt APK"
-            error.contains("INSTALL_FAILED_OLDER_SDK") -> "Requires newer Android version"
-            error.contains("INSTALL_FAILED_CONFLICTING_PROVIDER") -> "Conflicting content provider"
-            error.contains("INSTALL_PARSE_FAILED") -> "Failed to parse APK"
-            error.contains("INSTALL_FAILED_USER_RESTRICTED") -> "Installation restricted by user"
-            error.isNotBlank() -> error.trim().take(120)
-            else -> "Unknown error"
-        }
-    }
+    /** Parses pm install error output into a localized, human-readable message. */
+    private fun parseInstallError(error: String): String =
+        context.getString(installErrorResId(error))
 
     fun finish() = runCatching { installMutex.unlock() }
 
@@ -277,6 +272,28 @@ class SessionInstaller(
     suspend fun playInstall(id: Int, packageName: String, streams: List<InputStream>) =
         install(id, packageName, streams)
 
+}
+
+/**
+ * Maps a raw pm / PackageInstaller error message to a localized string resource id.
+ * Shared by Shizuku/root (SessionInstaller) and the standard PackageInstaller path
+ * (MainViewModel) so both decode signature mismatches and other failures the same way.
+ */
+fun installErrorResId(raw: String?): Int = when {
+    raw.isNullOrBlank() -> R.string.install_error_unknown
+    raw.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") ||
+        raw.contains("INSTALL_FAILED_SHARED_USER_INCOMPATIBLE") ||
+        raw.contains("INCONSISTENT_CERTIFICATES", true) ||
+        raw.contains("signatures do not match", true) -> R.string.install_error_signature
+    raw.contains("INSTALL_FAILED_VERSION_DOWNGRADE") -> R.string.install_error_downgrade
+    raw.contains("INSTALL_FAILED_INSUFFICIENT_STORAGE") -> R.string.install_error_storage
+    raw.contains("INSTALL_FAILED_INVALID_APK") ||
+        raw.contains("INSTALL_PARSE_FAILED") -> R.string.install_error_invalid
+    raw.contains("INSTALL_FAILED_OLDER_SDK") -> R.string.install_error_older_sdk
+    raw.contains("INSTALL_FAILED_ALREADY_EXISTS") -> R.string.install_error_already_exists
+    raw.contains("INSTALL_FAILED_CONFLICTING_PROVIDER") -> R.string.install_error_conflicting_provider
+    raw.contains("INSTALL_FAILED_USER_RESTRICTED") -> R.string.install_error_blocked
+    else -> R.string.install_error_unknown
 }
 
 fun InputStream.copyToAndNotify(out: OutputStream, id: Int, installLog: InstallLog, total: Long, bufferSize: Int = DEFAULT_BUFFER_SIZE): Long {

@@ -30,6 +30,30 @@
     <string name="shizuku_install_not_supported">Shizuku install of this app is not supported.</string>
     <string name="source_errors">%1$d of %2$d sources failed to check updates.</string>
     <string name="checking_sources">Checking: %1$s</string>
+    <string name="checking_updates">Checking for updates…</string>
+    <string name="search_empty">Search for apps by name across all sources.</string>
+
+    // Install mode errors
+    <string name="root_not_granted">Root access not granted.</string>
+    <string name="shizuku_not_running">Shizuku is not running.</string>
+    <string name="shizuku_unavailable">Shizuku is unavailable.</string>
+
+    // GitHub errors
+    <string name="github_token_invalid">GitHub token is invalid or expired. Update it in Settings.</string>
+    <string name="github_rate_limit">GitHub request limit reached. Try again later or add a token in Settings.</string>
+
+    // Install errors
+    <string name="install_error_signature">Different app signature. Uninstall the existing app first, then update.</string>
+    <string name="install_error_downgrade">Can\'t install an older version over a newer one.</string>
+    <string name="install_error_storage">Not enough storage space.</string>
+    <string name="install_error_invalid">Invalid or corrupt APK.</string>
+    <string name="install_error_incompatible">Incompatible with this device.</string>
+    <string name="install_error_older_sdk">Requires a newer Android version.</string>
+    <string name="install_error_blocked">Blocked by device policy.</string>
+    <string name="install_error_aborted">Installation cancelled.</string>
+    <string name="install_error_already_exists">Package already exists.</string>
+    <string name="install_error_conflicting_provider">Conflicts with another app\'s content provider.</string>
+    <string name="install_error_unknown">Unexpected error.</string>
 
     // Settings
     <string name="settings_portrait_columns">Portrait Columns</string>
@@ -70,6 +94,7 @@
     <string name="source_rustore" translatable="false">RuStore</string>
     <string name="github_token" translatable="false">GitHub Token</string>
     <string name="github_token_hint">ghp_xxxxxxxxxxxx</string>
+    <string name="github_token_help">Optional. Raises GitHub\'s hourly request limit so update checks don\'t silently stop. Create one at github.com/settings/tokens — no scopes needed.</string>
     <string name="about">About</string>
     <string name="frequency">Frequency</string>
     <string name="theme">Theme</string>

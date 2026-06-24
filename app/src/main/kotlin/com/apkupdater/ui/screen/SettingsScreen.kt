@@ -165,6 +165,7 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			onValueChange = { githubToken = it; viewModel.setGitHubToken(it) },
 			label = { Text(stringResource(R.string.github_token)) },
 			placeholder = { Text(stringResource(R.string.github_token_hint)) },
+			supportingText = { Text(stringResource(R.string.github_token_help)) },
 			singleLine = true,
 			readOnly = isTv && !githubTokenEditing,
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
@@ -502,7 +503,7 @@ fun SettingsTopBar(viewModel: SettingsViewModel) = TopAppBar(
 	},
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Settings, "Tab Icon")
+			Icon(Icons.Filled.Settings, null)
 		}
 	}
 )
@@ -519,7 +520,7 @@ fun AboutTopBar(viewModel: SettingsViewModel) = TopAppBar(
 	},
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Info, "Tab Icon")
+			Icon(Icons.Filled.Info, null)
 		}
 	}
 )

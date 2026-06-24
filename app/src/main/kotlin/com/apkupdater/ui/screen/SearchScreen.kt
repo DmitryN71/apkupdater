@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.items
@@ -75,6 +76,19 @@ fun SearchScreenSuccess(
 	val uriHandler = LocalUriHandler.current
 	val context = LocalContext.current
 
+	if (state.updates.isEmpty()) {
+		Box(Modifier.fillMaxSize(), Alignment.Center) {
+			Text(
+				stringResource(R.string.search_empty),
+				style = MaterialTheme.typography.bodyMedium,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				textAlign = TextAlign.Center,
+				modifier = Modifier.padding(horizontal = 32.dp)
+			)
+		}
+		return
+	}
+
 	TvInstalledGrid {
 		items(state.updates, key = { it.id }) { update ->
 			TvSearchItem(
@@ -101,7 +115,7 @@ fun SearchTopBar(viewModel: SearchViewModel) = TopAppBar(
 	actions = {},
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Search, "Tab Icon")
+			Icon(Icons.Filled.Search, null)
 		}
 	}
 )

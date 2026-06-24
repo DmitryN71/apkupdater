@@ -89,7 +89,7 @@ fun AppsTopBar(
 	},
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Home, "Tab Icon")
+			Icon(Icons.Filled.Home, null)
 		}
 	}
 )

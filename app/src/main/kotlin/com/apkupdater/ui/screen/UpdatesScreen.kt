@@ -71,7 +71,7 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 	},
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Sync, "Tab Icon")
+			Icon(Icons.Filled.Sync, null)
 		}
 	}
 )

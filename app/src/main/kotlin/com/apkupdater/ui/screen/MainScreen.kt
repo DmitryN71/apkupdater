@@ -30,7 +30,6 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
@@ -128,11 +127,11 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 			) { data ->
 				val snack = data.visuals as? TextSnack
 				val containerColor = when (snack?.type) {
-					SnackType.ERROR -> Color(0xDDC62828)
+					SnackType.ERROR -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)
 					else -> MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.5f)
 				}
 				val contentColor = when (snack?.type) {
-					SnackType.ERROR -> Color.White
+					SnackType.ERROR -> MaterialTheme.colorScheme.onErrorContainer
 					else -> MaterialTheme.colorScheme.inverseOnSurface
 				}
 				val icon = when (snack?.type) {

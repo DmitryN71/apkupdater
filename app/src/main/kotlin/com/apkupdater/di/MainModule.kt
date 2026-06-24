@@ -182,7 +182,7 @@ val mainModule = module {
 
 	single { AppsRepository(get(), get()) }
 
-	single { GitHubRepository(get(), get(), get()) }
+	single { GitHubRepository(get(), get(), get(), get()) }
 
 	single { GitLabRepository(get(), get()) }
 
@@ -224,13 +224,13 @@ val mainModule = module {
 
 	single { PlayHttpClient(get()) }
 
-	viewModel { MainViewModel(get(), get()) }
+	viewModel { MainViewModel(get(), get(), get()) }
 
 	viewModel { AppsViewModel(get(), get(), get()) }
 
 	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext()) }
 
-	viewModel { SettingsViewModel(get(), get(), WorkManager.getInstance(get()), get(), get(), get(), get(), androidContext()) }
+	viewModel { SettingsViewModel(get(), get(), WorkManager.getInstance(get()), get(), get(), get(), get(), androidContext(), get(), get()) }
 
 	viewModel { SearchViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext()) }
 

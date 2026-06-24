@@ -16,8 +16,10 @@ import com.apkupdater.data.ui.GitHubSource
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
+import com.apkupdater.R
 import com.apkupdater.service.GitHubService
 import com.apkupdater.util.SnackBar
+import com.apkupdater.util.Stringer
 import com.apkupdater.util.combine
 import com.apkupdater.util.filterVersionTag
 import retrofit2.HttpException
@@ -32,10 +34,13 @@ import java.util.Scanner
 class GitHubRepository(
     private val service: GitHubService,
     private val prefs: Prefs,
-    private val snackBar: SnackBar
+    private val snackBar: SnackBar,
+    private val stringer: Stringer
 ) {
 
-    private var rateLimitWarned = false
+    // Prevents spamming the same GitHub error snackbar within a single refresh.
+    // Reset at the start of every updates()/search() so a fresh refresh warns again.
+    private var errorWarned = false
 
     private fun loadAllApps(): List<GitHubApp> {
         val custom = prefs.customGitRepos.get()
@@ -48,6 +53,7 @@ class GitHubRepository(
     }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
+        errorWarned = false
         val checks = mutableListOf(selfCheck())
         val allApps = loadAllApps()
 
@@ -76,12 +82,13 @@ class GitHubRepository(
             emit(all.flatMap { it })
         }.collect()
     }.catch {
-        handleRateLimit(it)
+        handleGitHubError(it)
         emit(emptyList())
         Log.e("GitHubRepository", "Error fetching releases.", it)
     }
 
     suspend fun search(text: String) = flow {
+        errorWarned = false
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
         val allApps = loadAllApps()
 
@@ -100,13 +107,17 @@ class GitHubRepository(
             }.collect()
         }
     }.catch {
-        handleRateLimit(it)
+        handleGitHubError(it)
         emit(Result.failure(it))
         Log.e("GitHubRepository", "Error searching.", it)
     }
 
     private fun selfCheck() = flow {
         val releases = service.getReleases().filter { filterPreRelease(it) }
+        if (releases.isEmpty()) {
+            emit(emptyList())
+            return@flow
+        }
         val versions = getVersions(releases[0].name)
 
         if (versions.second > BuildConfig.VERSION_CODE.toLong()) {
@@ -166,7 +177,7 @@ class GitHubRepository(
             emit(emptyList())
         }
     }.catch {
-        handleRateLimit(it)
+        handleGitHubError(it)
         emit(emptyList())
         Log.e("GitHubRepository", "Error fetching releases for $packageName.", it)
     }
@@ -252,14 +263,17 @@ class GitHubRepository(
         else -> asset.browser_download_url.matches(extra)
     }
 
-    private fun handleRateLimit(t: Throwable) {
-        if (!rateLimitWarned && t is HttpException && t.code() == 403) {
-            val remaining = t.response()?.headers()?.get("X-RateLimit-Remaining")
-            if (remaining == "0") {
-                rateLimitWarned = true
-                snackBar.snackBar(message = TextSnack("GitHub API rate limit reached. Try again later."))
-            }
+    private fun handleGitHubError(t: Throwable) {
+        if (errorWarned || t !is HttpException) return
+        val message = when (t.code()) {
+            // Expired/revoked/invalid Personal Access Token → "Bad credentials"
+            401 -> stringer.get(R.string.github_token_invalid)
+            // Rate limit (authenticated or anonymous) or forbidden token scope
+            403, 429 -> stringer.get(R.string.github_rate_limit)
+            else -> return
         }
+        errorWarned = true
+        snackBar.snackBar(message = TextSnack(message))
     }
 
 }

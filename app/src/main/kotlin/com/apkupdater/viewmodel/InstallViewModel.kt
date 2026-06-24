@@ -25,6 +25,7 @@ import com.apkupdater.util.Downloader
 import com.apkupdater.util.randomUUID
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
+import com.apkupdater.util.installErrorResId
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import kotlinx.coroutines.Dispatchers
@@ -201,7 +202,7 @@ abstract class InstallViewModel(
         Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
         if (!isNetworkError(it) && !isCancellation(it)) {
-            val reason = it.message ?: "Unknown error"
+            val reason = stringer.get(installErrorResId(it.message))
             val msg = stringer.get(R.string.install_failure, name) + "\n" + reason
             snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
         }

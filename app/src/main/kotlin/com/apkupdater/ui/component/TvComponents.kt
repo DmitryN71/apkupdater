@@ -18,6 +18,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,8 +64,30 @@ import androidx.compose.ui.text.font.FontWeight
 import com.apkupdater.util.to2f
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.onFocusChanged
+import com.apkupdater.prefs.Prefs
+import org.koin.androidx.compose.get
 import kotlinx.coroutines.launch
 
+
+/**
+ * Adds a visible D-pad focus cue (scale-up) for TV / car head units, where the
+ * default Material focus indication is too subtle. No-op on touch devices since
+ * buttons aren't focused by touch.
+ */
+@Composable
+fun Modifier.tvFocus(): Modifier {
+	var focused by remember { mutableStateOf(false) }
+	val scale by animateFloatAsState(if (focused) 1.12f else 1f, label = "tvFocusScale")
+	return this
+		.scale(scale)
+		.onFocusChanged { focused = it.isFocused }
+}
 
 @Composable
 fun VersionChip(
@@ -110,13 +133,17 @@ fun SizeChip(sizeBytes: Long, modifier: Modifier = Modifier) {
 @Composable
 fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
 	val shape = RoundedCornerShape(50)
+	val clickable = onClick != null
+	// Clickable (source URL available) chips get a tonal-primary look + an
+	// open-in-new icon so they read as a link, not a static label.
+	val background = if (clickable) MaterialTheme.colorScheme.primaryContainer
+		else MaterialTheme.colorScheme.secondaryContainer
+	val foreground = if (clickable) MaterialTheme.colorScheme.onPrimaryContainer
+		else MaterialTheme.colorScheme.onSecondaryContainer
 	Row(
 		modifier = modifier
-			.background(
-				if (onClick != null) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-				shape
-			)
-			.then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+			.background(background, shape)
+			.then(if (clickable) Modifier.clickable { onClick() } else Modifier)
 			.padding(horizontal = 10.dp, vertical = 5.dp),
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -126,8 +153,16 @@ fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Un
 			source.name,
 			style = MaterialTheme.typography.labelMedium,
 			fontWeight = FontWeight.Bold,
-			color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSecondaryContainer
+			color = foreground
 		)
+		if (clickable) {
+			Icon(
+				Icons.AutoMirrored.Filled.OpenInNew,
+				contentDescription = null,
+				tint = foreground,
+				modifier = Modifier.size(12.dp)
+			)
+		}
 	}
 }
 
@@ -145,6 +180,9 @@ fun TvCommonItem(
 	onSourceClick: (() -> Unit)? = null,
 	fileSize: Long = 0L
 ) = Row(Modifier.padding(12.dp)) {
+	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
+	// called behind a short-circuit (overflow flips 0→N after layout measures).
+	val animateText = get<Prefs>().playTextAnimations.get()
 	Column(horizontalAlignment = Alignment.CenterHorizontally) {
 		if (uri == null) {
 			LoadingImageApp(packageName, Modifier.height(100.dp))
@@ -162,7 +200,9 @@ fun TvCommonItem(
 			val scrollState = rememberScrollState()
 			val overflow = scrollState.maxValue
 
-			if (overflow > 0) {
+			// Auto-scroll only when the user has opted into text animations —
+			// constantly moving version text is hard to read, especially in a car.
+			if (overflow > 0 && animateText) {
 				val transition = rememberInfiniteTransition(label = "bounce")
 				val fraction by transition.animateFloat(
 					initialValue = 0f, targetValue = 1f,
@@ -183,8 +223,12 @@ fun TvCommonItem(
 					.horizontalScroll(scrollState)
 			) {
 				VersionChip(oldVersion, isNew = false)
-				Text("→", style = MaterialTheme.typography.labelSmall,
-					color = MaterialTheme.colorScheme.onSurfaceVariant)
+				Icon(
+					Icons.AutoMirrored.Filled.ArrowRightAlt,
+					contentDescription = null,
+					tint = MaterialTheme.colorScheme.onSurfaceVariant,
+					modifier = Modifier.size(16.dp)
+				)
 				VersionChip(version, isNew = true)
 			}
 		} else {
@@ -212,7 +256,7 @@ fun TvInstallButton(
 	val isUpdate = isInstalledElsewhere && app.oldVersionCode < app.versionCode
 
 	OutlinedButton(
-		modifier = Modifier.padding(2.dp),
+		modifier = Modifier.tvFocus(),
 		onClick = {
 			when {
 				app.isInstalling -> onCancel(app.id)
@@ -232,11 +276,13 @@ fun TvInstallButton(
 		border = ButtonDefaults.outlinedButtonBorder(enabled = !isUpToDate)
 	) {
 		if (app.isInstalling) {
+			Icon(Icons.Filled.Close, stringResource(R.string.cancel_cd), Modifier.size(16.dp))
+			Spacer(Modifier.width(4.dp))
 			if (app.total != 0L && app.progress != 0L) {
 				val p = ((app.progress.toFloat() / app.total) * 100f).coerceAtMost(100f)
-				Text("✕ ${p.to2f()}%")
+				Text("${p.to2f()}%")
 			} else {
-				Text("✕ ${stringResource(R.string.cancel_cd)}")
+				Text(stringResource(R.string.cancel_cd))
 			}
 		} else if (app.isInstalled) {
 			Text(stringResource(R.string.open_cd))
@@ -261,7 +307,7 @@ fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = Outlin
 			horizontalArrangement = Arrangement.End
 		) {
 			OutlinedButton(
-				modifier = Modifier.padding(4.dp),
+				modifier = Modifier.tvFocus(),
 				onClick = { onIgnore(app.packageName) },
 				border = ButtonDefaults.outlinedButtonBorder(enabled = true)
 			) {
@@ -277,7 +323,7 @@ fun TvIgnoreVersionButton(
 	onIgnoreVersion: (Int) -> Unit,
 ) {
 	OutlinedButton(
-		modifier = Modifier.padding(2.dp),
+		modifier = Modifier.tvFocus(),
 		onClick = { onIgnoreVersion(app.id) },
 		enabled = !app.isInstalling,
 		contentPadding = ButtonDefaults.ContentPadding.let {
@@ -296,7 +342,7 @@ fun TvHideButton(
 	onHide: () -> Unit
 ) {
 	OutlinedButton(
-		modifier = Modifier.padding(2.dp),
+		modifier = Modifier.tvFocus(),
 		onClick = onHide,
 		contentPadding = ButtonDefaults.ContentPadding.let {
 			androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = it.calculateTopPadding())
@@ -325,7 +371,7 @@ fun TvDownloadButton(
 			state = tooltipState
 		) {
 			OutlinedIconButton(
-				modifier = Modifier.padding(2.dp).combinedClickable(
+				modifier = Modifier.tvFocus().combinedClickable(
 					onClick = { if (!app.isInstalling) onDownload(app) },
 					onLongClick = { scope.launch { tooltipState.show() } }
 				),
@@ -362,7 +408,7 @@ fun TvUpdateItem(
 		Row(
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
-			horizontalArrangement = Arrangement.End
+			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
 			if (!app.isInstalled) {
 				TvIgnoreVersionButton(app, onIgnoreVersion)
@@ -394,7 +440,7 @@ fun TvSearchItem(
 		Row(
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
-			horizontalArrangement = Arrangement.End
+			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
 			TvDownloadButton(app, onDownload)
 			TvInstallButton(app, onInstall, onOpen, onCancel, isSearch = true)

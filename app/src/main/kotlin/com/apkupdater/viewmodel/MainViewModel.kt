@@ -9,12 +9,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstallStatus
 import com.apkupdater.data.ui.Screen
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
+import com.apkupdater.util.Stringer
 import com.apkupdater.util.UpdatesNotification
+import com.apkupdater.util.installErrorResId
 import com.apkupdater.util.getAppId
 import com.apkupdater.util.getIntentExtra
 import com.apkupdater.util.orFalse
@@ -25,7 +28,8 @@ import kotlinx.coroutines.launch
 
 class MainViewModel(
 	private val prefs: Prefs,
-	private val installLog: InstallLog
+	private val installLog: InstallLog,
+	private val stringer: Stringer
 ) : ViewModel() {
 
 	val screens = listOf(Screen.Apps, Screen.Search, Screen.Updates, Screen.Settings)
@@ -98,14 +102,22 @@ class MainViewModel(
 		}
 	}
 
-	private fun installErrorReason(status: Int, rawMessage: String?): String? = when (status) {
-		PackageInstaller.STATUS_FAILURE_ABORTED -> "Installation was cancelled"
-		PackageInstaller.STATUS_FAILURE_BLOCKED -> "Blocked by device policy"
-		PackageInstaller.STATUS_FAILURE_CONFLICT -> "Conflicting package signature"
-		PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "Incompatible with this device"
-		PackageInstaller.STATUS_FAILURE_INVALID -> "Invalid or corrupt APK"
-		PackageInstaller.STATUS_FAILURE_STORAGE -> "Not enough storage space"
-		else -> rawMessage
+	private fun installErrorReason(status: Int, rawMessage: String?): String {
+		// The raw message carries the most specific INSTALL_FAILED_* code when present
+		// (e.g. signature mismatch arrives as a generic STATUS_FAILURE with the detail
+		// only in the message), so scan it first, then fall back to the numeric status.
+		val fromRaw = rawMessage?.let { installErrorResId(it) }
+		val resId = when {
+			fromRaw != null && fromRaw != R.string.install_error_unknown -> fromRaw
+			status == PackageInstaller.STATUS_FAILURE_ABORTED -> R.string.install_error_aborted
+			status == PackageInstaller.STATUS_FAILURE_BLOCKED -> R.string.install_error_blocked
+			status == PackageInstaller.STATUS_FAILURE_CONFLICT -> R.string.install_error_signature
+			status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> R.string.install_error_incompatible
+			status == PackageInstaller.STATUS_FAILURE_INVALID -> R.string.install_error_invalid
+			status == PackageInstaller.STATUS_FAILURE_STORAGE -> R.string.install_error_storage
+			else -> R.string.install_error_unknown
+		}
+		return stringer.get(resId)
 	}
 
 	private fun processUpdateIntent(

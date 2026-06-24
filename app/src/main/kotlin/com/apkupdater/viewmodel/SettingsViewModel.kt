@@ -4,14 +4,19 @@ import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
+import com.apkupdater.R
 import com.apkupdater.data.github.CustomGitRepo
 import com.apkupdater.data.github.parseRepoUrl
+import com.apkupdater.data.snack.SnackType
+import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.SettingsUiState
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.AppsRepository
 import com.apkupdater.ui.theme.isDarkTheme
 import com.apkupdater.util.Clipboard
+import com.apkupdater.util.SnackBar
+import com.apkupdater.util.Stringer
 import com.apkupdater.util.Themer
 import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.worker.UpdatesWorker
@@ -39,7 +44,9 @@ class SettingsViewModel(
 	private val appsRepository: AppsRepository,
 	private val gson: Gson = GsonBuilder().setPrettyPrinting().create(),
 	private val themer: Themer,
-	private val context: Context
+	private val context: Context,
+	private val snackBar: SnackBar,
+	private val stringer: Stringer
 ) : ViewModel() {
 
 	val state = MutableStateFlow<SettingsUiState>(SettingsUiState.Settings)
@@ -124,6 +131,7 @@ class SettingsViewModel(
 			prefs.shizukuInstall.put(false)
 		} else {
 			prefs.rootInstall.put(false)
+			if (b) snackBar.snackBar(message = TextSnack(stringer.get(R.string.root_not_granted), type = SnackType.ERROR))
 		}
 	}
 
@@ -140,14 +148,17 @@ class SettingsViewModel(
 						prefs.shizukuInstall.put(true)
 						prefs.rootInstall.put(false)
 					} else {
+						// Permission dialog shown; listener flips the pref on grant.
 						Shizuku.requestPermission(0)
 						prefs.shizukuInstall.put(false)
 					}
 				} else {
 					prefs.shizukuInstall.put(false)
+					snackBar.snackBar(message = TextSnack(stringer.get(R.string.shizuku_not_running), type = SnackType.ERROR))
 				}
 			} catch (e: Exception) {
 				prefs.shizukuInstall.put(false)
+				snackBar.snackBar(message = TextSnack(stringer.get(R.string.shizuku_unavailable), type = SnackType.ERROR))
 			}
 		} else {
 			prefs.shizukuInstall.put(false)

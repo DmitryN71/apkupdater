@@ -74,6 +74,32 @@
     <string name="clean_up_after_install">Очистить после установки</string>
     <string name="source_errors">%1$d из %2$d источников не удалось проверить.</string>
     <string name="checking_sources">Проверка: %1$s</string>
+    <string name="checking_updates">Проверяю обновления…</string>
+    <string name="search_empty">Ищите приложения по названию во всех источниках.</string>
+
+    // Install mode errors
+    <string name="root_not_granted">Root-доступ не предоставлен.</string>
+    <string name="shizuku_not_running">Shizuku не запущен.</string>
+    <string name="shizuku_unavailable">Shizuku недоступен.</string>
+
+    // GitHub errors
+    <string name="github_token_invalid">Токен GitHub недействителен или истёк. Обновите его в Настройках.</string>
+    <string name="github_rate_limit">Достигнут лимит запросов к GitHub. Попробуйте позже или добавьте токен в Настройках.</string>
+    <string name="github_token_help">Необязательно. Повышает часовой лимит запросов к GitHub, чтобы проверка обновлений не отключалась молча. Создать: github.com/settings/tokens — права не нужны.</string>
+
+    // Install errors
+    <string name="install_error_signature">Другая подпись приложения. Сначала удалите установленное приложение, затем обновите.</string>
+    <string name="install_error_downgrade">Нельзя установить версию старее уже установленной.</string>
+    <string name="install_error_storage">Недостаточно места в хранилище.</string>
+    <string name="install_error_invalid">Повреждённый или некорректный APK.</string>
+    <string name="install_error_incompatible">Несовместимо с этим устройством.</string>
+    <string name="install_error_older_sdk">Требуется более новая версия Android.</string>
+    <string name="install_error_blocked">Заблокировано политикой устройства.</string>
+    <string name="install_error_aborted">Установка отменена.</string>
+    <string name="install_error_already_exists">Приложение уже установлено.</string>
+    <string name="install_error_conflicting_provider">Конфликт content provider с другим приложением.</string>
+    <string name="install_error_unknown">Непредвиденная ошибка.</string>
+
     <string name="settings_custom_repos">Пользовательские репозитории</string>
     <string name="custom_repo_hint">github.com/user/repo</string>
     <string name="add_repo">Добавить</string>
@@ -99,10 +125,10 @@
     <string name="notification_update_title">Обновления</string>
     <plurals name="notification_update_description">
         <item quantity="zero">Обновления не найдены.</item>
-        <item quantity="one">Найдено %1$d обновлений.</item>
-        <item quantity="other">Найдено %1$d обновлений.</item>
-        <item quantity="few">Найдено %1$d обновлений.</item>
+        <item quantity="one">Найдено %1$d обновление.</item>
+        <item quantity="few">Найдено %1$d обновления.</item>
         <item quantity="many">Найдено %1$d обновлений.</item>
+        <item quantity="other">Найдено %1$d обновлений.</item>
     </plurals>
 
 </resources>
