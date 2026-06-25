@@ -64,29 +64,33 @@ import androidx.compose.ui.text.font.FontWeight
 import com.apkupdater.util.to2f
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.scale
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
 import com.apkupdater.prefs.Prefs
 import org.koin.androidx.compose.get
 import kotlinx.coroutines.launch
 
 
 /**
- * Adds a visible D-pad focus cue (scale-up) for TV / car head units, where the
- * default Material focus indication is too subtle. No-op on touch devices since
- * buttons aren't focused by touch.
+ * Adds a visible D-pad focus cue for TV / car head units, where the default
+ * Material focus indication is too subtle. Draws a primary-colored border that
+ * follows the component's [shape] — staying WITHIN layout bounds (no scaling, so
+ * nothing overflows the card) and matching round/pill shapes (no square ring).
+ * No-op on touch devices since buttons aren't focused by touch.
  */
 @Composable
-fun Modifier.tvFocus(): Modifier {
+fun Modifier.tvFocus(shape: Shape = CircleShape): Modifier {
 	var focused by remember { mutableStateOf(false) }
-	val scale by animateFloatAsState(if (focused) 1.12f else 1f, label = "tvFocusScale")
 	return this
-		.scale(scale)
 		.onFocusChanged { focused = it.isFocused }
+		.then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
 }
 
 @Composable
@@ -371,7 +375,7 @@ fun TvDownloadButton(
 			state = tooltipState
 		) {
 			OutlinedIconButton(
-				modifier = Modifier.tvFocus().combinedClickable(
+				modifier = Modifier.tvFocus().clip(CircleShape).combinedClickable(
 					onClick = { if (!app.isInstalling) onDownload(app) },
 					onLongClick = { scope.launch { tooltipState.show() } }
 				),
@@ -406,7 +410,7 @@ fun TvUpdateItem(
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 		)
 		Row(
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
@@ -438,7 +442,7 @@ fun TvSearchItem(
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 		)
 		Row(
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
