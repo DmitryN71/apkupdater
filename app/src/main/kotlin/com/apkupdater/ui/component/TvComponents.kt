@@ -1,9 +1,7 @@
 package com.apkupdater.ui.component
 
 import android.net.Uri
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,14 +20,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipBox
@@ -44,7 +42,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -64,34 +61,14 @@ import androidx.compose.ui.text.font.FontWeight
 import com.apkupdater.util.to2f
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.foundation.focusGroup
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
+import androidx.compose.ui.graphics.Color
 import com.apkupdater.prefs.Prefs
 import org.koin.androidx.compose.get
-import kotlinx.coroutines.launch
 
-
-/**
- * Adds a visible D-pad focus cue for TV / car head units, where the default
- * Material focus indication is too subtle. Draws a primary-colored border that
- * follows the component's [shape] — staying WITHIN layout bounds (no scaling, so
- * nothing overflows the card) and matching round/pill shapes (no square ring).
- * No-op on touch devices since buttons aren't focused by touch.
- */
-@Composable
-fun Modifier.tvFocus(shape: Shape = CircleShape): Modifier {
-	var focused by remember { mutableStateOf(false) }
-	return this
-		.onFocusChanged { focused = it.isFocused }
-		.then(if (focused) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
-}
 
 @Composable
 fun VersionChip(
@@ -259,8 +236,27 @@ fun TvInstallButton(
 	val isUpToDate = isInstalledElsewhere && app.oldVersionCode >= app.versionCode
 	val isUpdate = isInstalledElsewhere && app.oldVersionCode < app.versionCode
 
-	OutlinedButton(
-		modifier = Modifier.tvFocus(),
+	// D-pad focus cue per Material TV guidance: the button itself switches to a
+	// solid fill. Drawn by the component — it matches the pill shape exactly and
+	// never paints outside the button's bounds (unlike a border modifier, which
+	// hugged the invisible 48dp touch-target box and stuck out vertically).
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+
+	val container = when {
+		app.isInstalling -> if (focused) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.errorContainer
+		app.isInstalled -> if (focused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer
+		focused -> MaterialTheme.colorScheme.primary
+		else -> MaterialTheme.colorScheme.primaryContainer
+	}
+	val content = when {
+		app.isInstalling -> if (focused) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onErrorContainer
+		app.isInstalled -> if (focused) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer
+		focused -> MaterialTheme.colorScheme.onPrimary
+		else -> MaterialTheme.colorScheme.onPrimaryContainer
+	}
+
+	FilledTonalButton(
 		onClick = {
 			when {
 				app.isInstalling -> onCancel(app.id)
@@ -269,15 +265,11 @@ fun TvInstallButton(
 			}
 		},
 		enabled = !isUpToDate,
-		colors = ButtonDefaults.outlinedButtonColors(
-			contentColor = when {
-				app.isInstalling -> MaterialTheme.colorScheme.error
-				app.isInstalled -> MaterialTheme.colorScheme.tertiary
-				isUpToDate -> MaterialTheme.colorScheme.outline
-				else -> MaterialTheme.colorScheme.primary
-			}
-		),
-		border = ButtonDefaults.outlinedButtonBorder(enabled = !isUpToDate)
+		interactionSource = interaction,
+		colors = ButtonDefaults.filledTonalButtonColors(
+			containerColor = container,
+			contentColor = content
+		)
 	) {
 		if (app.isInstalling) {
 			Icon(Icons.Filled.Close, stringResource(R.string.cancel_cd), Modifier.size(16.dp))
@@ -301,8 +293,10 @@ fun TvInstallButton(
 }
 
 @Composable
-fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = OutlinedCard(
-	modifier = Modifier.alpha(if (app.ignored) 0.5f else 1f)
+fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = Card(
+	modifier = Modifier.alpha(if (app.ignored) 0.5f else 1f),
+	shape = RoundedCornerShape(20.dp),
+	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
 ) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, null, app.versionCode, null)
@@ -310,10 +304,15 @@ fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = Outlin
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
 			horizontalArrangement = Arrangement.End
 		) {
-			OutlinedButton(
-				modifier = Modifier.tvFocus(),
+			val interaction = remember { MutableInteractionSource() }
+			val focused by interaction.collectIsFocusedAsState()
+			TextButton(
 				onClick = { onIgnore(app.packageName) },
-				border = ButtonDefaults.outlinedButtonBorder(enabled = true)
+				interactionSource = interaction,
+				colors = ButtonDefaults.textButtonColors(
+					containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+					contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+				)
 			) {
 				Text(stringResource(if (app.ignored) R.string.unignore_cd else R.string.ignore_cd))
 			}
@@ -326,15 +325,15 @@ fun TvIgnoreVersionButton(
 	app: AppUpdate,
 	onIgnoreVersion: (Int) -> Unit,
 ) {
-	OutlinedButton(
-		modifier = Modifier.tvFocus(),
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	TextButton(
 		onClick = { onIgnoreVersion(app.id) },
 		enabled = !app.isInstalling,
-		contentPadding = ButtonDefaults.ContentPadding.let {
-			androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = it.calculateTopPadding())
-		},
-		colors = ButtonDefaults.outlinedButtonColors(
-			contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+		interactionSource = interaction,
+		colors = ButtonDefaults.textButtonColors(
+			containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 		)
 	) {
 		Text(stringResource(R.string.skip_cd))
@@ -345,21 +344,21 @@ fun TvIgnoreVersionButton(
 fun TvHideButton(
 	onHide: () -> Unit
 ) {
-	OutlinedButton(
-		modifier = Modifier.tvFocus(),
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	TextButton(
 		onClick = onHide,
-		contentPadding = ButtonDefaults.ContentPadding.let {
-			androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = it.calculateTopPadding())
-		},
-		colors = ButtonDefaults.outlinedButtonColors(
-			contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+		interactionSource = interaction,
+		colors = ButtonDefaults.textButtonColors(
+			containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 		)
 	) {
 		Text(stringResource(R.string.hide_cd))
 	}
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TvDownloadButton(
 	app: AppUpdate,
@@ -367,22 +366,23 @@ fun TvDownloadButton(
 ) {
 	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play) && app.source != ApkMirrorSource
 	if (hasLink) {
-		val tooltipState = rememberTooltipState()
-		val scope = rememberCoroutineScope()
+		// Single focusable node: the button itself. The old extra combinedClickable
+		// wrapper was a second focus stop with a rectangular highlight — the cause
+		// of the square ring around this round button on TV.
+		val interaction = remember { MutableInteractionSource() }
+		val focused by interaction.collectIsFocusedAsState()
 		TooltipBox(
 			positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
 			tooltip = { PlainTooltip { Text(stringResource(R.string.download_cd)) } },
-			state = tooltipState
+			state = rememberTooltipState()
 		) {
-			OutlinedIconButton(
-				modifier = Modifier.tvFocus().clip(CircleShape).combinedClickable(
-					onClick = { if (!app.isInstalling) onDownload(app) },
-					onLongClick = { scope.launch { tooltipState.show() } }
-				),
+			IconButton(
 				onClick = { if (!app.isInstalling) onDownload(app) },
 				enabled = !app.isInstalling,
-				colors = IconButtonDefaults.outlinedIconButtonColors(
-					contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+				interactionSource = interaction,
+				colors = IconButtonDefaults.iconButtonColors(
+					containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+					contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 				)
 			) {
 				Icon(painterResource(R.drawable.ic_save), contentDescription = stringResource(R.string.download_cd))
@@ -401,7 +401,11 @@ fun TvUpdateItem(
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
 	onCancel: (Int) -> Unit = {}
-) = OutlinedCard(Modifier.fillMaxWidth()) {
+) = Card(
+	modifier = Modifier.fillMaxWidth(),
+	shape = RoundedCornerShape(20.dp),
+	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
 		WhatsNew(app.whatsNew, app.source)
@@ -433,7 +437,11 @@ fun TvSearchItem(
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
 	onCancel: (Int) -> Unit = {}
-) = OutlinedCard(Modifier.fillMaxWidth()) {
+) = Card(
+	modifier = Modifier.fillMaxWidth(),
+	shape = RoundedCornerShape(20.dp),
+	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
 		WhatsNew(app.whatsNew, app.source)
