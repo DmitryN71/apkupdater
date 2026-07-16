@@ -160,8 +160,18 @@ val mainModule = module {
 	}
 
 	single {
+		// RuStore's backapi rejects requests without this header (HTTP 400 since mid-2026).
+		// The value is the RuStore app's version code; bump it if the API starts rejecting it again.
+		val ruStoreClient = get<OkHttpClient>().newBuilder()
+			.addInterceptor { chain ->
+				val request = chain.request().newBuilder()
+					.header("ruStoreVerCode", "1105002")
+					.build()
+				chain.proceed(request)
+			}
+			.build()
 		Retrofit.Builder()
-			.client(get())
+			.client(ruStoreClient)
 			.baseUrl("https://backapi.rustore.ru/")
 			.addConverterFactory(GsonConverterFactory.create(get()))
 			.build()

@@ -5,6 +5,7 @@ import android.util.Log
 import com.apkupdater.data.rustore.RuStoreBatchEntry
 import com.apkupdater.data.rustore.RuStoreBatchRequest
 import com.apkupdater.data.rustore.RuStoreDownloadRequest
+import com.apkupdater.data.rustore.ruStoreApkUrl
 import com.apkupdater.data.rustore.toAppUpdate
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
@@ -209,7 +210,7 @@ class RuStoreRepository(
 				val request = RuStoreDownloadRequest(appId = appId)
 				val response = service.getDownloadLink(request)
 				if (response.code == "OK") {
-					response.body.downloadUrls.firstOrNull()?.url ?: ""
+					response.body.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl() ?: ""
 				} else ""
 			}.onFailure { exception ->
 				when {

@@ -14,6 +14,7 @@ import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.rustore.RuStoreDownloadRequest
+import com.apkupdater.data.rustore.ruStoreApkUrl
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.data.ui.AppInstallStatus
 import com.apkupdater.data.ui.AppUpdate
@@ -95,7 +96,7 @@ abstract class InstallViewModel(
                 val appInfo = ruStoreService.getAppInfo(update.packageName)
                 if (appInfo.code == "OK" && appInfo.body.appId != 0L) {
                     val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId))
-                    val url = download.body.downloadUrls.firstOrNull()?.url
+                    val url = download.body.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl()
                     if (download.code == "OK" && !url.isNullOrEmpty()) {
                         Link.Url(url, update.link.size)
                     } else update.link
