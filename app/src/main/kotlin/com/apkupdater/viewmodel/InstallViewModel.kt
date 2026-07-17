@@ -22,10 +22,13 @@ import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.AppVisibility
+import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.randomUUID
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
+import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.installErrorResId
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
@@ -45,8 +48,17 @@ abstract class InstallViewModel(
     protected val stringer: Stringer,
     protected val installLog: InstallLog,
     private val ruStoreService: RuStoreService,
-    private val context: Context
+    protected val context: Context,
+    protected val background: BackgroundInstaller,
+    private val notification: UpdatesNotification
 ): ViewModel() {
+
+    /** After a background install, show a "installed — Open?" notification. */
+    protected fun notifyInstalledIfBackground(update: AppUpdate) {
+        if (!AppVisibility.foreground) {
+            notification.showInstallSuccessNotification(update.packageName, update.name, update.id)
+        }
+    }
 
     fun install(update: AppUpdate, uriHandler: UriHandler) {
         when (update.source) {
@@ -220,10 +232,27 @@ abstract class InstallViewModel(
                 installer.playInstall(id, packageName, files.map { downloader.downloadStream(it.url, id)!! })
             }
             is Link.Url -> {
-                val result = downloader.downloadStreamWithSize(link.link, id)!!
-                val totalSize = if (result.size > 0) result.size else link.size
-                installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
-                installer.install(id, packageName, result.stream)
+                // Download to a temp file so we can verify the APK's package before
+                // installing — a streamed install can't be checked and would let a
+                // wrong-channel APK (e.g. Brave Nightly over Beta) install alongside.
+                val file = downloader.downloadFile(link.link, id) { downloaded, total ->
+                    installLog.emitProgress(AppInstallProgress(id, downloaded, total))
+                }
+                val wrongPackage = installer.verifyPackage(file, packageName)
+                if (wrongPackage != null) {
+                    file.delete()
+                    // Show the message directly (not via the status channel, whose
+                    // snack lookup uses a stale list) so the user always sees why.
+                    snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.install_error_wrong_package, wrongPackage),
+                        type = SnackType.ERROR))
+                    installLog.emitProgress(AppInstallProgress(id, 0L))
+                    cancelInstall(id)
+                    return@runCatching
+                }
+                // Progress already shown during download — install without re-tracking.
+                file.inputStream().use { installer.install(id, packageName, it, trackProgress = false) }
+                file.delete()
             }
             is Link.Xapk -> {
                 val result = downloader.downloadStreamWithSize(link.link, id)
@@ -288,7 +317,11 @@ abstract class InstallViewModel(
         return msg.contains("canceled") || msg.contains("cancelled") || msg.contains("socket closed")
     }
 
-    fun downloadToFolder(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
+    // Runs in the process-lifetime scope so the download survives leaving the app;
+    // begin()/end() keep the foreground service (and its notification) alive meanwhile.
+    fun downloadToFolder(update: AppUpdate) = background.scope.launch(Dispatchers.IO) {
+        background.begin(update.id, update.name)
+        try {
         runCatching {
             val link = resolveLink(update)
             val safeName = update.name.replace(Regex("[^\\p{L}\\p{N}._\\- ]"), "").trim().ifEmpty { update.packageName }
@@ -349,6 +382,9 @@ abstract class InstallViewModel(
                     stringer.get(R.string.download_failed), type = SnackType.ERROR
                 ))
             }
+        }
+        } finally {
+            background.end(update.id)
         }
     }
 

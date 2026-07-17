@@ -30,6 +30,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
@@ -127,8 +128,8 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 			) { data ->
 				val snack = data.visuals as? TextSnack
 				val containerColor = when (snack?.type) {
-					SnackType.ERROR -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f)
-					else -> MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.5f)
+					SnackType.ERROR -> MaterialTheme.colorScheme.errorContainer
+					else -> MaterialTheme.colorScheme.inverseSurface
 				}
 				val contentColor = when (snack?.type) {
 					SnackType.ERROR -> MaterialTheme.colorScheme.onErrorContainer
@@ -139,17 +140,21 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 					SnackType.ERROR -> Icons.Outlined.Warning
 					else -> null
 				}
+				val iconTint = when (snack?.type) {
+					SnackType.SUCCESS -> Color(0xFF66BB6A)
+					else -> contentColor
+				}
 				Snackbar(
-					modifier = Modifier.padding(12.dp),
-					shape = RoundedCornerShape(12.dp),
+					modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+					shape = RoundedCornerShape(16.dp),
 					containerColor = containerColor,
 					contentColor = contentColor,
 					dismissActionContentColor = contentColor
 				) {
 					Row(verticalAlignment = Alignment.CenterVertically) {
 						if (icon != null) {
-							Icon(icon, null, Modifier.size(20.dp))
-							Spacer(Modifier.width(8.dp))
+							Icon(icon, null, Modifier.size(20.dp), tint = iconTint)
+							Spacer(Modifier.width(10.dp))
 						}
 						Text(data.visuals.message)
 					}

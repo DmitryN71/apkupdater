@@ -54,6 +54,7 @@
     <string name="install_error_already_exists">Package already exists.</string>
     <string name="install_error_conflicting_provider">Conflicts with another app\'s content provider.</string>
     <string name="install_error_unknown">Unexpected error.</string>
+    <string name="install_error_wrong_package">This APK is for a different app (%1$s) — not installed, to avoid a duplicate.</string>
 
     // Settings
     <string name="settings_portrait_columns">Portrait Columns</string>
@@ -128,6 +129,23 @@
     <string name="notification_channel_description">Channel for update notifications.</string>
     <string name="notification_channel_id" translatable="false">updateChannel</string>
     <string name="notification_update_title">Updates</string>
+    <string name="notification_download_channel_name">Downloads</string>
+    <string name="notification_confirm_channel_name">Install confirmations</string>
+    <string name="notification_confirm_title">Confirm installation</string>
+    <string name="notification_confirm_text">Download complete. Tap to install.</string>
+    <string name="notification_success_channel_name">Install results</string>
+    <string name="notification_installed_title">%1$s installed</string>
+    <string name="notification_installed_text">Tap Open to launch it.</string>
+    <string name="dismiss_cd">Dismiss</string>
+    <string name="manage_custom_repos">Manage repositories</string>
+    <string name="save_repo">Save</string>
+    <string name="clear_cache">Clear cache (%1$s)</string>
+    <string name="clear_cache_cd">Clear cache</string>
+    <string name="cache_cleared">Freed %1$s</string>
+    <plurals name="notification_downloading">
+        <item quantity="one">Downloading %1$d update…</item>
+        <item quantity="other">Downloading %1$d updates…</item>
+    </plurals>
     <plurals name="notification_update_description">
         <item quantity="zero">No updates found.</item>
         <item quantity="one">Found %1$d update.</item>

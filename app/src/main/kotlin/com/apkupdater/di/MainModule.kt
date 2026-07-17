@@ -24,6 +24,7 @@ import com.apkupdater.service.FdroidService
 import com.apkupdater.service.GitHubService
 import com.apkupdater.service.GitLabService
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Clipboard
 import com.apkupdater.util.Downloader
@@ -232,16 +233,18 @@ val mainModule = module {
 
 	single { InstallLog() }
 
+	single { BackgroundInstaller(androidContext(), get(), get()) }
+
 	single { PlayHttpClient(get()) }
 
-	viewModel { MainViewModel(get(), get(), get()) }
+	viewModel { MainViewModel(get()) }
 
 	viewModel { AppsViewModel(get(), get(), get()) }
 
-	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext()) }
+	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get()) }
 
 	viewModel { SettingsViewModel(get(), get(), WorkManager.getInstance(get()), get(), get(), get(), get(), androidContext(), get(), get()) }
 
-	viewModel { SearchViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext()) }
+	viewModel { SearchViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get()) }
 
 }

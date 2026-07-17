@@ -1,7 +1,9 @@
 package com.apkupdater.ui.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,14 +15,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -76,12 +83,25 @@ import java.util.Calendar
 
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) = Column {
-	if (viewModel.state.collectAsStateWithLifecycle().value == SettingsUiState.Settings) {
-		SettingsTopBar(viewModel)
-		Settings(viewModel)
-	} else {
-		AboutTopBar(viewModel)
-		About()
+	val state = viewModel.state.collectAsStateWithLifecycle().value
+	// In a sub-screen (About / Custom repos), the system back gesture should
+	// return to the main settings list, not pop the whole tab.
+	BackHandler(enabled = state != SettingsUiState.Settings) {
+		viewModel.setSettings()
+	}
+	when (state) {
+		SettingsUiState.Settings -> {
+			SettingsTopBar(viewModel)
+			Settings(viewModel)
+		}
+		SettingsUiState.CustomRepos -> {
+			CustomReposTopBar(viewModel)
+			CustomRepos(viewModel)
+		}
+		else -> {
+			AboutTopBar(viewModel)
+			About()
+		}
 	}
 }
 
@@ -223,107 +243,20 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 
 	item {
 		SectionHeader(stringResource(R.string.settings_custom_repos))
-		var repoUrl by remember { mutableStateOf("") }
-		var errorMsg by remember { mutableStateOf<String?>(null) }
-		var repos by remember { mutableStateOf(viewModel.getCustomGitRepos()) }
-		val invalidUrlMsg = stringResource(R.string.invalid_repo_url)
-
-		// App picker state
-		var appQuery by remember { mutableStateOf("") }
-		var selectedPkgName by remember { mutableStateOf("") }
-		var appDropdownExpanded by remember { mutableStateOf(false) }
-		LaunchedEffect(Unit) { viewModel.loadInstalledApps() }
-		val allApps = viewModel.installedApps.collectAsStateWithLifecycle().value
-
-		var repoUrlEditing by remember { mutableStateOf(false) }
-		val isTvRepo = LocalContext.current.isAndroidTv()
-		OutlinedTextField(
-			value = repoUrl,
-			onValueChange = { repoUrl = it; errorMsg = null },
-			label = { Text(stringResource(R.string.custom_repo_hint)) },
-			isError = errorMsg != null,
-			supportingText = errorMsg?.let { msg -> { Text(msg) } },
-			singleLine = true,
-			readOnly = isTvRepo && !repoUrlEditing,
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-				.then(if (isTvRepo) Modifier.clickable { repoUrlEditing = true } else Modifier)
-		)
-
-		// Installed app picker
-		var appQueryEditing by remember { mutableStateOf(false) }
-		Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-			OutlinedTextField(
-				value = appQuery,
-				onValueChange = {
-					appQuery = it
-					selectedPkgName = ""
-					appDropdownExpanded = it.length >= 2
-				},
-				label = { Text(stringResource(R.string.link_installed_app)) },
-				singleLine = true,
-				readOnly = isTvRepo && !appQueryEditing,
-				modifier = Modifier.fillMaxWidth()
-					.then(if (isTvRepo) Modifier.clickable { appQueryEditing = true } else Modifier)
-			)
-			val filtered = if (appQuery.length >= 2) {
-				allApps.filter { it.name.contains(appQuery, ignoreCase = true) }.take(8)
-			} else emptyList()
-			DropdownMenu(
-				expanded = appDropdownExpanded && filtered.isNotEmpty(),
-				onDismissRequest = { appDropdownExpanded = false },
-				modifier = Modifier.heightIn(max = 250.dp),
-				properties = PopupProperties(focusable = false)
-			) {
-				filtered.forEach { app ->
-					DropdownMenuItem(
-						text = { Text(app.name) },
-						onClick = {
-							appQuery = app.name
-							selectedPkgName = app.packageName
-							appDropdownExpanded = false
-						}
-					)
-				}
-			}
-		}
-
 		Row(
-			Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+			Modifier
+				.fillMaxWidth()
+				.clickable { viewModel.setCustomRepos() }
+				.heightIn(min = 56.dp)
+				.padding(start = 16.dp, end = 12.dp),
 			verticalAlignment = CenterVertically
 		) {
-			Spacer(Modifier.weight(1f))
-			IconButton(onClick = {
-				if (repoUrl.isBlank()) return@IconButton
-				val success = viewModel.addCustomGitRepo(repoUrl, selectedPkgName)
-				if (success) {
-					repoUrl = ""; errorMsg = null; appQuery = ""; selectedPkgName = ""
-					repos = viewModel.getCustomGitRepos()
-				} else errorMsg = invalidUrlMsg
-			}) {
-				Icon(Icons.Default.Add, stringResource(R.string.add_repo))
-			}
-		}
-
-		repos.forEach { repo ->
-			Row(
-				Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-				verticalAlignment = CenterVertically
-			) {
-				Icon(
-					painterResource(if (repo.platform == GitProvider.GITHUB) R.drawable.ic_github else R.drawable.ic_gitlab),
-					repo.platform.name,
-					Modifier.size(24.dp)
-				)
-				Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-					Text("${repo.user}/${repo.repo}", style = MaterialTheme.typography.bodyLarge)
-					if (repo.installedPackageName.isNotEmpty()) {
-						Text(repo.installedPackageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-					}
-				}
-				IconButton(onClick = { viewModel.removeCustomGitRepo(repo.id); repos = viewModel.getCustomGitRepos() }) {
-					Icon(Icons.Default.Delete, stringResource(R.string.delete))
-				}
-			}
+			Icon(painterResource(R.drawable.ic_github), null, Modifier.size(24.dp))
+			Text(
+				stringResource(R.string.manage_custom_repos),
+				Modifier.weight(1f).padding(start = 16.dp)
+			)
+			Icon(Icons.Filled.KeyboardArrowRight, null)
 		}
 	}
 
@@ -408,16 +341,17 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 					R.drawable.ic_hour
 				)
 			}
-			SegmentedButtonSetting(
-				stringResource(R.string.frequency),
-				listOf(
+			DropDownSetting(
+				text = stringResource(R.string.frequency),
+				options = listOf(
 					stringResource(R.string.settings_alarm_daily),
 					stringResource(R.string.settings_alarm_3day),
 					stringResource(R.string.settings_alarm_weekly)
 				),
-				{ viewModel.getAlarmFrequency() },
-				{ viewModel.setAlarmFrequency(it) },
-				R.drawable.ic_frequency
+				getValue = { viewModel.getAlarmFrequency() },
+				setValue = { viewModel.setAlarmFrequency(it) },
+				icon = R.drawable.ic_frequency,
+				width = 170
 			)
 		}
 	}
@@ -490,6 +424,167 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 		)
 	}
 }
+
+@Composable
+fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize()) {
+	item {
+		var repoUrl by remember { mutableStateOf("") }
+		var errorMsg by remember { mutableStateOf<String?>(null) }
+		var repos by remember { mutableStateOf(viewModel.getCustomGitRepos()) }
+		val invalidUrlMsg = stringResource(R.string.invalid_repo_url)
+		// Non-null while editing an existing repo (its id); null in add mode.
+		var editingId by remember { mutableStateOf<String?>(null) }
+
+		// App picker state
+		var appQuery by remember { mutableStateOf("") }
+		var selectedPkgName by remember { mutableStateOf("") }
+		var appDropdownExpanded by remember { mutableStateOf(false) }
+		LaunchedEffect(Unit) { viewModel.loadInstalledApps() }
+		val allApps = viewModel.installedApps.collectAsStateWithLifecycle().value
+
+		var repoUrlEditing by remember { mutableStateOf(false) }
+		val isTvRepo = LocalContext.current.isAndroidTv()
+		OutlinedTextField(
+			value = repoUrl,
+			onValueChange = { repoUrl = it; errorMsg = null },
+			label = { Text(stringResource(R.string.custom_repo_hint)) },
+			isError = errorMsg != null,
+			supportingText = errorMsg?.let { msg -> { Text(msg) } },
+			singleLine = true,
+			readOnly = isTvRepo && !repoUrlEditing,
+			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+				.then(if (isTvRepo) Modifier.clickable { repoUrlEditing = true } else Modifier)
+		)
+
+		// Installed app picker
+		var appQueryEditing by remember { mutableStateOf(false) }
+		Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+			OutlinedTextField(
+				value = appQuery,
+				onValueChange = {
+					appQuery = it
+					selectedPkgName = ""
+					appDropdownExpanded = it.length >= 2
+				},
+				label = { Text(stringResource(R.string.link_installed_app)) },
+				singleLine = true,
+				readOnly = isTvRepo && !appQueryEditing,
+				modifier = Modifier.fillMaxWidth()
+					.then(if (isTvRepo) Modifier.clickable { appQueryEditing = true } else Modifier)
+			)
+			val filtered = if (appQuery.length >= 2) {
+				allApps.filter { it.name.contains(appQuery, ignoreCase = true) }.take(8)
+			} else emptyList()
+			DropdownMenu(
+				expanded = appDropdownExpanded && filtered.isNotEmpty(),
+				onDismissRequest = { appDropdownExpanded = false },
+				modifier = Modifier.heightIn(max = 250.dp),
+				properties = PopupProperties(focusable = false)
+			) {
+				filtered.forEach { app ->
+					DropdownMenuItem(
+						text = { Text(app.name) },
+						onClick = {
+							appQuery = app.name
+							selectedPkgName = app.packageName
+							appDropdownExpanded = false
+						}
+					)
+				}
+			}
+		}
+
+		fun clearRepoForm() {
+			repoUrl = ""; errorMsg = null; appQuery = ""; selectedPkgName = ""; editingId = null
+		}
+
+		Row(
+			Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+			verticalAlignment = CenterVertically
+		) {
+			if (editingId != null) {
+				TextButton(onClick = { clearRepoForm() }) {
+					Text(stringResource(R.string.cancel_cd))
+				}
+			}
+			Spacer(Modifier.weight(1f))
+			Button(
+				enabled = repoUrl.isNotBlank(),
+				onClick = {
+					val id = editingId
+					val success = if (id != null) viewModel.updateCustomGitRepo(id, repoUrl, selectedPkgName)
+						else viewModel.addCustomGitRepo(repoUrl, selectedPkgName)
+					if (success) {
+						clearRepoForm()
+						repos = viewModel.getCustomGitRepos()
+					} else errorMsg = invalidUrlMsg
+				}
+			) {
+				Icon(
+					if (editingId != null) Icons.Default.Check else Icons.Default.Add,
+					null,
+					Modifier.size(18.dp)
+				)
+				Spacer(Modifier.width(8.dp))
+				Text(stringResource(if (editingId != null) R.string.save_repo else R.string.add_repo))
+			}
+		}
+
+		repos.forEach { repo ->
+			val host = if (repo.platform == GitProvider.GITHUB) "github.com" else "gitlab.com"
+			Row(
+				Modifier
+					.fillMaxWidth()
+					.clickable {
+						// Load this repo into the form for editing.
+						repoUrl = "$host/${repo.user}/${repo.repo}"
+						selectedPkgName = repo.installedPackageName
+						appQuery = allApps.find { it.packageName == repo.installedPackageName }?.name
+							?: repo.installedPackageName
+						errorMsg = null
+						editingId = repo.id
+					}
+					.background(
+						if (editingId == repo.id) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+						else androidx.compose.ui.graphics.Color.Transparent
+					)
+					.padding(horizontal = 16.dp, vertical = 8.dp),
+				verticalAlignment = CenterVertically
+			) {
+				Icon(
+					painterResource(if (repo.platform == GitProvider.GITHUB) R.drawable.ic_github else R.drawable.ic_gitlab),
+					repo.platform.name,
+					Modifier.size(24.dp)
+				)
+				Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+					Text("${repo.user}/${repo.repo}", style = MaterialTheme.typography.bodyLarge)
+					if (repo.installedPackageName.isNotEmpty()) {
+						Text(repo.installedPackageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+					}
+				}
+				IconButton(onClick = {
+					viewModel.removeCustomGitRepo(repo.id)
+					repos = viewModel.getCustomGitRepos()
+					if (editingId == repo.id) clearRepoForm()
+				}) {
+					Icon(Icons.Default.Delete, stringResource(R.string.delete))
+				}
+			}
+		}
+	}
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CustomReposTopBar(viewModel: SettingsViewModel) = TopAppBar(
+	title = { Text(stringResource(R.string.settings_custom_repos)) },
+	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
+	navigationIcon = {
+		IconButton(onClick = { viewModel.setSettings() }) {
+			Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.tab_settings))
+		}
+	}
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

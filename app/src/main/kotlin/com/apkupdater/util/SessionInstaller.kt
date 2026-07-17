@@ -12,7 +12,6 @@ import androidx.core.content.ContextCompat.startActivity
 import com.apkupdater.BuildConfig
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstallProgress
-import com.apkupdater.ui.activity.MainActivity
 import android.util.Log
 import com.topjohnwu.superuser.Shell
 import rikka.shizuku.Shizuku
@@ -34,8 +33,30 @@ class SessionInstaller(
 
     private val installMutex = Mutex()
 
-    suspend fun install(id: Int, packageName: String, stream: InputStream) =
-        install(id, packageName, listOf(stream))
+    suspend fun install(id: Int, packageName: String, stream: InputStream, trackProgress: Boolean = true) =
+        install(id, packageName, listOf(stream), trackProgress)
+
+    /**
+     * Returns the APK's real package name if it does NOT match [expected]
+     * (when expected is non-blank), otherwise null. Prevents installing a
+     * different app/channel alongside the target — e.g. a Brave Nightly APK
+     * (com.brave.browser_nightly) over an installed Beta (com.brave.browser_beta).
+     * If the APK can't be parsed we return null (don't block on uncertainty).
+     */
+    fun verifyPackage(file: File, expected: String): String? {
+        if (expected.isBlank()) return null
+        val actual = runCatching {
+            context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)?.packageName
+        }.getOrNull()
+        if (actual == null) {
+            // Couldn't parse the APK — allow the install rather than block on uncertainty,
+            // but log it so a wrong-package slip-through (e.g. Brave) is diagnosable.
+            Log.w("SessionInstaller", "verifyPackage: could not read package of ${file.name}; allowing '$expected'")
+            return null
+        }
+        Log.d("SessionInstaller", "verifyPackage: apk=$actual expected=$expected")
+        return if (actual != expected) actual else null
+    }
 
     private suspend fun install(id: Int, packageName: String, streams: List<InputStream>, trackProgress: Boolean = true) {
         val packageInstaller: PackageInstaller = context.packageManager.packageInstaller
@@ -69,12 +90,14 @@ class SessionInstaller(
                 }
             }
 
-            val intent = Intent(context, MainActivity::class.java).apply {
+            // Deliver results to a BroadcastReceiver: unlike an Activity PendingIntent,
+            // it is reliably delivered while the app is in the background.
+            val intent = Intent(context, InstallReceiver::class.java).apply {
                 action = "$INSTALL_ACTION.$id"
             }
 
             installMutex.lock()
-            val pending = PendingIntent.getActivity(context, id, intent, FLAG_MUTABLE)
+            val pending = PendingIntent.getBroadcast(context, id, intent, FLAG_MUTABLE)
             session.commit(pending.intentSender)
             session.close()
         }

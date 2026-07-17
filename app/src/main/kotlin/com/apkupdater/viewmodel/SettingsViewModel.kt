@@ -193,6 +193,10 @@ class SettingsViewModel(
 		state.value = SettingsUiState.Settings
 	}
 
+	fun setCustomRepos() {
+		state.value = SettingsUiState.CustomRepos
+	}
+
 	fun copyAppList() = viewModelScope.launch(Dispatchers.IO) {
 		appsRepository.getApps().collectLatest { apps ->
 			apps.onSuccess {
@@ -218,6 +222,15 @@ class SettingsViewModel(
 		val current = prefs.customGitRepos.get()
 		if (current.any { it.user == repo.user && it.repo == repo.repo }) return true
 		prefs.customGitRepos.put(current + repo.copy(installedPackageName = installedPkgName))
+		return true
+	}
+
+	fun updateCustomGitRepo(id: String, url: String, installedPkgName: String): Boolean {
+		val parsed = parseRepoUrl(url) ?: return false
+		val current = prefs.customGitRepos.get()
+		prefs.customGitRepos.put(current.map {
+			if (it.id == id) parsed.copy(id = id, installedPackageName = installedPkgName) else it
+		})
 		return true
 	}
 

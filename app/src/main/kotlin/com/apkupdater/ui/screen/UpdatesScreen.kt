@@ -1,11 +1,17 @@
 package com.apkupdater.ui.screen
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.Sync
@@ -21,6 +27,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.pullrefresh.PullRefreshIndicator
 import androidx.compose.material3.pullrefresh.pullRefresh
 import androidx.compose.material3.pullrefresh.rememberPullRefreshState
@@ -44,6 +51,7 @@ import com.apkupdater.ui.component.RefreshIcon
 import com.apkupdater.ui.component.TvInstalledGrid
 import com.apkupdater.ui.component.TvUpdateItem
 import com.apkupdater.ui.theme.statusBarColor
+import com.apkupdater.util.formatBytes
 import com.apkupdater.viewmodel.UpdatesViewModel
 
 
@@ -65,6 +73,31 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 	title = { Text(stringResource(R.string.tab_updates)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	actions = {
+		val cache = viewModel.cacheSize.collectAsStateWithLifecycle().value
+		if (cache > 0L) {
+			Row(
+				Modifier
+					.padding(end = 4.dp)
+					.clip(RoundedCornerShape(50))
+					.background(MaterialTheme.colorScheme.secondaryContainer)
+					.clickable { viewModel.clearCache() }
+					.padding(horizontal = 12.dp, vertical = 6.dp),
+				verticalAlignment = Alignment.CenterVertically
+			) {
+				Icon(
+					painterResource(R.drawable.ic_cleanup),
+					stringResource(R.string.clear_cache_cd),
+					Modifier.size(16.dp),
+					tint = MaterialTheme.colorScheme.onSecondaryContainer
+				)
+				Spacer(Modifier.width(4.dp))
+				Text(
+					formatBytes(cache),
+					style = MaterialTheme.typography.labelMedium,
+					color = MaterialTheme.colorScheme.onSecondaryContainer
+				)
+			}
+		}
 		IconButton(onClick = { viewModel.refresh() }) {
 			RefreshIcon(stringResource(R.string.refresh_updates))
 		}

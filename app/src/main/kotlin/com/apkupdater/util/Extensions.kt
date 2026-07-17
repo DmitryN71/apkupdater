@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.content.ContextCompat
 import com.apkupdater.R
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -118,6 +119,34 @@ fun Intent.getAppId() = runCatching {
 fun PackageManager.isAndroidTv() = hasSystemFeature(PackageManager.FEATURE_LEANBACK)
 
 fun Context.isAndroidTv() = packageManager.isAndroidTv()
+
+/** Human-readable byte size, e.g. "142.5 MB". */
+fun formatBytes(b: Long): String = when {
+	b >= 1_073_741_824 -> "%.1f GB".format(b / 1_073_741_824.0)
+	b >= 1_048_576 -> "%.1f MB".format(b / 1_048_576.0)
+	b >= 1024 -> "%.0f KB".format(b / 1024.0)
+	else -> "$b B"
+}
+
+/**
+ * Size of leftover APK downloads — only the app's own download temp dir
+ * (cache/downloads). Deliberately excludes other cache (Coil images, HTTP
+ * metadata, gplayapi data) which is not ours to count or clear.
+ */
+fun Context.downloadCacheSizeBytes(): Long {
+	var size = 0L
+	File(cacheDir, "downloads").listFiles()?.forEach { size += it.length() }
+	return size
+}
+
+/** Deletes the leftover APK downloads; returns bytes freed. */
+fun Context.clearDownloadCacheBytes(): Long {
+	val freed = downloadCacheSizeBytes()
+	runCatching {
+		File(cacheDir, "downloads").listFiles()?.forEach { it.delete() }
+	}
+	return freed
+}
 
 fun randomUUID() = UUID.randomUUID().toString()
 

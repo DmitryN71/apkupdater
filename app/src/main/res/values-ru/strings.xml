@@ -99,6 +99,7 @@
     <string name="install_error_already_exists">Приложение уже установлено.</string>
     <string name="install_error_conflicting_provider">Конфликт content provider с другим приложением.</string>
     <string name="install_error_unknown">Непредвиденная ошибка.</string>
+    <string name="install_error_wrong_package">Этот APK — от другого приложения (%1$s). Не установлен, чтобы не создать дубликат.</string>
 
     <string name="settings_custom_repos">Пользовательские репозитории</string>
     <string name="custom_repo_hint">github.com/user/repo</string>
@@ -123,6 +124,25 @@
     <string name="notification_channel_description">Канал для уведомлений об обновлениях.</string>
     <string name="notification_channel_id" translatable="false">updateChannel</string>
     <string name="notification_update_title">Обновления</string>
+    <string name="notification_download_channel_name">Загрузки</string>
+    <string name="notification_confirm_channel_name">Подтверждения установки</string>
+    <string name="notification_confirm_title">Подтвердите установку</string>
+    <string name="notification_confirm_text">Загрузка завершена. Нажмите, чтобы установить.</string>
+    <string name="notification_success_channel_name">Результаты установки</string>
+    <string name="notification_installed_title">%1$s установлено</string>
+    <string name="notification_installed_text">Нажмите «Открыть», чтобы запустить.</string>
+    <string name="dismiss_cd">Закрыть</string>
+    <string name="manage_custom_repos">Управление репозиториями</string>
+    <string name="save_repo">Сохранить</string>
+    <string name="clear_cache">Очистить кэш (%1$s)</string>
+    <string name="clear_cache_cd">Очистить кэш</string>
+    <string name="cache_cleared">Освобождено %1$s</string>
+    <plurals name="notification_downloading">
+        <item quantity="one">Загружается %1$d обновление…</item>
+        <item quantity="few">Загружается %1$d обновления…</item>
+        <item quantity="many">Загружается %1$d обновлений…</item>
+        <item quantity="other">Загружается %1$d обновлений…</item>
+    </plurals>
     <plurals name="notification_update_description">
         <item quantity="zero">Обновления не найдены.</item>
         <item quantity="one">Найдено %1$d обновление.</item>

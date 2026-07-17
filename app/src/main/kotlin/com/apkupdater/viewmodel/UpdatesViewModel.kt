@@ -13,8 +13,12 @@ import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
+import com.apkupdater.util.clearDownloadCacheBytes
+import com.apkupdater.util.downloadCacheSizeBytes
 import com.apkupdater.util.Downloader
+import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
@@ -40,8 +44,10 @@ class UpdatesViewModel(
 	stringer: Stringer,
 	installLog: InstallLog,
 	ruStoreService: RuStoreService,
-	context: Context
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context) {
+	context: Context,
+	background: BackgroundInstaller,
+	notification: UpdatesNotification
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification) {
 
 	private val mutex = Mutex()
 	private val installMutex = Mutex()
@@ -49,6 +55,17 @@ class UpdatesViewModel(
 	private val state = MutableStateFlow<UpdatesUiState>(UpdatesUiState.Loading())
 	private val _refreshProgress = MutableStateFlow<String?>(null)
 	val refreshProgress: StateFlow<String?> = _refreshProgress
+	private val _cacheSize = MutableStateFlow(0L)
+	val cacheSize: StateFlow<Long> = _cacheSize
+
+	fun refreshCacheSize() = viewModelScope.launch(Dispatchers.IO) {
+		_cacheSize.value = context.downloadCacheSizeBytes()
+	}
+
+	fun clearCache() = viewModelScope.launch(Dispatchers.IO) {
+		context.clearDownloadCacheBytes()
+		_cacheSize.value = 0L
+	}
 
 	init {
 		subscribeToInstallStatus(state.value.updates())
@@ -79,6 +96,7 @@ class UpdatesViewModel(
 			setSuccess(it)
 			_refreshProgress.value = null
 		}
+		refreshCacheSize()
 	}
 
 	fun hideUpdate(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
@@ -113,41 +131,62 @@ class UpdatesViewModel(
 		}
 	}
 
-	override fun downloadAndRootInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
-		activeInstalls.incrementAndGet()
-		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-		val link = resolveLink(update)
-		if (link !is com.apkupdater.data.ui.Link.Url) {
-			snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.root_install_not_supported)))
-			cancelInstall(update.id)
-			return@launch
-		}
-		// Download in parallel (no mutex) — rootInstall() deletes the file itself
-		val file = runCatching { downloader.downloadFile(link.link, update.id) }.getOrElse {
-			cancelInstall(update.id)
-			return@launch
-		}
-		// Install sequentially
-		installMutex.withLock {
-			runCatching {
-				val fake = prefs.fakePlayStore.get()
-				if (installer.rootInstall(file, fake)) {
-					cleanUpIfLast()
-					finishInstall(update.id)
-				} else {
+	// Install work runs in the process-lifetime background scope (not viewModelScope)
+	// so it survives leaving the app; begin()/end() keep the foreground service alive.
+	override fun downloadAndRootInstall(update: AppUpdate) = background.scope.launch {
+		background.begin(update.id, update.name)
+		try {
+			activeInstalls.incrementAndGet()
+			state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+			val link = resolveLink(update)
+			if (link !is com.apkupdater.data.ui.Link.Url) {
+				snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.root_install_not_supported)))
+				cancelInstall(update.id)
+				return@launch
+			}
+			// Download in parallel (no mutex) — rootInstall() deletes the file itself
+			val file = runCatching { downloader.downloadFile(link.link, update.id) }.getOrElse {
+				cancelInstall(update.id)
+				return@launch
+			}
+			// Same package guard as the standard path (root installs via pm install too).
+			val wrongPackage = installer.verifyPackage(file, update.packageName)
+			if (wrongPackage != null) {
+				file.delete()
+				cleanUpIfLast()
+				snackBar.snackBar(viewModelScope, TextSnack(
+					stringer.get(R.string.install_error_wrong_package, wrongPackage),
+					type = com.apkupdater.data.snack.SnackType.ERROR))
+				cancelInstall(update.id)
+				return@launch
+			}
+			// Install sequentially
+			installMutex.withLock {
+				runCatching {
+					val fake = prefs.fakePlayStore.get()
+					if (installer.rootInstall(file, fake)) {
+						cleanUpIfLast()
+						notifyInstalledIfBackground(update)
+						finishInstall(update.id)
+					} else {
+						file.delete()
+						cleanUpIfLast()
+						cancelInstall(update.id)
+					}
+				}.getOrElse {
 					file.delete()
 					cleanUpIfLast()
 					cancelInstall(update.id)
 				}
-			}.getOrElse {
-				file.delete()
-				cleanUpIfLast()
-				cancelInstall(update.id)
 			}
+		} finally {
+			background.end(update.id)
 		}
 	}
 
-	override fun downloadAndShizukuInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
+	override fun downloadAndShizukuInstall(update: AppUpdate) = background.scope.launch {
+		background.begin(update.id, update.name)
+		try {
 		activeInstalls.incrementAndGet()
 		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
 		val link = resolveLink(update)
@@ -194,6 +233,21 @@ class UpdatesViewModel(
 		installMutex.withLock {
 			runCatching {
 				val fake = prefs.fakePlayStore.get()
+				// Same package guard as the standard path — Shizuku installs via
+				// pm install and would otherwise let a wrong-channel APK
+				// (e.g. Brave Nightly over Beta) install alongside.
+				val wrongPackage = if (link is com.apkupdater.data.ui.Link.Url)
+					installer.verifyPackage(files.first(), update.packageName) else null
+				if (wrongPackage != null) {
+					files.forEach { it.delete() }
+					cleanUpIfLast()
+					snackBar.snackBar(viewModelScope, TextSnack(
+						stringer.get(R.string.install_error_wrong_package, wrongPackage),
+						type = com.apkupdater.data.snack.SnackType.ERROR))
+					installLog.emitProgress(AppInstallProgress(update.id, 0L))
+					cancelInstall(update.id)
+					return@runCatching
+				}
 				val error = when (link) {
 					is com.apkupdater.data.ui.Link.Xapk -> installer.shizukuInstallXapk(files.first(), fake)
 					is com.apkupdater.data.ui.Link.Play -> installer.shizukuInstallSplit(files, fake)
@@ -202,6 +256,7 @@ class UpdatesViewModel(
 				if (error == null) {
 					cleanUpIfLast()
 					snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_success, update.name), type = com.apkupdater.data.snack.SnackType.SUCCESS))
+					notifyInstalledIfBackground(update)
 					finishInstall(update.id)
 				} else {
 					files.forEach { it.delete() }
@@ -217,15 +272,23 @@ class UpdatesViewModel(
 				cancelInstall(update.id)
 			}
 		}
+		} finally {
+			background.end(update.id)
+		}
 	}
 
-	override fun downloadAndInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
+	override fun downloadAndInstall(update: AppUpdate) = background.scope.launch {
 		if (installer.checkPermission()) {
-			state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-			// No ViewModel mutex — downloads run in parallel.
-			// SessionInstaller has its own mutex for commit sequencing.
-			val link = resolveLink(update)
-			downloadAndInstall(update.id, update.packageName, link)
+			background.begin(update.id, update.name)
+			try {
+				state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+				// No ViewModel mutex — downloads run in parallel.
+				// SessionInstaller has its own mutex for commit sequencing.
+				val link = resolveLink(update)
+				downloadAndInstall(update.id, update.packageName, link)
+			} finally {
+				background.end(update.id)
+			}
 		}
 	}
 

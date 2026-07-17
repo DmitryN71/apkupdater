@@ -18,6 +18,8 @@ class UpdatesNotification(private val context: Context) {
 
     companion object {
         const val UpdateAction = "updateAction"
+        private const val CONFIRM_CHANNEL_ID = "installConfirmChannel"
+        private const val SUCCESS_CHANNEL_ID = "installSuccessChannel"
     }
 
     private val notificationManager get() = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -45,6 +47,90 @@ class UpdatesNotification(private val context: Context) {
         createNotificationChannel()
         if (areNotificationsEnabled()) {
             NotificationManagerCompat.from(context).notify(updateId, builder.build())
+        }
+    }
+
+    /**
+     * Posted when an install needs user confirmation while the app is in the
+     * background. Tapping launches the system installer dialog directly.
+     */
+    @SuppressLint("MissingPermission")
+    fun showConfirmInstallNotification(confirmIntent: Intent, id: Int) {
+        createConfirmChannel()
+        val pending = PendingIntent.getActivity(
+            context, id, confirmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(context, CONFIRM_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_install)
+            .setContentTitle(context.getString(R.string.notification_confirm_title))
+            .setContentText(context.getString(R.string.notification_confirm_text))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+        if (areNotificationsEnabled()) {
+            NotificationManagerCompat.from(context).notify(id, builder.build())
+        }
+    }
+
+    fun cancelConfirmInstallNotification(id: Int) =
+        NotificationManagerCompat.from(context).cancel(id)
+
+    /**
+     * Posted after a successful (usually background) install, with an Open action
+     * that launches the freshly installed app and a Dismiss action.
+     */
+    @SuppressLint("MissingPermission")
+    fun showInstallSuccessNotification(packageName: String, label: String, id: Int) {
+        createSuccessChannel()
+        val launch = context.packageManager.getLaunchIntentForPackage(packageName)
+            ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+        val openPending = launch?.let {
+            PendingIntent.getActivity(context, id, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+        val dismissPending = PendingIntent.getBroadcast(
+            context, id,
+            Intent(context, InstallReceiver::class.java).apply {
+                action = InstallReceiver.DISMISS_ACTION
+                putExtra(InstallReceiver.EXTRA_NOTIFICATION_ID, id)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(context, SUCCESS_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_install)
+            .setContentTitle(context.getString(R.string.notification_installed_title, label))
+            .setContentText(context.getString(R.string.notification_installed_text))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+        openPending?.let {
+            builder.setContentIntent(it)
+            builder.addAction(0, context.getString(R.string.open_cd), it)
+        }
+        builder.addAction(0, context.getString(R.string.dismiss_cd), dismissPending)
+        if (areNotificationsEnabled()) {
+            NotificationManagerCompat.from(context).notify(id, builder.build())
+        }
+    }
+
+    private fun createSuccessChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                SUCCESS_CHANNEL_ID,
+                context.getString(R.string.notification_success_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun createConfirmChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CONFIRM_CHANNEL_ID,
+                context.getString(R.string.notification_confirm_channel_name),
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            notificationManager.createNotificationChannel(channel)
         }
     }
 

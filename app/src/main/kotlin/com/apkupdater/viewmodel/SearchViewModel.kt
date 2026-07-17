@@ -11,8 +11,10 @@ import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.SearchRepository
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Downloader
+import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
@@ -37,8 +39,10 @@ class SearchViewModel(
     stringer: Stringer,
     installLog: InstallLog,
     ruStoreService: RuStoreService,
-    context: Context
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context) {
+    context: Context,
+    background: BackgroundInstaller,
+    notification: UpdatesNotification
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification) {
 
     private val mutex = Mutex()
     private val installMutex = Mutex()
@@ -89,28 +93,45 @@ class SearchViewModel(
         installer.finish()
     }
 
-    override fun downloadAndRootInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
-        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-        installMutex.withLock {
-            val link = resolveLink(update)
-            downloadAndRootInstall(update.id, link)
-        }
-    }
-
-    override fun downloadAndShizukuInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
-        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
-        installMutex.withLock {
-            val link = resolveLink(update)
-            downloadAndShizukuInstall(update.id, update.name, link)
-        }
-    }
-
-    override fun downloadAndInstall(update: AppUpdate) = viewModelScope.launch(Dispatchers.IO) {
-        if(installer.checkPermission()) {
+    // Install work runs in the process-lifetime background scope (not viewModelScope)
+    // so it survives leaving the app; begin()/end() keep the foreground service alive.
+    override fun downloadAndRootInstall(update: AppUpdate) = background.scope.launch {
+        background.begin(update.id, update.name)
+        try {
             state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
             installMutex.withLock {
                 val link = resolveLink(update)
-                downloadAndInstall(update.id, update.packageName, link)
+                downloadAndRootInstall(update.id, link)
+            }
+        } finally {
+            background.end(update.id)
+        }
+    }
+
+    override fun downloadAndShizukuInstall(update: AppUpdate) = background.scope.launch {
+        background.begin(update.id, update.name)
+        try {
+            state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+            installMutex.withLock {
+                val link = resolveLink(update)
+                downloadAndShizukuInstall(update.id, update.name, link)
+            }
+        } finally {
+            background.end(update.id)
+        }
+    }
+
+    override fun downloadAndInstall(update: AppUpdate) = background.scope.launch {
+        if(installer.checkPermission()) {
+            background.begin(update.id, update.name)
+            try {
+                state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+                installMutex.withLock {
+                    val link = resolveLink(update)
+                    downloadAndInstall(update.id, update.packageName, link)
+                }
+            } finally {
+                background.end(update.id)
             }
         }
     }
