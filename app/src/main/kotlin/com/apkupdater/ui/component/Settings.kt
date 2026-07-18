@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -122,23 +123,29 @@ fun SwitchSetting(
     setValue: (Boolean) -> Unit,
     text: String,
     @DrawableRes icon: Int = R.drawable.ic_system
-) = Box (Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 16.dp)) {
+) = Row(
+    Modifier
+        .fillMaxWidth()
+        .heightIn(min = 60.dp)
+        .padding(horizontal = 16.dp),
+    verticalAlignment = CenterVertically
+) {
     var value by remember { mutableStateOf(getValue()) }
-    Row(Modifier.align(CenterStart)) {
-        Icon(
-            painterResource(id = icon),
-            text,
-            Modifier.align(CenterVertically).padding(end = 16.dp).size(24.dp)
-        )
-        Text(text, Modifier.align(CenterVertically))
-    }
+    Icon(
+        painterResource(id = icon),
+        text,
+        Modifier.padding(end = 16.dp).size(24.dp)
+    )
+    // weight(1f) reserves space for the switch so long labels (e.g. Russian) wrap
+    // instead of being drawn underneath it.
+    Text(text, Modifier.weight(1f))
     Switch(
         checked = value,
         onCheckedChange = {
             setValue(it)
             value = getValue()
         },
-        modifier = Modifier.align(CenterEnd)
+        modifier = Modifier.padding(start = 8.dp)
     )
 }
 
@@ -152,22 +159,23 @@ fun DropDownSetting(
     setValue: (Int) -> Unit,
     @DrawableRes icon: Int,
     width: Int = 100
-) = Box(Modifier.padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 8.dp).fillMaxWidth()) {
+) = Row(
+    Modifier.padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 8.dp).fillMaxWidth(),
+    verticalAlignment = CenterVertically
+) {
     var expanded by remember { mutableStateOf(false) }
     var selectedOptionText by remember { mutableStateOf(options[getValue()]) }
 
-    Row(Modifier.align(CenterStart)) {
-        Icon(
-            painterResource(id = icon),
-            text,
-            Modifier.align(CenterVertically).padding(end = 16.dp).size(24.dp)
-        )
-        Text(text,  Modifier.align(CenterVertically))
-    }
+    Icon(
+        painterResource(id = icon),
+        text,
+        Modifier.padding(end = 16.dp).size(24.dp)
+    )
+    Text(text, Modifier.weight(1f))
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { expanded = !expanded },
-        modifier = Modifier.align(CenterEnd).width(width.dp)
+        modifier = Modifier.width(width.dp)
     ) {
         CompositionLocalProvider(LocalTextInputService provides null) { // Disable Keyboard
             OutlinedTextField(
@@ -205,21 +213,21 @@ fun TextFieldSetting(
     getValue: () -> Int,
     setValue: (Int) -> Unit,
     @DrawableRes icon: Int
-) = Box(Modifier.padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 8.dp).fillMaxWidth()) {
+) = Row(
+    Modifier.padding(top = 16.dp, start = 16.dp, end = 16.dp, bottom = 8.dp).fillMaxWidth(),
+    verticalAlignment = CenterVertically
+) {
 
     var value by remember { mutableStateOf(getValue().toString()) }
 
-    Row(Modifier.align(CenterStart)) {
-        Icon(
-            painterResource(id = icon),
-            text,
-            Modifier.align(CenterVertically).padding(end = 16.dp).size(24.dp)
-        )
-        Text(text,  Modifier.align(CenterVertically))
-    }
+    Icon(
+        painterResource(id = icon),
+        text,
+        Modifier.padding(end = 16.dp).size(24.dp)
+    )
+    Text(text, Modifier.weight(1f))
     OutlinedTextField(
         modifier = Modifier
-            .align(CenterEnd)
             .width(100.dp)
             .onFocusChanged { if (!it.hasFocus && value == "") value = getValue().toString() },
         value = value,
