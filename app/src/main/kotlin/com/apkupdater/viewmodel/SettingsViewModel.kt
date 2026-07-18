@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 
 class SettingsViewModel(
@@ -125,13 +126,26 @@ class SettingsViewModel(
 		themer.setTheme(isDarkTheme(theme))
 	}
 
-	fun setRootInstall(b: Boolean) {
-		if (b && Shell.isAppGrantedRoot() == true) {
-			prefs.rootInstall.put(true)
-			prefs.shizukuInstall.put(false)
-		} else {
+	fun setRootInstall(b: Boolean, onResult: (Boolean) -> Unit = {}) {
+		if (!b) {
 			prefs.rootInstall.put(false)
-			if (b) snackBar.snackBar(message = TextSnack(stringer.get(R.string.root_not_granted), type = SnackType.ERROR))
+			onResult(false)
+			return
+		}
+		// Shell.isAppGrantedRoot() is passive: it returns null (unknown) until a root shell
+		// has actually been created, so it wrongly reports "not granted" on KernelSU-Next /
+		// Magisk before the first su call. Actively open the shell (off the main thread, since
+		// it blocks) to trigger/read the real grant state.
+		viewModelScope.launch(Dispatchers.IO) {
+			val granted = runCatching { Shell.getShell().isRoot }.getOrDefault(false)
+			if (granted) {
+				prefs.rootInstall.put(true)
+				prefs.shizukuInstall.put(false)
+			} else {
+				prefs.rootInstall.put(false)
+				snackBar.snackBar(message = TextSnack(stringer.get(R.string.root_not_granted), type = SnackType.ERROR))
+			}
+			withContext(Dispatchers.Main) { onResult(granted) }
 		}
 	}
 

@@ -33,6 +33,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -262,12 +263,18 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 
 	item {
 		SectionHeader(stringResource(R.string.settings_options))
-		SwitchSetting(
-			{ viewModel.getRootInstall() },
-			{ viewModel.setRootInstall(it) },
-			stringResource(R.string.root_install),
-			R.drawable.ic_root
-		)
+		// Root detection is async (it opens a shell), so drive the switch from local state
+		// that the setter updates on completion. key() re-seeds SwitchSetting's internal
+		// remembered value when the real grant result comes back.
+		var rootEnabled by remember { mutableStateOf(viewModel.getRootInstall()) }
+		key(rootEnabled) {
+			SwitchSetting(
+				{ rootEnabled },
+				{ viewModel.setRootInstall(it) { granted -> rootEnabled = granted } },
+				stringResource(R.string.root_install),
+				R.drawable.ic_root
+			)
+		}
 		SwitchSetting(
 			{ viewModel.getShizukuInstall() },
 			{ viewModel.setShizukuInstall(it) },
