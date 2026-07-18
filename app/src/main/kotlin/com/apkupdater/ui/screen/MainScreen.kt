@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -124,7 +125,8 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 			}
 			SnackbarHost(
 				hostState = snackBarHostState,
-				modifier = Modifier.align(Alignment.BottomCenter)
+				// Keep the snackbar above the system navigation bar (edge-to-edge on API 35+).
+				modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
 			) { data ->
 				val snack = data.visuals as? TextSnack
 				val containerColor = when (snack?.type) {
