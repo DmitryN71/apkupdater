@@ -126,8 +126,14 @@ val mainModule = module {
 	}
 
 	single {
+		// Dedicated client with a hard callTimeout. F-Droid streams a ~10MB index and parses
+		// it with a blocking read; the coroutine-level 90s per-source cap (withTimeoutOrNull)
+		// cannot interrupt that blocking read, and if the connection trickles bytes slower than
+		// the 20s idle readTimeout the fetch can hang until the app is force-killed. callTimeout
+		// bounds the ENTIRE call at the socket layer, so a stalled fetch aborts (source shows no
+		// updates) instead of getting stuck. Also covers IzzyOnDroid (same service) and Search.
 		Retrofit.Builder()
-			.client(get())
+			.client(get<OkHttpClient>().newBuilder().callTimeout(60, TimeUnit.SECONDS).build())
 			.baseUrl("https://f-droid.org/repo/")
 			.addConverterFactory(GsonConverterFactory.create(get()))
 			.build()

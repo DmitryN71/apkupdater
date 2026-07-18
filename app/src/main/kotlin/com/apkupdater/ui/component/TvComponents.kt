@@ -63,6 +63,9 @@ import com.apkupdater.util.to2f
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
 import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
@@ -195,7 +198,8 @@ fun TvCommonItem(
 	source: Source? = null,
 	onSourceClick: (() -> Unit)? = null,
 	fileSize: Long = 0L,
-	updateDate: String = ""
+	updateDate: String = "",
+	chipRightFocus: FocusRequester? = null
 ) = Row(Modifier.padding(12.dp)) {
 	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
@@ -207,7 +211,13 @@ fun TvCommonItem(
 			LoadingImage(uri, Modifier.height(100.dp))
 		}
 		if (source != null) {
-			SourceChip(source, Modifier.padding(top = 6.dp), onClick = onSourceClick)
+				// When wired, D-pad RIGHT from the chip jumps to this card's action buttons
+				// (overrides geometric/grid focus search so it can't leak to the next column
+				// or the bottom nav bar).
+				val chipMod = Modifier.padding(top = 6.dp).then(
+					if (chipRightFocus != null) Modifier.focusProperties { right = chipRightFocus } else Modifier
+				)
+				SourceChip(source, chipMod, onClick = onSourceClick)
 		}
 	}
 	Column(Modifier.align(Alignment.CenterVertically).padding(start = 12.dp)) {
@@ -451,14 +461,17 @@ fun TvUpdateItem(
 	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
 ) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate)
+		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
+		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
+		val actionFocus = remember { FocusRequester() }
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, chipRightFocus = actionFocus)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 		)
 		Row(
-			modifier = Modifier.fillMaxWidth().focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().focusRequester(actionFocus).focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
@@ -487,14 +500,17 @@ fun TvSearchItem(
 	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
 ) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate)
+		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
+		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
+		val actionFocus = remember { FocusRequester() }
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, chipRightFocus = actionFocus)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
 		)
 		Row(
-			modifier = Modifier.fillMaxWidth().focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().focusRequester(actionFocus).focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {

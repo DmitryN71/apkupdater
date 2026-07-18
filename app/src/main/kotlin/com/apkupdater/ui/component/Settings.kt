@@ -1,7 +1,11 @@
 package com.apkupdater.ui.component
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +47,7 @@ import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Alignment.Companion.Start
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalTextInputService
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -139,14 +144,30 @@ fun SwitchSetting(
     // weight(1f) reserves space for the switch so long labels (e.g. Russian) wrap
     // instead of being drawn underneath it.
     Text(text, Modifier.weight(1f))
-    Switch(
-        checked = value,
-        onCheckedChange = {
-            setValue(it)
-            value = getValue()
-        },
-        modifier = Modifier.padding(start = 8.dp)
-    )
+    // Clear D-pad focus halo: a primary pill ring around the switch. The default Material
+    // focus state layer is nearly invisible on TV's dark background. The inner padding is
+    // always present, so the ring adds no layout jump and leaves a gap around the switch.
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    Box(
+        Modifier
+            .padding(start = 8.dp)
+            .border(
+                width = 3.dp,
+                color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                shape = RoundedCornerShape(50)
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Switch(
+            checked = value,
+            onCheckedChange = {
+                setValue(it)
+                value = getValue()
+            },
+            interactionSource = interaction
+        )
+    }
 }
 
 @Suppress("unused")
