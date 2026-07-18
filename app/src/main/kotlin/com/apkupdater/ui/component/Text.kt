@@ -5,6 +5,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -171,12 +175,24 @@ fun ExpandingAnnotatedText(
     val trimmed = if (text.text.lastOrNull() == '\n') text.subSequence(0, text.length - 1) else text
     if (trimmed.text.isEmpty()) return
     var isExpanded by remember { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
     Text(
         text = trimmed,
         maxLines = if (isExpanded) Int.MAX_VALUE else minLines,
         style = style,
         overflow = TextOverflow.Ellipsis,
         modifier = modifier
-            .clickable(true) { isExpanded = !isExpanded },
+            // D-pad focus shows a clean rounded border (not the default sharp
+            // rectangle). The transparent border AND the inner padding are always
+            // present, so focus adds no layout jump and the text never touches the
+            // border. Tap / DPAD-center expands.
+            .clickable(interactionSource = interaction, indication = null) { isExpanded = !isExpanded }
+            .border(
+                1.5.dp,
+                if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+                RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 6.dp),
     )
 }

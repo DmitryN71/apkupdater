@@ -16,6 +16,7 @@ import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.GitLabService
 import com.apkupdater.util.combine
 import com.apkupdater.util.filterVersionTag
+import com.apkupdater.util.formatIsoDate
 import io.github.g00fy2.versioncompare.Version
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -90,7 +91,8 @@ class GitLabRepository(
                 link = Link.Url(getApkUrl(packageName, releases[0])),
                 whatsNew = releases[0].description.orEmpty(),
                 iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
-                sourceUrl = "https://gitlab.com/$user/$repo/-/releases/${releases[0].tag_name}"
+                sourceUrl = "https://gitlab.com/$user/$repo/-/releases/${releases[0].tag_name}",
+                updateDate = formatIsoDate(releases[0].released_at ?: "")
             )))
         } else {
             emit(emptyList())

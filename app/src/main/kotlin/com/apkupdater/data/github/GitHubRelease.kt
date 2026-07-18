@@ -7,5 +7,6 @@ data class GitHubRelease(
     val assets: List<GitHubReleaseAsset>,
     val tag_name: String,
     val author: GitHubAuthor,
-    val body: String? = ""
+    val body: String? = "",
+    val published_at: String? = null
 )

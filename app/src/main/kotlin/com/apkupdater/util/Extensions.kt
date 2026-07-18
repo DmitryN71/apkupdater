@@ -120,6 +120,31 @@ fun PackageManager.isAndroidTv() = hasSystemFeature(PackageManager.FEATURE_LEANB
 
 fun Context.isAndroidTv() = packageManager.isAndroidTv()
 
+/** Locale-aware medium date, e.g. "18 Jul 2026" / "18 июл. 2026". */
+fun formatDate(millis: Long): String =
+	java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(millis))
+
+/**
+ * Parses a source release date (ISO-8601-ish: "2026-07-15T10:20:30Z",
+ * with a timezone offset, or plain "2026-07-15") into a locale-formatted date.
+ * Returns "" if it can't be parsed.
+ */
+fun formatIsoDate(raw: String): String {
+	val s = raw.trim()
+	if (s.isBlank()) return ""
+	val normalized = s.replace('T', ' ').substringBefore('+').substringBefore('Z').substringBefore('.').trim()
+	for (pattern in listOf("yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd")) {
+		val date = runCatching {
+			java.text.SimpleDateFormat(pattern, java.util.Locale.US).apply {
+				isLenient = false
+				timeZone = java.util.TimeZone.getTimeZone("UTC")
+			}.parse(normalized)
+		}.getOrNull()
+		if (date != null) return formatDate(date.time)
+	}
+	return ""
+}
+
 /** Human-readable byte size, e.g. "142.5 MB". */
 fun formatBytes(b: Long): String = when {
 	b >= 1_073_741_824 -> "%.1f GB".format(b / 1_073_741_824.0)

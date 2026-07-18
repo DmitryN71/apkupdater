@@ -5,5 +5,6 @@ data class GitLabRelease(
     val tag_name: String,
     val description: String? = "",
     val assets: GitLabAssets,
-    val author: GitLabAuthor
+    val author: GitLabAuthor,
+    val released_at: String? = null
 )

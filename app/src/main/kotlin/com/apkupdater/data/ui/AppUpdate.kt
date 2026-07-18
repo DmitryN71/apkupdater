@@ -18,6 +18,7 @@ data class AppUpdate(
 	val total: Long = 0L,
 	val progress: Long = 0L,
 	val sourceUrl: String = "",
+	val updateDate: String = "",
 	val id: Int = "${source.name}.$packageName.$versionCode.$version".hashCode()
 )
 

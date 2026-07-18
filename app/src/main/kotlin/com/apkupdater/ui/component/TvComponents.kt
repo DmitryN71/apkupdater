@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
@@ -112,19 +113,53 @@ fun SizeChip(sizeBytes: Long, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun DateChip(date: String, modifier: Modifier = Modifier) {
+	if (date.isNotBlank()) {
+		Row(
+			modifier = modifier
+				.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+				.padding(horizontal = 8.dp, vertical = 2.dp),
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.spacedBy(4.dp)
+		) {
+			Icon(
+				Icons.Outlined.Schedule,
+				contentDescription = stringResource(R.string.updated_on, ""),
+				tint = MaterialTheme.colorScheme.onSurfaceVariant,
+				modifier = Modifier.size(13.dp)
+			)
+			Text(
+				date,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				style = MaterialTheme.typography.labelSmall
+			)
+		}
+	}
+}
+
+@Composable
 fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
 	val shape = RoundedCornerShape(50)
 	val clickable = onClick != null
-	// Clickable (source URL available) chips get a tonal-primary look + an
-	// open-in-new icon so they read as a link, not a static label.
-	val background = if (clickable) MaterialTheme.colorScheme.primaryContainer
-		else MaterialTheme.colorScheme.secondaryContainer
-	val foreground = if (clickable) MaterialTheme.colorScheme.onPrimaryContainer
-		else MaterialTheme.colorScheme.onSecondaryContainer
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	// Clickable chips read as a link (primary tonal + open-in-new icon). On TV,
+	// D-pad focus fills the pill solid primary — the same clean highlight the
+	// action buttons use, instead of a rectangular focus box.
+	val background = when {
+		focused -> MaterialTheme.colorScheme.primary
+		clickable -> MaterialTheme.colorScheme.primaryContainer
+		else -> MaterialTheme.colorScheme.secondaryContainer
+	}
+	val foreground = when {
+		focused -> MaterialTheme.colorScheme.onPrimary
+		clickable -> MaterialTheme.colorScheme.onPrimaryContainer
+		else -> MaterialTheme.colorScheme.onSecondaryContainer
+	}
 	Row(
 		modifier = modifier
 			.background(background, shape)
-			.then(if (clickable) Modifier.clickable { onClick() } else Modifier)
+			.then(if (clickable) Modifier.clickable(interactionSource = interaction, indication = null) { onClick() } else Modifier)
 			.padding(horizontal = 10.dp, vertical = 5.dp),
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -159,7 +194,8 @@ fun TvCommonItem(
 	single: Boolean = false,
 	source: Source? = null,
 	onSourceClick: (() -> Unit)? = null,
-	fileSize: Long = 0L
+	fileSize: Long = 0L,
+	updateDate: String = ""
 ) = Row(Modifier.padding(12.dp)) {
 	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
@@ -219,7 +255,15 @@ fun TvCommonItem(
 			val code = if (versionCode == 0L) "?" else versionCode.toString()
 			MediumText("$oldVersionCode → $code", Modifier.alpha(0.4f).padding(top = 2.dp))
 		}
-		SizeChip(fileSize, Modifier.padding(top = 2.dp))
+		// Download size + source release date, as chips in one row (Obtainium-style).
+		Row(
+			Modifier.padding(top = 4.dp),
+			horizontalArrangement = Arrangement.spacedBy(6.dp),
+			verticalAlignment = Alignment.CenterVertically
+		) {
+			SizeChip(fileSize)
+			DateChip(updateDate)
+		}
 	}
 }
 
@@ -407,7 +451,7 @@ fun TvUpdateItem(
 	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
 ) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -443,7 +487,7 @@ fun TvSearchItem(
 	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
 ) {
 	Column {
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),

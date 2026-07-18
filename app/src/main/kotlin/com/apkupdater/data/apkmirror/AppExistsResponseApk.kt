@@ -4,6 +4,7 @@ import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
+import com.apkupdater.util.formatIsoDate
 import com.google.gson.annotations.SerializedName
 
 data class AppExistsResponseApk(
@@ -32,5 +33,6 @@ fun AppExistsResponseApk.toAppUpdate(app: AppInstalled, release: AppExistsRespon
 	app.iconUri,
 	Link.Url("https://www.apkmirror.com$link"),
 	release.whatsNew.orEmpty(),
-	sourceUrl = "https://www.apkmirror.com$link"
+	sourceUrl = "https://www.apkmirror.com$link",
+	updateDate = (publishDate ?: release.publishDate)?.let { formatIsoDate(it).ifEmpty { it } } ?: ""
 )

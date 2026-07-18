@@ -5,6 +5,7 @@ import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.Source
+import com.apkupdater.util.formatDate
 
 data class FdroidUpdate(
     val apk: FdroidPackage,
@@ -28,5 +29,6 @@ fun FdroidUpdate.toAppUpdate(current: AppInstalled?, source: Source, url: String
     sourceUrl = if (url.contains("izzy", true))
         "https://apt.izzysoft.de/fdroid/index/apk/${app.packageName}"
     else
-        "https://f-droid.org/packages/${app.packageName}"
+        "https://f-droid.org/packages/${app.packageName}",
+    updateDate = if (app.lastUpdated > 0L) formatDate(app.lastUpdated) else ""
 )

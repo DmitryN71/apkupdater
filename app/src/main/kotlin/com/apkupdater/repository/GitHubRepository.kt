@@ -22,6 +22,7 @@ import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import com.apkupdater.util.combine
 import com.apkupdater.util.filterVersionTag
+import com.apkupdater.util.formatIsoDate
 import retrofit2.HttpException
 import io.github.g00fy2.versioncompare.Version
 import kotlinx.coroutines.flow.Flow
@@ -171,7 +172,8 @@ class GitHubRepository(
                 link = findApkAssetArch(releases[0].assets, extra).let { Link.Url(it.browser_download_url, it.size) },
                 whatsNew = releases[0].body.orEmpty(),
                 iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
-                sourceUrl = "https://github.com/$user/$repo/releases/tag/${releases[0].tag_name}"
+                sourceUrl = "https://github.com/$user/$repo/releases/tag/${releases[0].tag_name}",
+                updateDate = formatIsoDate(releases[0].published_at ?: "")
             )))
         } else {
             emit(emptyList())
