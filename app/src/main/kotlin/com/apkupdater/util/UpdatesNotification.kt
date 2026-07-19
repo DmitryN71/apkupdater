@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.apkupdater.R
 import com.apkupdater.ui.activity.MainActivity
+import com.apkupdater.ui.activity.OpenInstalledActivity
 
 class UpdatesNotification(private val context: Context) {
 
@@ -83,11 +84,19 @@ class UpdatesNotification(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun showInstallSuccessNotification(packageName: String, label: String, id: Int) {
         createSuccessChannel()
-        val launch = context.packageManager.getLaunchIntentForPackage(packageName)
-            ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-        val openPending = launch?.let {
-            PendingIntent.getActivity(context, id, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        }
+        // Route Open through OpenInstalledActivity so tapping it (the button OR the body) also
+        // cancels this notification — a plain notification action button never auto-dismisses.
+        val hasLauncher = context.packageManager.getLaunchIntentForPackage(packageName) != null
+        val openPending = if (hasLauncher) {
+            PendingIntent.getActivity(
+                context, id,
+                Intent(context, OpenInstalledActivity::class.java).apply {
+                    putExtra(OpenInstalledActivity.EXTRA_PACKAGE, packageName)
+                    putExtra(OpenInstalledActivity.EXTRA_NOTIFICATION_ID, id)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else null
         val dismissPending = PendingIntent.getBroadcast(
             context, id,
             Intent(context, InstallReceiver::class.java).apply {

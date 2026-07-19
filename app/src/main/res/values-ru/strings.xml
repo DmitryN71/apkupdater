@@ -64,6 +64,7 @@
     <string name="copy_to_clipboard">Копировать в буфер обмена</string>
     <string name="copy_app_list">Скопировать список приложений</string>
     <string name="copy_app_logs">Скопировать логи</string>
+    <string name="copy_crash_report">Скопировать отчёт о сбое</string>
     <string name="fake_play_store">Установщик — Play Store</string>
     <string name="skip_cd">Пропустить</string>
     <string name="hide_cd">Скрыть</string>

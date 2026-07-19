@@ -108,6 +108,7 @@
     <string name="copy_to_clipboard">Copy to clipboard</string>
     <string name="copy_app_list">Copy App List</string>
     <string name="copy_app_logs">Copy App Logs</string>
+    <string name="copy_crash_report">Copy Crash Report</string>
     <string name="settings_custom_repos">Custom Repositories</string>
     <string name="custom_repo_hint">github.com/user/repo</string>
     <string name="add_repo">Add</string>

@@ -15,6 +15,7 @@ import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.AppsRepository
 import com.apkupdater.ui.theme.isDarkTheme
 import com.apkupdater.util.Clipboard
+import com.apkupdater.util.CrashHandler
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import com.apkupdater.util.Themer
@@ -27,14 +28,12 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import android.content.pm.PackageManager
-import com.topjohnwu.superuser.Shell
 import rikka.shizuku.Shizuku
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 
 class SettingsViewModel(
@@ -126,27 +125,15 @@ class SettingsViewModel(
 		themer.setTheme(isDarkTheme(theme))
 	}
 
-	fun setRootInstall(b: Boolean, onResult: (Boolean) -> Unit = {}) {
-		if (!b) {
-			prefs.rootInstall.put(false)
-			onResult(false)
-			return
-		}
-		// Shell.isAppGrantedRoot() is passive: it returns null (unknown) until a root shell
-		// has actually been created, so it wrongly reports "not granted" on KernelSU-Next /
-		// Magisk before the first su call. Actively open the shell (off the main thread, since
-		// it blocks) to trigger/read the real grant state.
-		viewModelScope.launch(Dispatchers.IO) {
-			val granted = runCatching { Shell.getShell().isRoot }.getOrDefault(false)
-			if (granted) {
-				prefs.rootInstall.put(true)
-				prefs.shizukuInstall.put(false)
-			} else {
-				prefs.rootInstall.put(false)
-				snackBar.snackBar(message = TextSnack(stringer.get(R.string.root_not_granted), type = SnackType.ERROR))
-			}
-			withContext(Dispatchers.Main) { onResult(granted) }
-		}
+	fun setRootInstall(b: Boolean) {
+		// Touch NO libsu here — not even the "passive" Shell.isAppGrantedRoot(). On some Treble
+		// GSIs (reported: Inoi A75 / InfinityX) any contact with libsu's su path from this toggle
+		// crashes the app natively, which no try/catch can stop (libsu 5.2.1's isAppGrantedRoot
+		// still reaches su under the hood). Just record the user's intent. Real root access is
+		// exercised only at install time (SessionInstaller.rootInstall -> Shell.cmd().exec()),
+		// which returns a Boolean and fails cleanly in the normal case instead of at the toggle.
+		prefs.rootInstall.put(b)
+		if (b) prefs.shizukuInstall.put(false)
 	}
 
 	fun getFakePlayStore() = prefs.fakePlayStore.get()
@@ -223,6 +210,14 @@ class SettingsViewModel(
 		val process = Runtime.getRuntime().exec("logcat -d")
 		val data = process.inputStream.readBytes()
 		clipboard.copy(data.decodeToString(), "App Logs")
+	}
+
+	// Crash report captured by CrashHandler on the previous run (see util/CrashHandler.kt).
+	fun hasCrashReport() = CrashHandler.file(context).exists()
+
+	fun copyCrashReport() = viewModelScope.launch(Dispatchers.IO) {
+		val file = CrashHandler.file(context)
+		if (file.exists()) clipboard.copy(file.readText(), "Crash report")
 	}
 
 	fun getIgnoredVersionsCount(): Int = prefs.ignoredVersions.get().size

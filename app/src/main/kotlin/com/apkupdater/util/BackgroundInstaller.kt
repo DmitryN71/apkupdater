@@ -68,10 +68,13 @@ class BackgroundInstaller(
     /** Call when a download/install task finishes (success, failure or cancel). */
     @Synchronized
     fun end(id: Int) {
+        // Do NOT stopService() here. On a fast/instant task (e.g. a root install that su-fails
+        // immediately on a broken GSI) the set can empty before DownloadService.onCreate() has
+        // run startForeground(); tearing the service down before it promotes makes the system
+        // throw ForegroundServiceDidNotStartInTimeException — an uncatchable crash. The service
+        // self-stops from its own tasks collector, which runs only AFTER startForeground() has
+        // satisfied the foreground-service contract.
         _tasks.update { it - id }
-        if (_tasks.value.isEmpty()) {
-            runCatching { context.stopService(Intent(context, DownloadService::class.java)) }
-        }
     }
 
     /** Aborts all in-flight downloads (triggered by the notification's Cancel action). */

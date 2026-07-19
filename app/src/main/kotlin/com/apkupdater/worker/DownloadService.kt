@@ -49,6 +49,13 @@ class DownloadService : Service() {
         createChannel()
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         ServiceCompat.startForeground(this, NOTIFICATION_ID, buildNotification(), type)
+        // If the task set already emptied before we got here (a very fast install), stop now —
+        // but only AFTER startForeground() above, never before, or we'd re-introduce the
+        // ForegroundServiceDidNotStartInTimeException this ordering exists to prevent.
+        if (background.tasks.value.isEmpty()) {
+            stopSelf()
+            return
+        }
         // Refresh the notification only when the visible state changes (task count,
         // whole-percent, or determinate/indeterminate) — this collapses the frequent
         // byte-level progress emits so we don't spam NotificationManager. Self-stop

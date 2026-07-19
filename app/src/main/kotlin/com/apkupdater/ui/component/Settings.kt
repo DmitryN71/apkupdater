@@ -1,7 +1,7 @@
 package com.apkupdater.ui.component
 
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -23,6 +23,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -128,44 +129,43 @@ fun SwitchSetting(
     setValue: (Boolean) -> Unit,
     text: String,
     @DrawableRes icon: Int = R.drawable.ic_system
-) = Row(
-    Modifier
-        .fillMaxWidth()
-        .heightIn(min = 60.dp)
-        .padding(horizontal = 16.dp),
-    verticalAlignment = CenterVertically
 ) {
-    var value by remember { mutableStateOf(getValue()) }
-    Icon(
-        painterResource(id = icon),
-        text,
-        Modifier.padding(end = 16.dp).size(24.dp)
-    )
-    // weight(1f) reserves space for the switch so long labels (e.g. Russian) wrap
-    // instead of being drawn underneath it.
-    Text(text, Modifier.weight(1f))
-    // Clear D-pad focus halo: a primary pill ring around the switch. The default Material
-    // focus state layer is nearly invisible on TV's dark background. The inner padding is
-    // always present, so the ring adds no layout jump and leaves a gap around the switch.
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    Box(
+    // Android-TV-style D-pad focus: the whole row fills with the inverse surface color and
+    // the label/icon invert. A border ring around the Switch was tried and rejected — it
+    // hugs the invisible 48dp touch target, not the visible pill, so it looked lopsided;
+    // and the switch's own thumb halo is internal to Material and can't be amplified.
+    // A full-width row fill can't look crooked and is clearly visible from a couch.
+    val rowColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent
+    val contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
+    Row(
         Modifier
-            .padding(start = 8.dp)
-            .border(
-                width = 3.dp,
-                color = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
-                shape = RoundedCornerShape(50)
-            )
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .background(rowColor, RoundedCornerShape(16.dp))
+            .heightIn(min = 60.dp)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = CenterVertically
     ) {
+        var value by remember { mutableStateOf(getValue()) }
+        Icon(
+            painterResource(id = icon),
+            text,
+            Modifier.padding(end = 16.dp).size(24.dp),
+            tint = contentColor
+        )
+        // weight(1f) reserves space for the switch so long labels (e.g. Russian) wrap
+        // instead of being drawn underneath it.
+        Text(text, Modifier.weight(1f), color = contentColor)
         Switch(
             checked = value,
             onCheckedChange = {
                 setValue(it)
                 value = getValue()
             },
-            interactionSource = interaction
+            interactionSource = interaction,
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
 }
