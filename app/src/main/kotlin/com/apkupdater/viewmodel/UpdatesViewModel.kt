@@ -118,7 +118,7 @@ class UpdatesViewModel(
 	}
 
 	override fun finishInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		val updates = state.value.mutableUpdates().setIsInstalled(id)
+		val updates = state.value.mutableUpdates().setIsInstalled(id).sortFinishedFirst()
 		state.value = UpdatesUiState.Success(updates)
 		badger.changeUpdatesBadge(updates.count { !it.isInstalled }.toString())
 		installer.finish()
@@ -308,10 +308,20 @@ class UpdatesViewModel(
 	private fun List<AppUpdate>.filterIgnoredVersions(ignoredVersions: List<Int>) = this
 		.filter { !ignoredVersions.contains(it.id) }
 
+	/**
+	 * Finished updates float to the top, so in a long list it stays obvious which ones were
+	 * already handled. Deliberately only applied once an install COMPLETES — a card that is
+	 * still installing keeps its place, otherwise its progress would jump out of view the
+	 * moment the user tapped Update.
+	 */
+	private fun List<AppUpdate>.sortFinishedFirst() = sortedWith(
+		compareByDescending<AppUpdate> { it.isInstalled }.thenBy { it.name.lowercase() }
+	)
+
 	private fun setSuccess(updates: List<AppUpdate>) = updates
 		.filterIgnoredVersions(prefs.ignoredVersions.get())
 		.distinctBy { it.id }
-		.sortedBy { it.name.lowercase() }
+		.sortFinishedFirst()
 		.let {
 			state.value = UpdatesUiState.Success(it)
 			badger.changeUpdatesBadge(it.size.toString())

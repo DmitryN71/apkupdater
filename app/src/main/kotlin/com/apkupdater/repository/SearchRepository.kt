@@ -37,7 +37,7 @@ class SearchRepository(
         if (sources.isNotEmpty()) {
             sources.combine { updates ->
                 val result = updates.filter { it.isSuccess }.mapNotNull { it.getOrNull() }
-                emit(Result.success(result.flatten().sortedBy { it.name }))
+                emit(Result.success(result.flatten().rankByRelevance(text)))
             }.collect()
         } else {
             emit(Result.success(emptyList()))
@@ -45,6 +45,45 @@ class SearchRepository(
     }.catch {
         emit(Result.failure(it))
         Log.e("SearchRepository", "Error searching.", it)
+    }
+
+    /**
+     * Sources search very differently: F-Droid/Izzy/GitHub/GitLab filter locally with a strict
+     * `contains`, while ApkMirror/Aptoide/APKPure/Play/RuStore return whatever their own fuzzy
+     * server-side search decides — which is how a query like "XXX" came back with "XYYX22".
+     *
+     * So drop hits that match no part of the query at all, and order what is left by how well it
+     * matches. Previously everything was merged and sorted alphabetically, which buried an exact
+     * match in the middle of the list.
+     */
+    private fun List<AppUpdate>.rankByRelevance(query: String): List<AppUpdate> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return sortedBy { it.name.lowercase() }
+        val words = q.split(" ").filter { it.isNotBlank() }
+
+        // Lower is better; NO_MATCH is dropped entirely.
+        fun rank(app: AppUpdate): Int {
+            val name = app.name.lowercase()
+            val pkg = app.packageName.lowercase()
+            return when {
+                name == q -> 0
+                name.startsWith(q) -> 1
+                name.contains(q) -> 2
+                pkg.contains(q) -> 3
+                // Multi-word queries in any order, e.g. "vanced youtube" -> "YouTube Vanced".
+                words.all { name.contains(it) || pkg.contains(it) } -> 4
+                else -> NO_MATCH
+            }
+        }
+
+        return map { it to rank(it) }
+            .filter { it.second != NO_MATCH }
+            .sortedWith(compareBy({ it.second }, { it.first.name.lowercase() }))
+            .map { it.first }
+    }
+
+    companion object {
+        private const val NO_MATCH = Int.MAX_VALUE
     }
 
 }
