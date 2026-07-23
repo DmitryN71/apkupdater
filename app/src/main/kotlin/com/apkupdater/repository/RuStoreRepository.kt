@@ -32,9 +32,15 @@ class RuStoreRepository(
 		private const val MIN_BATCH_DELAY_MS = 300L
 		private const val MAX_BATCH_DELAY_MS = 1200L
 		private const val DELAY_STEP_MS = 150L
-		private const val MAX_RATE_LIMIT_RETRIES = 1
+		// RuStore rate-limits aggressively. With a single retry, one unlucky 429 silently
+		// dropped an app from the entire check — a very common way for a real update to
+		// simply not show up.
+		private const val MAX_RATE_LIMIT_RETRIES = 3
 		private const val RATE_LIMIT_COOLDOWN_MS = 60_000L
-		private const val RUSTORE_404_TTL_MS = 7 * 24 * 60 * 60 * 1000L
+		// Deliberately short. A 404 here means "RuStore's card for this package did not answer
+		// right now", NOT "this app is not in RuStore" — see updates() for why. Only the search
+		// path consults it, to avoid re-fetching obviously-missing packages within one sitting.
+		private const val RUSTORE_404_TTL_MS = 6 * 60 * 60 * 1000L
 	}
 
 	@Volatile
@@ -43,12 +49,16 @@ class RuStoreRepository(
 	private var lastRateLimitTimestamp = 0L
 
 	suspend fun updates(apps: List<AppInstalled>) = flow {
-		val ignoredPackages = getActiveRuStore404Set()
-
-		// Step 1: Batch check all apps at once (single request), filtering out cached 404s
-		val filteredApps = apps.filterNot { ignoredPackages.contains(it.packageName) }
+		// Step 1: one batch request covering EVERY installed app.
+		//
+		// This is deliberately not filtered by the 404 cache any more. That filter was pure
+		// harm: the batch is a single request no matter how many packages it carries, so
+		// excluding packages saved nothing — it only guaranteed we would never learn about
+		// their updates. And the cached 404s come from step 2, i.e. from apps the batch had
+		// ALREADY confirmed have an update, so they are transient API hiccups rather than
+		// "missing from RuStore". Blacklisting those for days was hiding real updates.
 		val batchRequest = RuStoreBatchRequest(
-			filteredApps.map { RuStoreBatchEntry(it.packageName, it.versionCode) }
+			apps.map { RuStoreBatchEntry(it.packageName, it.versionCode) }
 		)
 		val batchResponse = service.getBatchUpdates(batchRequest)
 		val appsWithUpdates = batchResponse.body.content
