@@ -65,6 +65,11 @@
     <string name="copy_app_list">Скопировать список приложений</string>
     <string name="copy_app_logs">Скопировать логи</string>
     <string name="copy_crash_report">Скопировать отчёт о сбое</string>
+    <string name="filter_system">Системные</string>
+    <string name="filter_store">Из магазинов</string>
+    <string name="filter_disabled">Отключённые</string>
+    <string name="filter_only_ignored">Только игнорируемые</string>
+    <string name="filter_search_hint">Поиск по установленным</string>
     <string name="fake_play_store">Установщик — Play Store</string>
     <string name="skip_cd">Пропустить</string>
     <string name="hide_cd">Скрыть</string>

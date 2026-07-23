@@ -22,6 +22,25 @@ class MainViewModel(
 
 	val isRefreshing = MutableStateFlow(false)
 
+	private var didStartupRefresh = false
+
+	/**
+	 * One-shot automatic check on app start. MainScreen drives it from a LaunchedEffect(Unit),
+	 * which re-fires every time the composition is recreated — including on a screen rotation,
+	 * where the Activity is destroyed and rebuilt. That restarted the whole update check and
+	 * rebuilt the list, resetting the cards of downloads that were still running. This ViewModel
+	 * survives configuration changes, so the flag limits the auto-check to genuinely new starts.
+	 * Pull-to-refresh calls [refresh] directly and is unaffected.
+	 */
+	fun refreshOnStart(
+		appsViewModel: AppsViewModel,
+		updatesViewModel: UpdatesViewModel
+	) {
+		if (didStartupRefresh) return
+		didStartupRefresh = true
+		refresh(appsViewModel, updatesViewModel)
+	}
+
 	fun refresh(
 		appsViewModel: AppsViewModel,
 		updatesViewModel: UpdatesViewModel

@@ -27,7 +27,9 @@ class AppsRepository(
 			.filter { !excludeStore() || !isAppStore(getInstallerPackageName(it.packageName)) }
 			.map { it.toAppInstalled(context, ignoredApps()) }
 			.sortedBy { it.name }
-			.sortedBy { it.ignored }
+			// Ignored apps used to be pushed to the very bottom, which buried exactly what you
+			// were looking for under hundreds of entries. The "Only ignored" filter chip is the
+			// way to find them now, so plain alphabetical order is enough.
 			.toList()
 		emit(Result.success(apps))
 	}.catch {

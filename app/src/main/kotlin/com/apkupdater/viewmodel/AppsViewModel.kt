@@ -22,7 +22,24 @@ class AppsViewModel(
 	private val mutex = Mutex()
 	private val state = MutableStateFlow<AppsUiState>(buildLoadingState())
 
+	// Pure view state: filtering an already-loaded list, so no repository reload and no
+	// persistence — "only ignored" is a temporary view, not a setting you want to find
+	// still switched on days later.
+	private val _query = MutableStateFlow("")
+	val query: StateFlow<String> = _query
+
+	private val _onlyIgnored = MutableStateFlow(false)
+	val onlyIgnored: StateFlow<Boolean> = _onlyIgnored
+
 	fun state(): StateFlow<AppsUiState> = state
+
+	fun onQueryChange(text: String) {
+		_query.value = text
+	}
+
+	fun onOnlyIgnoredClick() {
+		_onlyIgnored.value = !_onlyIgnored.value
+	}
 
 	fun refresh(load: Boolean = true) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 		if (load) state.value = buildLoadingState()

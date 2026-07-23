@@ -109,6 +109,11 @@
     <string name="copy_app_list">Copy App List</string>
     <string name="copy_app_logs">Copy App Logs</string>
     <string name="copy_crash_report">Copy Crash Report</string>
+    <string name="filter_system">System</string>
+    <string name="filter_store">From stores</string>
+    <string name="filter_disabled">Disabled</string>
+    <string name="filter_only_ignored">Only ignored</string>
+    <string name="filter_search_hint">Search installed apps</string>
     <string name="settings_custom_repos">Custom Repositories</string>
     <string name="custom_repo_hint">github.com/user/repo</string>
     <string name="add_repo">Add</string>

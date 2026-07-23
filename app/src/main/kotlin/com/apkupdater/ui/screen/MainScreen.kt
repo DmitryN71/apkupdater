@@ -88,7 +88,7 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	// Refresh
 	val isRefreshing = mainViewModel.isRefreshing.collectAsStateWithLifecycle()
 	LaunchedEffect(Unit) {
-		mainViewModel.refresh(appsViewModel, updatesViewModel)
+		mainViewModel.refreshOnStart(appsViewModel, updatesViewModel)
 	}
 
 	// Used to launch the install intent and get dismissal result

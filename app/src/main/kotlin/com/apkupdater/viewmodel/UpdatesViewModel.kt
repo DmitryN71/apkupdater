@@ -318,13 +318,31 @@ class UpdatesViewModel(
 		compareByDescending<AppUpdate> { it.isInstalled }.thenBy { it.name.lowercase() }
 	)
 
-	private fun setSuccess(updates: List<AppUpdate>) = updates
-		.filterIgnoredVersions(prefs.ignoredVersions.get())
-		.distinctBy { it.id }
-		.sortFinishedFirst()
-		.let {
-			state.value = UpdatesUiState.Success(it)
-			badger.changeUpdatesBadge(it.size.toString())
-		}
+	private fun setSuccess(updates: List<AppUpdate>) {
+		// A refresh rebuilds the list from scratch, but downloads/installs keep running in
+		// BackgroundInstaller's process-wide scope. Carry their state over, otherwise a refresh
+		// would reset a running download's card back to "Update" while it is still downloading.
+		val inFlight = state.value.updates()
+			.filter { it.isInstalling || it.isInstalled }
+			.associateBy { it.id }
+		updates
+			.filterIgnoredVersions(prefs.ignoredVersions.get())
+			.distinctBy { it.id }
+			.map { fresh ->
+				inFlight[fresh.id]?.let {
+					fresh.copy(
+						isInstalling = it.isInstalling,
+						isInstalled = it.isInstalled,
+						progress = it.progress,
+						total = it.total
+					)
+				} ?: fresh
+			}
+			.sortFinishedFirst()
+			.let {
+				state.value = UpdatesUiState.Success(it)
+				badger.changeUpdatesBadge(it.size.toString())
+			}
+	}
 
 }
