@@ -128,7 +128,7 @@ class SearchViewModel(
                 state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
                 installMutex.withLock {
                     val link = resolveLink(update)
-                    downloadAndInstall(update.id, update.packageName, link)
+                    downloadAndInstall(update.id, update.packageName, link, update.name)
                 }
             } finally {
                 background.end(update.id)

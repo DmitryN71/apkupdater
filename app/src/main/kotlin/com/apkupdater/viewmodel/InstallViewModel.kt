@@ -160,6 +160,7 @@ abstract class InstallViewModel(
                     finishInstall(id)
                 } else {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+                    snackInstallFailure("")
                     cancelInstall(id)
                 }
             }
@@ -171,6 +172,7 @@ abstract class InstallViewModel(
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndRootInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+        snackInstallFailure("", it)
         cancelInstall(id)
     }
 
@@ -235,11 +237,21 @@ abstract class InstallViewModel(
         cancelInstall(id)
     }
 
-    protected suspend fun downloadAndInstall(id: Int, packageName: String, link: Link) = runCatching {
+    protected suspend fun downloadAndInstall(id: Int, packageName: String, link: Link, name: String = "") = runCatching {
         when (link) {
             Link.Empty -> { Log.e("InstallViewModel", "downloadAndInstall: Unsupported.")}
             is Link.Play -> {
                 val files = link.getInstallFiles()
+                if (files.isEmpty()) {
+                    // Play returned nothing to download. This is what happens for PAID apps: we
+                    // sign in to Play with an anonymous shared account (Aurora's dispenser), which
+                    // owns no purchases, so the delivery request comes back empty. Committing an
+                    // empty session would fail cryptically — explain it instead.
+                    snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.play_no_files), type = SnackType.ERROR))
+                    cancelInstall(id)
+                    return@runCatching
+                }
                 installLog.emitProgress(AppInstallProgress(id, 0L, files.sumOf { it.size }))
                 installer.playInstall(id, packageName, files.map { downloader.downloadStream(it.url, id)!! })
             }
@@ -281,6 +293,13 @@ abstract class InstallViewModel(
         }
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndInstall.", it)
+        if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+        // This path — the default one, used unless root/Shizuku is enabled — used to fail in
+        // complete silence: the card simply reverted to "Update". Reported as "downloads, then
+        // stops with no message at all". Only a deliberate user cancel stays quiet now; even a
+        // network drop mid-download gets explained.
+        snackInstallFailure(name, it)
+        installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
     }
 
@@ -291,6 +310,22 @@ abstract class InstallViewModel(
      */
     fun userCancelInstall(id: Int) {
         downloader.cancel(id)
+    }
+
+    /**
+     * Reports a failed download/install. Every install path must call this: silence was the
+     * single most confusing thing users hit ("it downloads, then nothing happens"). Only a
+     * cancel the user asked for stays quiet.
+     */
+    protected fun snackInstallFailure(name: String, error: Throwable? = null) {
+        if (error != null && isCancellation(error)) return
+        val reason = when {
+            error == null -> stringer.get(R.string.install_error_unknown)
+            isNetworkError(error) -> stringer.get(R.string.download_failed)
+            else -> stringer.get(installErrorResId(error.message))
+        }
+        val msg = stringer.get(R.string.install_failure, name).trim() + "\n" + reason
+        snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
     }
 
     private fun sendInstallSnack(updates: List<AppUpdate>, log: AppInstallStatus) {

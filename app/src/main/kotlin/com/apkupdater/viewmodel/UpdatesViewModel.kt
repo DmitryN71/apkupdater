@@ -146,6 +146,7 @@ class UpdatesViewModel(
 			}
 			// Download in parallel (no mutex) — rootInstall() deletes the file itself
 			val file = runCatching { downloader.downloadFile(link.link, update.id) }.getOrElse {
+				snackInstallFailure(update.name, it)
 				cancelInstall(update.id)
 				return@launch
 			}
@@ -171,11 +172,13 @@ class UpdatesViewModel(
 					} else {
 						file.delete()
 						cleanUpIfLast()
+						snackInstallFailure(update.name)
 						cancelInstall(update.id)
 					}
 				}.getOrElse {
 					file.delete()
 					cleanUpIfLast()
+					snackInstallFailure(update.name, it)
 					cancelInstall(update.id)
 				}
 			}
@@ -285,7 +288,7 @@ class UpdatesViewModel(
 				// No ViewModel mutex — downloads run in parallel.
 				// SessionInstaller has its own mutex for commit sequencing.
 				val link = resolveLink(update)
-				downloadAndInstall(update.id, update.packageName, link)
+				downloadAndInstall(update.id, update.packageName, link, update.name)
 			} finally {
 				background.end(update.id)
 			}

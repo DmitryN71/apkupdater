@@ -71,6 +71,7 @@
     <string name="filter_only_ignored">Только игнорируемые</string>
     <string name="filter_search_hint">Поиск по установленным</string>
     <string name="no_direct_download">В этом релизе нет готового APK — открываю его страницу</string>
+    <string name="play_no_files">Google Play не выдал файлы для этого приложения. Платные приложения можно обновить только через сам Google Play.</string>
     <string name="fake_play_store">Установщик — Play Store</string>
     <string name="skip_cd">Пропустить</string>
     <string name="hide_cd">Скрыть</string>
