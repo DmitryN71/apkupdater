@@ -41,7 +41,14 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
         val id = intent.getAppId() ?: 0
         when (intent.extras?.getInt(PackageInstaller.EXTRA_STATUS)) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirm = intent.getIntentExtra() ?: return
+                val confirm = intent.getIntentExtra()
+                if (confirm == null) {
+                    // Used to `return` silently, leaving the card stuck on "installing" forever
+                    // with no dialog and no error — report it instead.
+                    Log.e("InstallReceiver", "No confirmation intent in PENDING_USER_ACTION")
+                    installLog.emitStatus(AppInstallStatus(false, id, reason = stringer.get(R.string.install_error_unknown)))
+                    return
+                }
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 if (AppVisibility.foreground) {
                     runCatching { context.startActivity(confirm) }

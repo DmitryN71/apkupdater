@@ -50,7 +50,7 @@ class SearchViewModel(
     private var job: Job? = null
 
     init {
-        subscribeToInstallStatus(state.value.updates())
+        subscribeToInstallStatus { state.value.updates() }
         subscribeToInstallProgress { progress ->
             state.value = SearchUiState.Success(state.value.mutableUpdates().setProgress(progress))
         }

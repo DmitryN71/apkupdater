@@ -88,7 +88,7 @@ class GitLabRepository(
                 versionCode = 0L,
                 oldVersionCode = app?.versionCode ?: 0L,
                 source = GitLabSource,
-                link = Link.Url(getApkUrl(packageName, releases[0])),
+                link = Link.Url(resolveApkUrl(releases[0], user, repo)),
                 whatsNew = releases[0].description.orEmpty(),
                 iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
                 sourceUrl = "https://gitlab.com/$user/$repo/-/releases/${releases[0].tag_name}",
@@ -124,14 +124,46 @@ class GitLabRepository(
         Log.e("GitLabRepository", "Error searching.", it)
     }
 
-    private fun getApkUrl(
-        packageName: String,
-        release: GitLabRelease
+    /**
+     * Finds the APK for a release, falling back to the release description.
+     *
+     * Not every project attaches the APK as a release asset: Aurora Store, for example, only
+     * has the auto-generated source archives there and links the APKs from the description as
+     * markdown with a project-relative `/uploads/<hash>/<file>.apk` path. Without this fallback
+     * the update was still listed but carried an empty link, so Update did nothing and Download
+     * failed with "no scheme was found for ".
+     */
+    private suspend fun resolveApkUrl(
+        release: GitLabRelease,
+        user: String,
+        repo: String
     ): String {
+        getApkUrl(release).let { if (it.isNotEmpty()) return it }
+
+        val fromDescription = APK_LINK.findAll(release.description.orEmpty())
+            .map { it.groupValues[1] }
+            .toList()
+        val chosen = pickApk(fromDescription)
+        if (chosen.isEmpty()) return ""
+        if (chosen.startsWith("http", true)) return chosen
+        if (!chosen.startsWith("/uploads/")) return ""
+
+        // GitLab refuses anonymous requests to /<user>/<repo>/uploads/... (404) and to
+        // /<user>/<repo>/-/uploads/... (403 → sign-in). Only the numeric-project form serves
+        // the file, hence the extra lookup — done just for this fallback, not on every check.
+        val id = runCatching { service.getProject(user, repo).id }.getOrNull()
+        if (id == null || id == 0L) return ""
+        return "https://gitlab.com/-/project/$id$chosen"
+    }
+
+    private fun getApkUrl(release: GitLabRelease): String {
         val allApks = mutableListOf<String>()
         release.assets.sources.filter { it.url.endsWith(".apk", true) }.forEach { allApks.add(it.url) }
         release.assets.links.filter { it.url.endsWith(".apk", true) }.forEach { allApks.add(it.url) }
+        return pickApk(allApks)
+    }
 
+    private fun pickApk(allApks: List<String>): String {
         if (allApks.isEmpty()) return ""
         if (allApks.size == 1) return allApks.first()
 
@@ -151,6 +183,11 @@ class GitLabRepository(
 
         // Prefer "universal" if available, otherwise return first
         return allApks.find { it.contains("universal", true) } ?: allApks.first()
+    }
+
+    companion object {
+        /** Markdown link target ending in .apk, e.g. `[name](/uploads/<hash>/app.apk)`. */
+        private val APK_LINK = Regex("""\(([^)\s]+\.apk)\)""", RegexOption.IGNORE_CASE)
     }
 
 }

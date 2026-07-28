@@ -61,6 +61,15 @@ abstract class InstallViewModel(
     }
 
     fun install(update: AppUpdate, uriHandler: UriHandler) {
+        // Some releases have no directly downloadable APK (e.g. a GitLab project that only
+        // publishes source archives). Without this, Update silently did nothing and Download
+        // failed deep inside OkHttp — open the release page so the user can still get it.
+        val link = update.link
+        if (link is Link.Url && link.link.isBlank()) {
+            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.no_direct_download)))
+            if (update.sourceUrl.isNotEmpty()) uriHandler.openUri(update.sourceUrl)
+            return
+        }
         when (update.source) {
             ApkMirrorSource -> uriHandler.openUri((update.link as Link.Url).link)
             else -> {
@@ -121,8 +130,11 @@ abstract class InstallViewModel(
         return update.link
     }
 
-    protected fun subscribeToInstallStatus(updates: List<AppUpdate>) = installLog.status().onEach {
-        sendInstallSnack(updates, it)
+    // Takes a getter, NOT a snapshot: subclasses call this from init, when their state is still
+    // Loading and the list is empty. Capturing it there meant sendInstallSnack could never find
+    // the app, so install success/failure messages were silently never shown.
+    protected fun subscribeToInstallStatus(updates: () -> List<AppUpdate>) = installLog.status().onEach {
+        sendInstallSnack(updates(), it)
         if (it.success) {
             if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
             finishInstall(it.id).join()
@@ -282,19 +294,19 @@ abstract class InstallViewModel(
     }
 
     private fun sendInstallSnack(updates: List<AppUpdate>, log: AppInstallStatus) {
-        if (log.snack) {
-            updates.find { log.id == it.id }?.let { app ->
-                if (log.success) {
-                    snackBar.snackBar(viewModelScope, TextSnack(
-                        stringer.get(R.string.install_success, app.name),
-                        type = SnackType.SUCCESS
-                    ))
-                } else {
-                    val base = stringer.get(R.string.install_failure, app.name)
-                    val text = if (!log.reason.isNullOrBlank()) "$base\n${log.reason}" else base
-                    snackBar.snackBar(viewModelScope, TextSnack(text, type = SnackType.ERROR))
-                }
-            }
+        if (!log.snack) return
+        // Fall back to the app name we know from the install log rather than staying silent:
+        // a failure the user never hears about is the worst outcome.
+        val name = updates.find { log.id == it.id }?.name.orEmpty()
+        if (log.success) {
+            snackBar.snackBar(viewModelScope, TextSnack(
+                stringer.get(R.string.install_success, name).trim(),
+                type = SnackType.SUCCESS
+            ))
+        } else {
+            val base = stringer.get(R.string.install_failure, name).trim()
+            val text = if (!log.reason.isNullOrBlank()) "$base\n${log.reason}" else base
+            snackBar.snackBar(viewModelScope, TextSnack(text, type = SnackType.ERROR))
         }
     }
 

@@ -114,6 +114,7 @@
     <string name="filter_disabled">Disabled</string>
     <string name="filter_only_ignored">Only ignored</string>
     <string name="filter_search_hint">Search installed apps</string>
+    <string name="no_direct_download">No direct APK in this release — opening its page</string>
     <string name="settings_custom_repos">Custom Repositories</string>
     <string name="custom_repo_hint">github.com/user/repo</string>
     <string name="add_repo">Add</string>

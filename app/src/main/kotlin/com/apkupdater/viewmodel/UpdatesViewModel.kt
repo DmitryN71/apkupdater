@@ -68,7 +68,7 @@ class UpdatesViewModel(
 	}
 
 	init {
-		subscribeToInstallStatus(state.value.updates())
+		subscribeToInstallStatus { state.value.updates() }
 		subscribeToInstallProgress { progress ->
 			state.value = UpdatesUiState.Success(state.value.mutableUpdates().setProgress(progress))
 		}

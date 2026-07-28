@@ -70,6 +70,7 @@
     <string name="filter_disabled">Отключённые</string>
     <string name="filter_only_ignored">Только игнорируемые</string>
     <string name="filter_search_hint">Поиск по установленным</string>
+    <string name="no_direct_download">В этом релизе нет готового APK — открываю его страницу</string>
     <string name="fake_play_store">Установщик — Play Store</string>
     <string name="skip_cd">Пропустить</string>
     <string name="hide_cd">Скрыть</string>
