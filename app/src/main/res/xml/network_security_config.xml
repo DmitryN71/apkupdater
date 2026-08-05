@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    RuStore's download CDN (static-m.rustore.ru) switched to a certificate issued by the
+    Russian Trusted Root CA (Ministry of Digital Development), which Android does not ship
+    in its system trust store. Update checks kept working because the API host
+    (backapi.rustore.ru) still uses an ordinary publicly-trusted certificate, but every
+    download failed TLS validation.
+
+    So: for rustore.ru only, trust the system CAs AND that root. Both anchors are required —
+    verified against the live hosts: the API validates solely via the system store, the CDN
+    solely via the Russian root.
+
+    Deliberately NOT done: disabling certificate validation for RuStore (what some other
+    updaters offer as "allow insecure requests"). This app installs APKs — accepting any
+    certificate would let anyone on the network serve a forged package. Adding one extra
+    trust anchor, scoped to one domain, keeps validation fully intact everywhere.
+-->
+<network-security-config>
+    <domain-config>
+        <domain includeSubdomains="true">rustore.ru</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/rustore_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>
