@@ -22,6 +22,7 @@ import com.aurora.gplayapi.helpers.SearchHelper
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
+import java.util.Locale
 
 
 class PlayRepository(
@@ -32,6 +33,9 @@ class PlayRepository(
 ) {
     companion object {
         const val AUTH_URL = "https://auroraoss.com/api/auth"
+        // Bump whenever getNativeDeviceProperties() changes in a way Play must be told about.
+        // 1 = report the device's own locales first, so Play stops defaulting to English splits.
+        const val DEVICE_PROFILE_VERSION = 1
     }
 
     private fun refreshAuth(): AuthData {
@@ -41,7 +45,10 @@ class PlayRepository(
         if (playResponse.isSuccessful) {
             val authData = gson.fromJson(String(playResponse.responseBytes), AuthData::class.java)
             prefs.playAuthData.put(authData)
-            return authData
+            prefs.playProfileVersion.put(DEVICE_PROFILE_VERSION)
+            // Stored as received; the locale is applied on every use, including here — the
+            // other auth() paths return through refreshAuth() and would otherwise skip it.
+            return authData.withDeviceLocale()
         }
         throw IllegalStateException("Auth not successful.")
     }
@@ -49,6 +56,12 @@ class PlayRepository(
     private fun auth(): AuthData {
         val savedData = prefs.playAuthData.get()
         if (savedData.email.isEmpty()) {
+            return refreshAuth()
+        }
+        if (prefs.playProfileVersion.get() != DEVICE_PROFILE_VERSION) {
+            // Saved session was created with an older device profile — recreate it once so the
+            // new properties (locales) actually take effect.
+            Log.i("PlayRepository", "Device profile changed, re-authenticating.")
             return refreshAuth()
         }
         if (System.currentTimeMillis() - prefs.lastPlayCheck.get() > 60 * 60 * 1_000) {
@@ -70,7 +83,22 @@ class PlayRepository(
             }
             Log.i("PlayRepository", "Token still valid.")
         }
-        return savedData
+        return savedData.withDeviceLocale()
+    }
+
+    /**
+     * Makes the Play session speak the user's language.
+     *
+     * gplayapi builds the `Accept-Language` and `X-DFE-UserLanguages` request headers from
+     * [AuthData.locale] — and Play picks which language splits to deliver from those. The
+     * locale comes with the anonymous account handed out by the auth service, so it was
+     * whatever that account was created as (English), which is why updating e.g. Gmail through
+     * this app turned it English. The device properties uploaded at auth time do NOT drive
+     * this; only the session locale does.
+     */
+    private fun AuthData.withDeviceLocale() = apply {
+        runCatching { locale = Locale.getDefault() }
+            .onFailure { Log.e("PlayRepository", "Could not set session locale.", it) }
     }
 
     suspend fun search(text: String) = flow {

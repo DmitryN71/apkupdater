@@ -107,17 +107,45 @@ class NativeDeviceInfoProvider(context: Context) : ContextWrapper(context) {
         return featureStringList
     }
 
+    /**
+     * Locales reported to Play, most-wanted first.
+     *
+     * Play decides which language splits to deliver from this list. It used to contain only
+     * `assets.locales` — every locale the system knows about, in alphabetical order — which
+     * says nothing about what the user actually reads, so Play kept sending English splits
+     * (reported as "updated Gmail and it turned English"). The device's configured locales
+     * now come first; the full list is still appended so nothing that worked before breaks.
+     */
     private fun getLocales(): List<String> {
-        val localeList: MutableList<String> = ArrayList()
-        localeList.addAll(listOf(*applicationContext.assets.locales))
-        val locales: MutableList<String> = ArrayList()
-        for (locale in localeList) {
-            if (TextUtils.isEmpty(locale)) {
-                continue
-            }
-            locales.add(locale.replace("-", "_"))
+        val locales = LinkedHashSet<String>()
+        locales.addAll(getDeviceLocales())
+        applicationContext.assets.locales.forEach { locale ->
+            if (!TextUtils.isEmpty(locale)) locales.add(locale.replace("-", "_"))
         }
-        return locales
+        return locales.toList()
+    }
+
+    /** The user's own languages, e.g. [ru_RU, ru, en_US, en] — both region-qualified and bare. */
+    private fun getDeviceLocales(): List<String> {
+        val configured = mutableListOf<Locale>()
+        val config = applicationContext.resources.configuration
+        if (Build.VERSION.SDK_INT >= 24) {
+            val list = config.locales
+            for (i in 0 until list.size()) configured.add(list[i])
+        } else {
+            @Suppress("DEPRECATION")
+            config.locale?.let { configured.add(it) }
+        }
+        if (configured.isEmpty()) configured.add(Locale.getDefault())
+
+        val out = LinkedHashSet<String>()
+        configured.forEach { locale ->
+            val tag = locale.toString()
+            if (tag.isNotEmpty()) out.add(tag)
+            // Language splits are usually per language ("ru"), not per region ("ru_RU").
+            if (locale.language.isNotEmpty()) out.add(locale.language)
+        }
+        return out.toList()
     }
 
     private fun getSharedLibraries(): List<String> {
