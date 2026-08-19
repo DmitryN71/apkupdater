@@ -168,11 +168,16 @@ val mainModule = module {
 
 	single {
 		// RuStore's backapi rejects requests without this header (HTTP 400 since mid-2026).
-		// The value is the RuStore app's version code; bump it if the API starts rejecting it again.
+		// The value is a RuStore app version code, and it is checked as a CEILING, not a
+		// minimum: anything >= 1105002 is refused with HTTP 419 and an empty body, while every
+		// lower value is accepted (verified against the live API across 247 … 1105001).
+		// Update checks silently returned nothing once RuStore tightened this in August 2026.
+		// So do NOT raise this number if the API starts rejecting us — raising it is what breaks
+		// it. If 419 comes back, probe downwards for the new ceiling and stay just below it.
 		val ruStoreClient = get<OkHttpClient>().newBuilder()
 			.addInterceptor { chain ->
 				val request = chain.request().newBuilder()
-					.header("ruStoreVerCode", "1105002")
+					.header("ruStoreVerCode", "1105001")
 					.build()
 				chain.proceed(request)
 			}
