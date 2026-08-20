@@ -21,7 +21,7 @@ interface RuStoreService {
 	@POST("applicationData/newApps")
 	suspend fun getBatchUpdates(@Body request: RuStoreBatchRequest): RuStoreBatchResponse
 
-	@POST("applicationData/v2/download-link")
+	@POST("v3/showcase/apps/download-link")
 	suspend fun getDownloadLink(@Body request: RuStoreDownloadRequest): RuStoreDownloadResponse
 
 	@GET("applicationData/apps")

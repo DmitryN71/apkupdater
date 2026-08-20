@@ -117,8 +117,9 @@ abstract class InstallViewModel(
                 val appInfo = ruStoreService.getAppInfo(update.packageName)
                 if (appInfo.code == "OK" && appInfo.body.appId != 0L) {
                     val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId))
-                    val url = download.body.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl()
-                    if (download.code == "OK" && !url.isNullOrEmpty()) {
+                    // v3 carries no status field — a usable URL is the success signal.
+                    val url = download.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl()
+                    if (!url.isNullOrEmpty()) {
                         Link.Url(url, update.link.size)
                     } else update.link
                 } else update.link

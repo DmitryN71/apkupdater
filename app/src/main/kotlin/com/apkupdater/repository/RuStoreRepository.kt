@@ -218,10 +218,9 @@ class RuStoreRepository(
 			var hitRateLimit = false
 			val result = runCatching {
 				val request = RuStoreDownloadRequest(appId = appId)
+				// v3 carries no status field — a usable URL is the success signal.
 				val response = service.getDownloadLink(request)
-				if (response.code == "OK") {
-					response.body.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl() ?: ""
-				} else ""
+				response.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl().orEmpty()
 			}.onFailure { exception ->
 				when {
 					exception is HttpException && exception.code() == 429 -> {

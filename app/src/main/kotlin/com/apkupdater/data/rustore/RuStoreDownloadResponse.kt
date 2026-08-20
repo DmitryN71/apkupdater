@@ -1,19 +1,23 @@
 package com.apkupdater.data.rustore
 
 
+/**
+ * Response of `v3/showcase/apps/download-link`, the endpoint the current RuStore client uses.
+ *
+ * It differs from the older v2 one in shape: the fields sit at the top level instead of being
+ * wrapped in `body`, and there is no `code` — a call succeeded if a usable URL came back, which
+ * is what the callers check. Verified against the live API that v3 accepts the same
+ * device-targeting request body as v2 and answers identically for every app tried.
+ */
 data class RuStoreDownloadResponse(
-	val code: String = "",
-	val message: String = "",
-	val body: RuStoreDownloadBody = RuStoreDownloadBody()
-)
-
-data class RuStoreDownloadBody(
+	val appId: Long = 0L,
+	val versionCode: Long = 0L,
 	val downloadUrls: List<RuStoreDownloadUrl> = emptyList()
 )
 
 data class RuStoreDownloadUrl(
 	val url: String = "",
-	val type: String = ""
+	val size: Long = 0L
 )
 
 /**

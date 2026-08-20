@@ -29,6 +29,7 @@ import com.apkupdater.util.Badger
 import com.apkupdater.util.Clipboard
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.InstallLog
+import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
@@ -166,20 +167,28 @@ val mainModule = module {
 			.create(ApkPureService::class.java)
 	}
 
+	single { RuStoreSession(get()) }
+
 	single {
-		// RuStore's backapi rejects requests without this header (HTTP 400 since mid-2026).
-		// The value is a RuStore app version code, and it is checked as a CEILING, not a
-		// minimum: anything >= 1105002 is refused with HTTP 419 and an empty body, while every
-		// lower value is accepted (verified against the live API across 247 … 1105001).
-		// Update checks silently returned nothing once RuStore tightened this in August 2026.
-		// So do NOT raise this number if the API starts rejecting us — raising it is what breaks
-		// it. If 419 comes back, probe downwards for the new ceiling and stay just below it.
+		// Every RuStore call carries a signed session; see RuStoreSession for why (an unsigned
+		// caller is served a stale catalogue, and since August 2026 is often refused outright
+		// with HTTP 419). A 419 means the session was rejected or expired, so it is rebuilt once
+		// and the request retried. If the handshake fails we still send the plain header, which
+		// yields older data rather than no data at all.
+		val session: RuStoreSession = get()
 		val ruStoreClient = get<OkHttpClient>().newBuilder()
 			.addInterceptor { chain ->
-				val request = chain.request().newBuilder()
-					.header("ruStoreVerCode", "1105001")
+				fun sign(current: RuStoreSession.Session?) = chain.request().newBuilder()
+					.apply { session.headers(current).forEach { (k, v) -> header(k, v) } }
 					.build()
-				chain.proceed(request)
+
+				val response = chain.proceed(sign(session.current()))
+				if (response.code == 419) {
+					response.close()
+					chain.proceed(sign(session.refresh()))
+				} else {
+					response
+				}
 			}
 			.build()
 		Retrofit.Builder()
