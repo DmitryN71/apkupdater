@@ -56,7 +56,8 @@ class RuStoreSession(private val client: OkHttpClient) {
 		put("deviceModelName", Build.MODEL.orEmpty())
 		put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
 		put("firmwareLang", Locale.getDefault().language)
-		put("deviceType", "mobile")
+		// deviceType is deliberately absent: RuStore uses it as a filter, so each call picks its
+		// own (see RuStoreService). The interceptor must not override what a call already set.
 		put("User-Agent", userAgent())
 		if (session != null) {
 			put("deviceId", session.deviceId)
@@ -82,6 +83,7 @@ class RuStoreSession(private val client: OkHttpClient) {
 			.post(ByteArray(0).toRequestBody())
 		headers(null).forEach { (name, value) -> builder.header(name, value) }
 		builder.header("deviceId", deviceId)
+		builder.header("deviceType", DEVICE_MOBILE)
 		client.newCall(builder.build()).execute().use { response ->
 			if (!response.isSuccessful) {
 				Log.e("RuStoreSession", "Nonce request failed: ${response.code}")
@@ -126,6 +128,12 @@ class RuStoreSession(private val client: OkHttpClient) {
 	}
 
 	companion object {
+		const val DEVICE_MOBILE = "mobile"
+		const val DEVICE_TV = "tv"
+
+		/** RuStore answers for one device kind at a time, so anything catalogue-wide asks both. */
+		val DEVICE_TYPES = listOf(DEVICE_MOBILE, DEVICE_TV)
+
 		private const val NONCE_URL = "https://api.rustore.ru/v1/secure/nonce"
 		private const val CLIENT_VERSION_NAME = "1.105.0.2"
 

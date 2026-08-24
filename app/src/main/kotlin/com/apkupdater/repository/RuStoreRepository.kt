@@ -2,9 +2,11 @@ package com.apkupdater.repository
 
 import android.os.SystemClock
 import android.util.Log
+import com.apkupdater.data.rustore.RuStoreBatchApp
 import com.apkupdater.data.rustore.RuStoreBatchEntry
 import com.apkupdater.data.rustore.RuStoreBatchRequest
 import com.apkupdater.data.rustore.RuStoreDownloadRequest
+import com.apkupdater.data.rustore.RuStoreSearchApp
 import com.apkupdater.data.rustore.ruStoreApkUrl
 import com.apkupdater.data.rustore.toAppUpdate
 import com.apkupdater.data.ui.AppInstalled
@@ -13,6 +15,7 @@ import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.prefs.RuStore404Entry
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.RuStoreSession
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -60,8 +63,24 @@ class RuStoreRepository(
 		val batchRequest = RuStoreBatchRequest(
 			apps.map { RuStoreBatchEntry(it.packageName, it.versionCode) }
 		)
-		val batchResponse = service.getBatchUpdates(batchRequest)
-		val appsWithUpdates = batchResponse.body.content
+
+		// Ask once per device kind and merge. RuStore answers for one kind at a time — a `mobile`
+		// request cannot see TV apps and a `tv` request cannot see phone apps — so querying only
+		// one would silently drop half the catalogue (this hid every RuStore TV app until now).
+		// The batch is a single request per kind regardless of how many packages it carries, so
+		// this costs one extra request in total. Remember which kind found each app: the detail
+		// and download calls below have to ask the same way or they answer 404.
+		val appsWithUpdates = LinkedHashMap<String, Pair<RuStoreBatchApp, String>>()
+		RuStoreSession.DEVICE_TYPES.forEach { deviceType ->
+			runCatching { service.getBatchUpdates(batchRequest, deviceType).body.content }
+				.onFailure { Log.e("RuStoreRepository", "Batch check failed for $deviceType", it) }
+				.getOrDefault(emptyList())
+				.forEach { app ->
+					if (!appsWithUpdates.containsKey(app.packageName)) {
+						appsWithUpdates[app.packageName] = app to deviceType
+					}
+				}
+		}
 
 		if (appsWithUpdates.isEmpty()) {
 			emit(emptyList())
@@ -69,18 +88,19 @@ class RuStoreRepository(
 		}
 
 		// Step 2: For each app with an update, fetch details + download link with rate limiting
-		val updates = processAppsWithRateLimiting(appsWithUpdates) { batchApp, markRateLimit ->
+		val updates = processAppsWithRateLimiting(appsWithUpdates.values.toList()) { entry, markRateLimit ->
+			val (batchApp, deviceType) = entry
 			retryOnRateLimit {
 				var hitRateLimit = false
 				val result = runCatching {
-					val detailResponse = service.getAppInfo(batchApp.packageName)
+					val detailResponse = service.getAppInfo(batchApp.packageName, deviceType)
 					if (detailResponse.code != "OK" || detailResponse.body.appId == 0L) return@runCatching null
 
 					val ruStoreApp = detailResponse.body
 					clearRuStore404(batchApp.packageName)
 					if (!filterAlpha(ruStoreApp.versionName) || !filterBeta(ruStoreApp.versionName)) return@runCatching null
 
-					val downloadUrl = getDownloadUrl(ruStoreApp.appId)
+					val downloadUrl = getDownloadUrl(ruStoreApp.appId, deviceType)
 					if (downloadUrl.isEmpty()) return@runCatching null
 
 					val app = apps.getApp(batchApp.packageName)
@@ -111,46 +131,55 @@ class RuStoreRepository(
 	}
 
 	suspend fun search(text: String) = flow {
-		val response = service.searchApps(text)
-		if (response.code == "OK" && response.body != null) {
-			val ignoredPackages = getActiveRuStore404Set()
-			val filteredResults = response.body.content.filterNot { ignoredPackages.contains(it.packageName) }
-
-			val updates = processAppsWithRateLimiting(filteredResults) { searchApp, markRateLimit ->
-				retryOnRateLimit {
-					var hitRateLimit = false
-					val result = runCatching {
-						val detailResponse = service.getAppInfo(searchApp.packageName)
-						if (detailResponse.code != "OK" || detailResponse.body.appId == 0L) return@runCatching null
-
-						clearRuStore404(searchApp.packageName)
-						val details = detailResponse.body
-						val downloadUrl = getDownloadUrl(details.appId)
-						if (downloadUrl.isEmpty()) return@runCatching null
-
-						details.toAppUpdate(null, downloadUrl)
-					}.onFailure { exception ->
-						when {
-							exception is HttpException && exception.code() == 429 -> {
-								hitRateLimit = true
-								Log.w("RuStoreRepository", "Rate limit hit for ${searchApp.packageName}")
-								markRateLimit()
-							}
-							exception is HttpException && exception.code() == 404 -> {
-								markRuStore404(searchApp.packageName)
-								Log.w("RuStoreRepository", "404 for ${searchApp.packageName}, caching")
-							}
-							else -> Log.e("RuStoreRepository", "Error fetching ${searchApp.packageName}", exception)
-						}
-					}.getOrNull()
-
-					AttemptResult(result, hitRateLimit)
+		// Search the same way updates() checks — once per device kind, merged — otherwise TV-only
+		// apps are unfindable on a TV (Виму HD returns nothing at all for a `mobile` search).
+		val ignoredPackages = getActiveRuStore404Set()
+		val found = LinkedHashMap<String, Pair<RuStoreSearchApp, String>>()
+		RuStoreSession.DEVICE_TYPES.forEach { deviceType ->
+			val response = runCatching { service.searchApps(text, deviceType) }
+				.onFailure { Log.e("RuStoreRepository", "Search failed for $deviceType", it) }
+				.getOrNull() ?: return@forEach
+			if (response.code != "OK" || response.body == null) return@forEach
+			response.body.content.forEach { app ->
+				if (!found.containsKey(app.packageName) && !ignoredPackages.contains(app.packageName)) {
+					found[app.packageName] = app to deviceType
 				}
 			}
-			emit(Result.success(updates))
-		} else {
-			emit(Result.success(emptyList()))
 		}
+
+		val updates = processAppsWithRateLimiting(found.values.toList()) { entry, markRateLimit ->
+			val (searchApp, deviceType) = entry
+			retryOnRateLimit {
+				var hitRateLimit = false
+				val result = runCatching {
+					val detailResponse = service.getAppInfo(searchApp.packageName, deviceType)
+					if (detailResponse.code != "OK" || detailResponse.body.appId == 0L) return@runCatching null
+
+					clearRuStore404(searchApp.packageName)
+					val details = detailResponse.body
+					val downloadUrl = getDownloadUrl(details.appId, deviceType)
+					if (downloadUrl.isEmpty()) return@runCatching null
+
+					details.toAppUpdate(null, downloadUrl)
+				}.onFailure { exception ->
+					when {
+						exception is HttpException && exception.code() == 429 -> {
+							hitRateLimit = true
+							Log.w("RuStoreRepository", "Rate limit hit for ${searchApp.packageName}")
+							markRateLimit()
+						}
+						exception is HttpException && exception.code() == 404 -> {
+							markRuStore404(searchApp.packageName)
+							Log.w("RuStoreRepository", "404 for ${searchApp.packageName}, caching")
+						}
+						else -> Log.e("RuStoreRepository", "Error fetching ${searchApp.packageName}", exception)
+					}
+				}.getOrNull()
+
+				AttemptResult(result, hitRateLimit)
+			}
+		}
+		emit(Result.success(updates))
 	}.catch {
 		emit(Result.failure(it))
 		Log.e("RuStoreRepository", "Error searching.", it)
@@ -213,13 +242,13 @@ class RuStoreRepository(
 		}
 	}
 
-	private suspend fun getDownloadUrl(appId: Long): String {
+	private suspend fun getDownloadUrl(appId: Long, deviceType: String): String {
 		return retryOnRateLimit {
 			var hitRateLimit = false
 			val result = runCatching {
 				val request = RuStoreDownloadRequest(appId = appId)
 				// v3 carries no status field — a usable URL is the success signal.
-				val response = service.getDownloadLink(request)
+				val response = service.getDownloadLink(request, deviceType)
 				response.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl().orEmpty()
 			}.onFailure { exception ->
 				when {

@@ -22,6 +22,7 @@ import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.AppVisibility
 import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Downloader
@@ -114,9 +115,18 @@ abstract class InstallViewModel(
     protected suspend fun resolveLink(update: AppUpdate): Link {
         if (update.source == RuStoreSource && update.link is Link.Url) {
             return runCatching {
-                val appInfo = ruStoreService.getAppInfo(update.packageName)
-                if (appInfo.code == "OK" && appInfo.body.appId != 0L) {
-                    val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId))
+                // RuStore answers for one device kind at a time, so try both: a TV app is a 404
+                // for a "mobile" request and a phone app is a 404 for a "tv" one.
+                val (appInfo, deviceType) = RuStoreSession.DEVICE_TYPES
+                    .firstNotNullOfOrNull { type ->
+                        runCatching { ruStoreService.getAppInfo(update.packageName, type) }
+                            .getOrNull()
+                            ?.takeIf { it.code == "OK" && it.body.appId != 0L }
+                            ?.let { it to type }
+                    } ?: (null to RuStoreSession.DEVICE_MOBILE)
+
+                if (appInfo != null) {
+                    val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId), deviceType)
                     // v3 carries no status field — a usable URL is the success signal.
                     val url = download.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl()
                     if (!url.isNullOrEmpty()) {
@@ -331,9 +341,12 @@ abstract class InstallViewModel(
 
     private fun sendInstallSnack(updates: List<AppUpdate>, log: AppInstallStatus) {
         if (!log.snack) return
-        // Fall back to the app name we know from the install log rather than staying silent:
-        // a failure the user never hears about is the worst outcome.
-        val name = updates.find { log.id == it.id }?.name.orEmpty()
+        // Only the screen that actually lists this app speaks. Updates and Search both subscribe
+        // to the same install-status flow, so a nameless fallback here meant every install
+        // produced two toasts — "<app> installed." from Updates and a bare "installed." from
+        // Search, whose list is empty. Failures raised by the install paths themselves go
+        // through snackInstallFailure and are unaffected by this.
+        val name = updates.find { log.id == it.id }?.name ?: return
         if (log.success) {
             snackBar.snackBar(viewModelScope, TextSnack(
                 stringer.get(R.string.install_success, name).trim(),
