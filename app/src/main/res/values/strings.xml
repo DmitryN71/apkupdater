@@ -85,6 +85,7 @@
     <string name="download_failed">Download failed.</string>
     <string name="saved_to_downloads">Saved: %1$s</string>
     <string name="clean_up_after_install">Clean Up After Install</string>
+    <string name="notify_on_install">Notify After Install</string>
     <string name="source_apkmirror" translatable="false">ApkMirror</string>
     <string name="source_fdroid" translatable="false">F-Droid Main</string>
     <string name="source_izzy" translatable="false">F-Droid Izzy</string>
@@ -116,6 +117,9 @@
     <string name="filter_search_hint">Search installed apps</string>
     <string name="no_direct_download">No direct APK in this release — opening its page</string>
     <string name="play_no_files">Google Play returned no files for this app. Paid apps can only be updated from Google Play itself.</string>
+    <string name="play_not_supported">Google Play has no version of this app for this device.</string>
+    <string name="play_not_purchased">This is a paid app. APKUpdater signs in to Google Play anonymously, so it cannot download purchases.</string>
+    <string name="play_app_removed">This app is no longer available on Google Play.</string>
     <string name="settings_custom_repos">Custom Repositories</string>
     <string name="custom_repo_hint">github.com/user/repo</string>
     <string name="add_repo">Add</string>

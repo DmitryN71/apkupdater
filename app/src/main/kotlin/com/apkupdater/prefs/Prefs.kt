@@ -42,6 +42,10 @@ class Prefs(
 	val fakePlayStore = boolean("fakePlayStore", defValue = false, backed = true)
 	val theme = int("theme", defValue = 0, backed = true)
 	val cleanUpAfterInstall = boolean("cleanUpAfterInstall", defValue = true, backed = true)
+	// Success only. Failures are always reported — silent failures were the single most
+	// confusing thing users hit, and this switch exists to unclutter batch updates, where
+	// the success popups pile up over the Cancel buttons.
+	val notifyOnInstall = boolean("notifyOnInstall", defValue = true, backed = true)
 	val lastTab = string("lastTab", defValue = Screen.Updates.route, backed = true)
 	val playAuthData = json("playAuthData", AuthData("", ""), true)
 	val lastPlayCheck = long("lastPlayCheck", 0L, true)

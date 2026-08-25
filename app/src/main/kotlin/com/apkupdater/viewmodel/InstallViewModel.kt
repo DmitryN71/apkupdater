@@ -33,12 +33,14 @@ import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.installErrorResId
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
+import com.aurora.gplayapi.exceptions.ApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 
 
 abstract class InstallViewModel(
@@ -54,9 +56,16 @@ abstract class InstallViewModel(
     private val notification: UpdatesNotification
 ): ViewModel() {
 
+    /**
+     * Whether a *successful* install announces itself. Opt-out via Settings, because during a
+     * batch update the success popups stack up over the Cancel buttons. Failures ignore this —
+     * silent failures are what confused users in the first place.
+     */
+    protected fun notifyOnInstall() = prefs.notifyOnInstall.get()
+
     /** After a background install, show a "installed — Open?" notification. */
     protected fun notifyInstalledIfBackground(update: AppUpdate) {
-        if (!AppVisibility.foreground) {
+        if (!AppVisibility.foreground && notifyOnInstall()) {
             notification.showInstallSuccessNotification(update.packageName, update.name, update.id)
         }
     }
@@ -166,12 +175,14 @@ abstract class InstallViewModel(
         val fake = prefs.fakePlayStore.get()
         when (link) {
             is Link.Url -> {
-                if (installer.rootInstall(downloader.download(link.link), fake)) {
+                // Pass the id: without it the call isn't registered anywhere and Cancel can't
+                // reach it — which now matters much more, since a failing download retries.
+                if (installer.rootInstall(downloader.downloadFile(link.link, id), fake)) {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
                     finishInstall(id)
                 } else {
                     if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-                    snackInstallFailure("")
+                    snackInstallFailure("", id = id)
                     cancelInstall(id)
                 }
             }
@@ -183,7 +194,7 @@ abstract class InstallViewModel(
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndRootInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-        snackInstallFailure("", it)
+        snackInstallFailure("", it, id)
         cancelInstall(id)
     }
 
@@ -225,7 +236,7 @@ abstract class InstallViewModel(
         }
         if (error == null) {
             if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-            snackBar.snackBar(viewModelScope, TextSnack(
+            if (notifyOnInstall()) snackBar.snackBar(viewModelScope, TextSnack(
                 stringer.get(R.string.install_success, name), type = SnackType.SUCCESS
             ))
             finishInstall(id)
@@ -239,11 +250,10 @@ abstract class InstallViewModel(
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndShizukuInstall.", it)
         if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-        if (!isNetworkError(it) && !isCancellation(it)) {
-            val reason = stringer.get(installErrorResId(it.message))
-            val msg = stringer.get(R.string.install_failure, name) + "\n" + reason
-            snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
-        }
+        // Was: silent for every network error, and a raw install-error lookup otherwise, which
+        // is how a plain Cancel produced "unexpected error". The shared helper knows a cancel
+        // from a failure, and a download that died on the network deserves saying so too.
+        snackInstallFailure(name, it, id)
         installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
     }
@@ -264,7 +274,16 @@ abstract class InstallViewModel(
                     return@runCatching
                 }
                 installLog.emitProgress(AppInstallProgress(id, 0L, files.sumOf { it.size }))
-                installer.playInstall(id, packageName, files.map { downloader.downloadStream(it.url, id)!! })
+                // A null stream means the download failed or the user cancelled. The old !!
+                // raised a message-less NPE, which the error classifier could only call an
+                // unknown install error — so Cancel on a Play update answered with a red
+                // failure toast. Say which of the two it was and let the classifier do its job.
+                val streams = files.map { playFile ->
+                    downloader.downloadStream(playFile.url, id) ?: throw IOException(
+                        if (downloader.isCancelled(id)) "Canceled" else "Download failed"
+                    )
+                }
+                installer.playInstall(id, packageName, streams)
             }
             is Link.Url -> {
                 // Download to a temp file so we can verify the APK's package before
@@ -309,7 +328,7 @@ abstract class InstallViewModel(
         // complete silence: the card simply reverted to "Update". Reported as "downloads, then
         // stops with no message at all". Only a deliberate user cancel stays quiet now; even a
         // network drop mid-download gets explained.
-        snackInstallFailure(name, it)
+        snackInstallFailure(name, it, id)
         installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
     }
@@ -328,11 +347,18 @@ abstract class InstallViewModel(
      * single most confusing thing users hit ("it downloads, then nothing happens"). Only a
      * cancel the user asked for stays quiet.
      */
-    protected fun snackInstallFailure(name: String, error: Throwable? = null) {
+    protected fun snackInstallFailure(name: String, error: Throwable? = null, id: Int? = null) {
+        // Ask the downloader outright rather than reading tea leaves in the exception text.
+        // Cancelling a download surfaces as any of several socket exceptions, and the ones
+        // whose message doesn't happen to say "canceled" were slipping through as a bogus
+        // "failed to install — unexpected error" the moment the user pressed Cancel.
+        if (id != null && downloader.isCancelled(id)) return
         if (error != null && isCancellation(error)) return
+        val playReason = error?.let { playErrorResId(it) }
         val reason = when {
             error == null -> stringer.get(R.string.install_error_unknown)
-            isNetworkError(error) -> stringer.get(R.string.download_failed)
+            playReason != null -> stringer.get(playReason)
+            isNetworkError(error) || isDownloadError(error) -> stringer.get(R.string.download_failed)
             else -> stringer.get(installErrorResId(error.message))
         }
         val msg = stringer.get(R.string.install_failure, name).trim() + "\n" + reason
@@ -348,6 +374,7 @@ abstract class InstallViewModel(
         // through snackInstallFailure and are unaffected by this.
         val name = updates.find { log.id == it.id }?.name ?: return
         if (log.success) {
+            if (!notifyOnInstall()) return
             snackBar.snackBar(viewModelScope, TextSnack(
                 stringer.get(R.string.install_success, name).trim(),
                 type = SnackType.SUCCESS
@@ -370,6 +397,34 @@ abstract class InstallViewModel(
             e is java.net.UnknownHostException ||
             e is java.net.SocketTimeoutException ||
             e is java.net.ConnectException
+    }
+
+    /**
+     * Turns a Google Play refusal into a reason a person can act on.
+     *
+     * Every gplayapi exception calls `Exception()` with NO message — the reason string goes
+     * into a private field the base class never sees (verified by disassembling the library).
+     * So `error.message` is always null, the generic classifier could only ever answer
+     * "unexpected error", and "Play has no build for your device" was indistinguishable from
+     * "you don't own this paid app". Matching on the TYPE is compile-checked and survives
+     * minification, unlike hunting for substrings that aren't there in the first place.
+     */
+    private fun playErrorResId(error: Throwable): Int? = when (error) {
+        is ApiException.AppNotSupported -> R.string.play_not_supported
+        is ApiException.AppNotPurchased -> R.string.play_not_purchased
+        is ApiException.AppRemoved, is ApiException.AppNotFound -> R.string.play_app_removed
+        is ApiException.EmptyDownloads -> R.string.play_no_files
+        else -> null
+    }
+
+    /**
+     * Downloader gave up: a bad HTTP status, or every retry exhausted on a truncated file.
+     * Those read as a download problem, not as an install one.
+     */
+    private fun isDownloadError(e: Throwable): Boolean {
+        val msg = e.message?.lowercase() ?: return false
+        return msg.startsWith("http ") || msg.contains("download incomplete") ||
+            msg.contains("download failed")
     }
 
     /** Detects OkHttp Call cancellation (user pressed cancel button). */

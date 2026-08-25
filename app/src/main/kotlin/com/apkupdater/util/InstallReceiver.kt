@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstallStatus
+import com.apkupdater.prefs.Prefs
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
@@ -31,6 +32,7 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
     private val installLog: InstallLog by inject()
     private val notification: UpdatesNotification by inject()
     private val stringer: Stringer by inject()
+    private val prefs: Prefs by inject()
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == DISMISS_ACTION) {
@@ -60,8 +62,9 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
             PackageInstaller.STATUS_SUCCESS -> {
                 notification.cancelConfirmInstallNotification(id)
                 installLog.emitStatus(AppInstallStatus(true, id))
-                // If the app isn't in front, post a "installed — Open?" notification.
-                if (!AppVisibility.foreground) {
+                // If the app isn't in front, post a "installed — Open?" notification,
+                // unless the user turned install notifications off in Settings.
+                if (!AppVisibility.foreground && prefs.notifyOnInstall.get()) {
                     val pkg = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
                     if (!pkg.isNullOrBlank()) {
                         val label = runCatching {

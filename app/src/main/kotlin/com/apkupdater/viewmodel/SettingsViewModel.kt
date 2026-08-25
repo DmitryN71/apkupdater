@@ -116,6 +116,8 @@ class SettingsViewModel(
 	fun getRootInstall() = prefs.rootInstall.get()
 	fun getCleanUpAfterInstall() = prefs.cleanUpAfterInstall.get()
 	fun setCleanUpAfterInstall(b: Boolean) = prefs.cleanUpAfterInstall.put(b)
+	fun getNotifyOnInstall() = prefs.notifyOnInstall.get()
+	fun setNotifyOnInstall(b: Boolean) = prefs.notifyOnInstall.put(b)
 	fun getAlarmHour() = prefs.alarmHour.get()
 	fun getAlarmFrequency() = prefs.alarmFrequency.get()
 	fun getTheme() = prefs.theme.get()
@@ -275,6 +277,7 @@ class SettingsViewModel(
 			addProperty("fakePlayStore", prefs.fakePlayStore.get())
 			addProperty("theme", prefs.theme.get())
 			addProperty("cleanUpAfterInstall", prefs.cleanUpAfterInstall.get())
+			addProperty("notifyOnInstall", prefs.notifyOnInstall.get())
 			addProperty("githubToken", prefs.githubToken.get())
 			add("ignoredApps", gson.toJsonTree(prefs.ignoredApps.get()))
 			add("customGitRepos", gson.toJsonTree(prefs.customGitRepos.get()))
@@ -323,6 +326,7 @@ class SettingsViewModel(
 		obj.get("fakePlayStore")?.asBoolean?.let { prefs.fakePlayStore.put(it) }
 		obj.get("theme")?.asInt?.let { prefs.theme.put(it); themer.setTheme(isDarkTheme(it)) }
 		obj.get("cleanUpAfterInstall")?.asBoolean?.let { prefs.cleanUpAfterInstall.put(it) }
+		obj.get("notifyOnInstall")?.asBoolean?.let { prefs.notifyOnInstall.put(it) }
 		obj.get("githubToken")?.asString?.let { prefs.githubToken.put(it) }
 		obj.get("ignoredApps")?.let {
 			prefs.ignoredApps.put(gson.fromJson(it, Array<String>::class.java).toList())

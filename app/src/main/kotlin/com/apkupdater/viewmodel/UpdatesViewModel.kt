@@ -146,7 +146,7 @@ class UpdatesViewModel(
 			}
 			// Download in parallel (no mutex) — rootInstall() deletes the file itself
 			val file = runCatching { downloader.downloadFile(link.link, update.id) }.getOrElse {
-				snackInstallFailure(update.name, it)
+				snackInstallFailure(update.name, it, update.id)
 				cancelInstall(update.id)
 				return@launch
 			}
@@ -172,13 +172,13 @@ class UpdatesViewModel(
 					} else {
 						file.delete()
 						cleanUpIfLast()
-						snackInstallFailure(update.name)
+						snackInstallFailure(update.name, id = update.id)
 						cancelInstall(update.id)
 					}
 				}.getOrElse {
 					file.delete()
 					cleanUpIfLast()
-					snackInstallFailure(update.name, it)
+					snackInstallFailure(update.name, it, update.id)
 					cancelInstall(update.id)
 				}
 			}
@@ -229,6 +229,11 @@ class UpdatesViewModel(
 				}
 			}
 		}.getOrElse {
+			// Clear the bar too, not just the button. Without this the card kept the
+			// percentage it died at, so restarting the download flashed the old figure
+			// for an instant before jumping back to 0 — it read like a failed resume.
+			installLog.emitProgress(AppInstallProgress(update.id, 0L))
+			snackInstallFailure(update.name, it, update.id)
 			cancelInstall(update.id)
 			return@launch
 		}
@@ -258,7 +263,7 @@ class UpdatesViewModel(
 				}
 				if (error == null) {
 					cleanUpIfLast()
-					snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_success, update.name), type = com.apkupdater.data.snack.SnackType.SUCCESS))
+					if (notifyOnInstall()) snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_success, update.name), type = com.apkupdater.data.snack.SnackType.SUCCESS))
 					notifyInstalledIfBackground(update)
 					finishInstall(update.id)
 				} else {

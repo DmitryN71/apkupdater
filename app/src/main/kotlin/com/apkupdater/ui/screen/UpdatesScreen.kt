@@ -73,6 +73,10 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 	title = { Text(stringResource(R.string.tab_updates)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	actions = {
+		// Recount on entering the tab. The figure used to be refreshed only by an update
+		// check, so downloads started from Search left it stale at zero — the chip stayed
+		// hidden while there really were tens of megabytes sitting in the cache.
+		androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
 		val cache = viewModel.cacheSize.collectAsStateWithLifecycle().value
 		if (cache > 0L) {
 			Row(

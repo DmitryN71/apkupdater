@@ -131,7 +131,17 @@ class PlayRepository(
         val details = AppDetailsHelper(authData)
             .using(playHttpClient)
             .getAppByPackageName(apps.getPackageNames())
-        val updates = details
+        // Play answers for some apps with no version at all: it has no build for this session's
+        // device profile — a TV-only app asked about from a phone, a region-locked listing. Those
+        // used to vanish into the same filter as "already up to date", so an app Play will never
+        // serve looked exactly like an app that needs nothing, and the user had nowhere to learn
+        // why it never updates. Trying to install it now says so (InstallViewModel.playErrorResId);
+        // here they are at least named in the log so a forum report can be answered.
+        val (unavailable, offered) = details.partition { it.versionCode <= 0 }
+        if (unavailable.isNotEmpty()) {
+            Log.w("PlayRepository", "No version offered for: ${unavailable.joinToString { it.packageName }}")
+        }
+        val updates = offered
             .filter { it.versionCode > apps.getVersionCode(it.packageName) }
             .map {
                 it.toAppUpdate(

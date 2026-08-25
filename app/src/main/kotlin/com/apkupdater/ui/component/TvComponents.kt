@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,7 +60,7 @@ import com.apkupdater.data.ui.Source
 import com.apkupdater.util.getAppName
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
-import com.apkupdater.util.to2f
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
 import androidx.compose.foundation.focusGroup
@@ -329,8 +330,16 @@ fun TvInstallButton(
 			Icon(Icons.Filled.Close, stringResource(R.string.cancel_cd), Modifier.size(16.dp))
 			Spacer(Modifier.width(4.dp))
 			if (app.total != 0L && app.progress != 0L) {
-				val p = ((app.progress.toFloat() / app.total) * 100f).coerceAtMost(100f)
-				Text("${p.to2f()}%")
+				// Whole percent in a fixed-width slot. Two decimals made the label a
+				// different width on every tick, so the button kept resizing and the
+				// End-aligned row of buttons visibly jittered for the whole download.
+				val p = ((app.progress.toFloat() / app.total) * 100f).coerceIn(0f, 100f)
+				Text(
+					"${p.toInt()}%",
+					maxLines = 1,
+					textAlign = TextAlign.Center,
+					modifier = Modifier.widthIn(min = 36.dp)
+				)
 			} else {
 				Text(stringResource(R.string.cancel_cd))
 			}

@@ -72,6 +72,9 @@
     <string name="filter_search_hint">Поиск по установленным</string>
     <string name="no_direct_download">В этом релизе нет готового APK — открываю его страницу</string>
     <string name="play_no_files">Google Play не выдал файлы для этого приложения. Платные приложения можно обновить только через сам Google Play.</string>
+    <string name="play_not_supported">В Google Play нет версии этого приложения для этого устройства.</string>
+    <string name="play_not_purchased">Это платное приложение. APKUpdater входит в Google Play анонимно и не может скачивать покупки.</string>
+    <string name="play_app_removed">Приложения больше нет в Google Play.</string>
     <string name="fake_play_store">Установщик — Play Store</string>
     <string name="skip_cd">Пропустить</string>
     <string name="hide_cd">Скрыть</string>
@@ -81,6 +84,7 @@
     <string name="download_failed">Ошибка скачивания.</string>
     <string name="saved_to_downloads">Сохранено: %1$s</string>
     <string name="clean_up_after_install">Очистить после установки</string>
+    <string name="notify_on_install">Уведомлять после установки</string>
     <string name="source_errors">%1$d из %2$d источников не удалось проверить.</string>
     <string name="checking_sources">Проверка: %1$s</string>
     <string name="checking_updates">Проверяю обновления…</string>

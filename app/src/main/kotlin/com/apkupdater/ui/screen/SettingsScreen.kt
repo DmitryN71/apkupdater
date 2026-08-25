@@ -287,6 +287,12 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_cleanup
 		)
 		SwitchSetting(
+			{ viewModel.getNotifyOnInstall() },
+			{ viewModel.setNotifyOnInstall(it) },
+			stringResource(R.string.notify_on_install),
+			R.drawable.ic_notification
+		)
+		SwitchSetting(
 			{ viewModel.getIgnoreAlpha() },
 			{ viewModel.setIgnoreAlpha(it) },
 			stringResource(R.string.ignore_alpha),

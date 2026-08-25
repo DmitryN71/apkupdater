@@ -158,17 +158,16 @@ fun formatBytes(b: Long): String = when {
  * (cache/downloads). Deliberately excludes other cache (Coil images, HTTP
  * metadata, gplayapi data) which is not ours to count or clear.
  */
-fun Context.downloadCacheSizeBytes(): Long {
-	var size = 0L
-	File(cacheDir, "downloads").listFiles()?.forEach { size += it.length() }
-	return size
-}
+fun Context.downloadCacheSizeBytes(): Long =
+	File(cacheDir, "downloads").walkBottomUp().filter { it.isFile }.sumOf { it.length() }
 
 /** Deletes the leftover APK downloads; returns bytes freed. */
 fun Context.clearDownloadCacheBytes(): Long {
 	val freed = downloadCacheSizeBytes()
 	runCatching {
-		File(cacheDir, "downloads").listFiles()?.forEach { it.delete() }
+		// Recursive: half-finished downloads waiting to be resumed live in a subdirectory,
+		// and clearing the cache by hand is meant to reclaim those too.
+		File(cacheDir, "downloads").listFiles()?.forEach { it.deleteRecursively() }
 	}
 	return freed
 }

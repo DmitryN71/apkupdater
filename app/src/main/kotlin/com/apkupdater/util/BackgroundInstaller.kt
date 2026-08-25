@@ -55,6 +55,10 @@ class BackgroundInstaller(
     /** Call when a download/install task starts. Pair with [end] in a finally block. */
     @Synchronized
     fun begin(id: Int, name: String) {
+        // Clears a cancel left behind by a previous task with this id. It belongs here, once
+        // per task, and not inside Downloader's own methods: a single task calls those several
+        // times (one per Play split), and clearing between two of them would drop a cancel.
+        downloader.beginDownloads(id)
         if (_tasks.value.isEmpty()) {
             // Best effort: on Android 12+ this can be rejected if the app is in the
             // background — the work still runs, just without foreground protection.
