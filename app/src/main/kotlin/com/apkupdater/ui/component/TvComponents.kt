@@ -2,9 +2,11 @@ package com.apkupdater.ui.component
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +46,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -67,6 +71,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
@@ -284,7 +289,8 @@ fun TvInstallButton(
 	onInstall: (String) -> Unit,
 	onOpen: (String) -> Unit = {},
 	onCancel: (Int) -> Unit = {},
-	isSearch: Boolean = false
+	isSearch: Boolean = false,
+	modifier: Modifier = Modifier
 ) {
 	// For search: oldVersionCode > 0 means app is installed
 	val isInstalledElsewhere = isSearch && app.oldVersionCode > 0L && !app.isInstalled
@@ -312,6 +318,7 @@ fun TvInstallButton(
 	}
 
 	FilledTonalButton(
+		modifier = modifier,
 		onClick = {
 			when {
 				app.isInstalling -> onCancel(app.id)
@@ -355,11 +362,48 @@ fun TvInstallButton(
 	}
 }
 
+/**
+ * A card that outlines itself while ANY control inside it holds D-pad focus.
+ *
+ * Until now only the control itself lit up, and on a couch-distance screen a 40dp pill changing
+ * colour inside a half-screen-wide card is genuinely hard to find — reported on 4PDA as "фокус
+ * подсвечивается блекло". The complaint is not about the colour being pale; it is about the lit
+ * area being tiny relative to the card.
+ *
+ * This is NOT the focus ring that was rejected in build 107. That one wrapped a *button*, whose
+ * invisible 48dp touch target is taller than the visible 40dp pill, so the rectangle stuck out.
+ * A Card's layout bounds are exactly the card you see, and the border is given the card's own
+ * shape, so the outline traces it precisely. The inner control keeps its solid fill, which gives
+ * two levels of feedback at once: which card, and which button within it.
+ *
+ * `hasFocus` — not `isFocused` — is what lets a parent react to a focused descendant.
+ */
 @Composable
-fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = Card(
-	modifier = Modifier.alpha(if (app.ignored) 0.5f else 1f),
-	shape = RoundedCornerShape(20.dp),
-	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+fun TvFocusCard(
+	modifier: Modifier = Modifier,
+	content: @Composable ColumnScope.() -> Unit
+) {
+	var focused by remember { mutableStateOf(false) }
+	val shape = RoundedCornerShape(20.dp)
+	Card(
+		modifier = modifier
+			.fillMaxWidth()
+			.onFocusChanged { focused = it.hasFocus },
+		shape = shape,
+		// Card's own border parameter, not Modifier.border: it is drawn with the card's shape by
+		// construction, so the outline can never sit a pixel off the rounded corners.
+		border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+		colors = CardDefaults.cardColors(
+			containerColor = if (focused) MaterialTheme.colorScheme.surfaceContainerHighest
+			else MaterialTheme.colorScheme.surfaceContainerHigh
+		),
+		content = content
+	)
+}
+
+@Composable
+fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = TvFocusCard(
+	Modifier.alpha(if (app.ignored) 0.5f else 1f)
 ) {
 	Column {
 		TvCommonItem(app.packageName, app.name, app.version, null, app.versionCode, null)
@@ -463,12 +507,11 @@ fun TvUpdateItem(
 	onHide: (Int) -> Unit = {},
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
-	onCancel: (Int) -> Unit = {}
-) = Card(
-	modifier = Modifier.fillMaxWidth(),
-	shape = RoundedCornerShape(20.dp),
-	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-) {
+	onCancel: (Int) -> Unit = {},
+	// Set on the FIRST card only, so the screen can put D-pad focus there instead of leaving
+	// it on the bottom navigation bar — see UpdatesScreenSuccess.
+	firstItemFocus: FocusRequester? = null
+) = TvFocusCard {
 	Column {
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
@@ -490,7 +533,10 @@ fun TvUpdateItem(
 				TvHideButton { onHide(app.id) }
 			}
 			TvDownloadButton(app, onDownload)
-			TvInstallButton(app, onInstall, onOpen, onCancel)
+			TvInstallButton(
+				app, onInstall, onOpen, onCancel,
+				modifier = if (firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier
+			)
 		}
 	}
 }
@@ -503,11 +549,7 @@ fun TvSearchItem(
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
 	onCancel: (Int) -> Unit = {}
-) = Card(
-	modifier = Modifier.fillMaxWidth(),
-	shape = RoundedCornerShape(20.dp),
-	colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
-) {
+) = TvFocusCard {
 	Column {
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.

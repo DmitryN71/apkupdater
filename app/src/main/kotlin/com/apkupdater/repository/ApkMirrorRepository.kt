@@ -62,17 +62,25 @@ class ApkMirrorRepository(
         a.removeAt(0)
         img.removeAt(0)
         val result = (0 until a.size).map {
+            val releaseUrl = "$baseUrl${h5[it].selectFirst("a")?.attr("href")}"
             AppUpdate(
                 name = h5[it].attr("title"),
-                link = Link.Url("$baseUrl${h5[it].selectFirst("a")?.attr("href")}"),
+                link = Link.Url(releaseUrl),
                 iconUri = Uri.parse("$baseUrl${img[it].attr("src")}".replace("=32", "=128")),
                 version = "?",
                 oldVersion = "?",
                 versionCode = 0L,
                 oldVersionCode = 0L,
                 source = ApkMirrorSource,
+                // NB this is the DEVELOPER, not a package name — a search row on ApkMirror
+                // carries no package id at all.
                 packageName = a[it].text(),
-                sourceUrl = "$baseUrl${h5[it].selectFirst("a")?.attr("href")}"
+                sourceUrl = releaseUrl,
+                // Hence the default id ("ApkMirror.<developer>.0.?") is IDENTICAL for every row
+                // by the same developer. That is what made the results grid throw
+                // "Key ... was already used" and kill the app while scrolling a long search.
+                // The release URL is the only thing unique per row.
+                id = "ApkMirror.$releaseUrl".hashCode()
             )
         }
         emit(Result.success(result))

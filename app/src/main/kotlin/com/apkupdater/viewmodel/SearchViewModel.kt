@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicInteger
 
 
 class SearchViewModel(
@@ -48,6 +49,20 @@ class SearchViewModel(
     private val installMutex = Mutex()
     private val state = MutableStateFlow<SearchUiState>(SearchUiState.Success(emptyList()))
     private var job: Job? = null
+    private val generation = AtomicInteger(0)
+
+    private val _searching = MutableStateFlow(false)
+    /**
+     * True while sources are still answering. Results arrive one source at a time, so a list
+     * with items in it is NOT a finished search — until now there was no way at all to tell
+     * "still looking" from "that is everything".
+     */
+    val searching: StateFlow<Boolean> = _searching
+
+    private val _query = MutableStateFlow("")
+    /** Last query actually sent, so an empty result can say "nothing found" instead of
+     *  repeating the "type something to search" hint as if nothing had been asked. */
+    val query: StateFlow<String> = _query
 
     init {
         subscribeToInstallStatus { state.value.updates() }
@@ -63,21 +78,48 @@ class SearchViewModel(
         job = searchJob(text)
     }
 
+    /**
+     * Drops the results and stops any search in flight. Bumping the generation matters: coroutine
+     * cancellation is cooperative, and the collect body below has no suspension point in it, so a
+     * clear landing mid-body would be overwritten a moment later by the very results it cleared —
+     * leaving a stale list under an emptied field, which is the bug this is here to prevent.
+     */
+    fun clear() {
+        generation.incrementAndGet()
+        job?.cancel()
+        job = null
+        _query.value = ""
+        _searching.value = false
+        state.value = SearchUiState.Success(emptyList())
+        badger.changeSearchBadge("")
+    }
+
     private fun searchJob(text: String) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+        // Everything below runs inside the mutex, so a previous search that is still unwinding
+        // has already passed its finally and cannot clear the flag we are about to set.
+        val mine = generation.incrementAndGet()
+        _query.value = text
+        _searching.value = true
         state.value = SearchUiState.Loading
         badger.changeSearchBadge("")
-        searchRepository.search(text).collect {
-            it.onSuccess { apps ->
-                val enriched = apps.map { app ->
-                    val installed = getInstalledVersionCode(app.packageName)
-                    if (installed > 0L) app.copy(oldVersionCode = installed) else app
+        try {
+            searchRepository.search(text).collect {
+                // Superseded by a clear() or a newer query — see the note on clear().
+                if (generation.get() != mine) return@collect
+                it.onSuccess { apps ->
+                    val enriched = apps.map { app ->
+                        val installed = getInstalledVersionCode(app.packageName)
+                        if (installed > 0L) app.copy(oldVersionCode = installed) else app
+                    }
+                    state.value = SearchUiState.Success(enriched)
+                    badger.changeSearchBadge(enriched.size.toString())
+                }.onFailure {
+                    badger.changeSearchBadge("!")
+                    state.value = SearchUiState.Error
                 }
-                state.value = SearchUiState.Success(enriched)
-                badger.changeSearchBadge(enriched.size.toString())
-            }.onFailure {
-                badger.changeSearchBadge("!")
-                state.value = SearchUiState.Error
             }
+        } finally {
+            _searching.value = false
         }
     }
 

@@ -118,7 +118,13 @@ class UpdatesViewModel(
 	}
 
 	override fun finishInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		val updates = state.value.mutableUpdates().setIsInstalled(id).sortFinishedFirst()
+		// Deliberately NOT sorted here any more. Floating a finished app to the top made the
+		// whole list jump the instant an install completed — everything below shifted, and on a
+		// D-pad that strands the focus somewhere the user did not put it. The ordering still
+		// happens in setSuccess(), i.e. on the next refresh, so a long list still gathers the
+		// handled ones at the top; it just stops moving under the user mid-session. A finished
+		// card is already obvious in place: it turns tertiary and its button becomes Open.
+		val updates = state.value.mutableUpdates().setIsInstalled(id)
 		state.value = UpdatesUiState.Success(updates)
 		badger.changeUpdatesBadge(updates.count { !it.isInstalled }.toString())
 		installer.finish()

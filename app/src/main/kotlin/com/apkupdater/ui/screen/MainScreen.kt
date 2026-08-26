@@ -262,7 +262,10 @@ fun NavHost(
 	onRefresh: () -> Unit = {}
 ) = NavHost(
 	navController = navController,
-	startDestination = mainViewModel.getLastRoute(),
+	// Always open on Updates. Remembering the last tab meant backing out of the app while on
+	// Search brought it back on Search — an updater should show updates when you open it. The
+	// tab still survives rotation, because rememberNavController saves the back stack itself.
+	startDestination = Screen.Updates.route,
 	modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
 ) {
 	composable(Screen.Apps.route) { AppsScreen(appsViewModel) }

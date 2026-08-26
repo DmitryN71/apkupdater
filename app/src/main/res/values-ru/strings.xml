@@ -88,6 +88,8 @@
     <string name="source_errors">%1$d из %2$d источников не удалось проверить.</string>
     <string name="checking_sources">Проверка: %1$s</string>
     <string name="checking_updates">Проверяю обновления…</string>
+    <string name="clear_search_cd">Очистить поиск</string>
+    <string name="search_no_results">По этому запросу ничего не найдено.</string>
     <string name="search_empty">Ищите приложения по названию во всех источниках.</string>
 
     // Install mode errors

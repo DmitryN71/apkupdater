@@ -70,10 +70,7 @@ class MainViewModel(
 		popUpTo(navController.graph.findStartDestination().id) { saveState = true }
 		launchSingleTop = true
 		restoreState = true
-		prefs.lastTab.put(route)
 	}
-
-	fun getLastRoute() = prefs.lastTab.get()
 
 	private fun processUpdateIntent(
 		navController: NavController,

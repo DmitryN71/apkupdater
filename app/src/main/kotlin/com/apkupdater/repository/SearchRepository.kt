@@ -37,7 +37,13 @@ class SearchRepository(
         if (sources.isNotEmpty()) {
             sources.combine { updates ->
                 val result = updates.filter { it.isSuccess }.mapNotNull { it.getOrNull() }
-                emit(Result.success(result.flatten().rankByRelevance(text)))
+                // Deduplicate before the UI ever sees the list. AppUpdate.id is a hash of
+                // source+package+versionCode+version, so one source listing the same build twice
+                // (ApkMirror rows per architecture, Aptoide variants) produces two items sharing
+                // an id — and a LazyGrid keyed by id throws "Key ... was already used" the moment
+                // BOTH become visible, which is why it crashed while scrolling rather than on
+                // arrival. The Updates list already did this; Search never did.
+                emit(Result.success(result.flatten().rankByRelevance(text).distinctBy { it.id }))
             }.collect()
         } else {
             emit(Result.success(emptyList()))

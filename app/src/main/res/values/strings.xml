@@ -32,6 +32,8 @@
     <string name="source_errors">%1$d of %2$d sources failed to check updates.</string>
     <string name="checking_sources">Checking: %1$s</string>
     <string name="checking_updates">Checking for updates…</string>
+    <string name="clear_search_cd">Clear search</string>
+    <string name="search_no_results">Nothing found for this search.</string>
     <string name="search_empty">Search for apps by name across all sources.</string>
 
     // Install mode errors
