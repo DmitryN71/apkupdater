@@ -138,8 +138,11 @@ class PlayRepository(
         // why it never updates. Trying to install it now says so (InstallViewModel.playErrorResId);
         // here they are at least named in the log so a forum report can be answered.
         val (unavailable, offered) = details.partition { it.versionCode <= 0 }
-        if (unavailable.isNotEmpty()) {
-            Log.w("PlayRepository", "No version offered for: ${unavailable.joinToString { it.packageName }}")
+        // Only name the ones Play actually identified: a throttled bulkDetails answers with
+        // hundreds of blank records, and logging those produced a screenful of commas.
+        val named = unavailable.map { it.packageName }.filter { it.isNotBlank() }
+        if (named.isNotEmpty()) {
+            Log.w("PlayRepository", "No version offered for: ${named.joinToString()}")
         }
         val updates = offered
             .filter { it.versionCode > apps.getVersionCode(it.packageName) }
@@ -156,10 +159,17 @@ class PlayRepository(
         Log.e("PlayRepository", "Error looking for updates.", it)
     }
 
-    private fun getInstallFiles(app: App) = PurchaseHelper(auth())
-        .using(playHttpClient)
-        .purchase(app.packageName, app.versionCode, app.offerType)
-        .filter { it.type == File.FileType.BASE || it.type == File.FileType.SPLIT }
+    private fun getInstallFiles(app: App): List<File> {
+        val files = PurchaseHelper(auth())
+            .using(playHttpClient)
+            .purchase(app.packageName, app.versionCode, app.offerType)
+            .filter { it.type == File.FileType.BASE || it.type == File.FileType.SPLIT }
+        // A delivery that Play throttled (HTTP 429) still yields file entries — with an empty
+        // url. All or nothing on purpose: dropping only the blank ones could leave a base APK
+        // without one of its splits, which installs as a broken app instead of failing
+        // honestly. An empty list is what the install paths already know how to explain.
+        return if (files.any { it.url.isBlank() }) emptyList() else files
+    }
 
 }
 

@@ -153,11 +153,11 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 			// Erasing the field is the natural way to ask for a clean slate, and under three
 			// characters there is nothing to search for — so drop the stale results rather than
 			// leave them sitting under an empty field.
-			if (it.length < 3) viewModel.clear()
+			if (it.length < 3) viewModel.clearSearch()
 		},
 		trailingIcon = {
 			if (value.isNotEmpty()) {
-				IconButton(onClick = { value = ""; viewModel.clear() }) {
+				IconButton(onClick = { value = ""; viewModel.clearSearch() }) {
 					Icon(Icons.Filled.Close, stringResource(R.string.clear_search_cd))
 				}
 			}

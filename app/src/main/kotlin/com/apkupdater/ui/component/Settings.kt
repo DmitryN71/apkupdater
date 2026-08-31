@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -304,5 +306,54 @@ fun ButtonSetting(
     Spacer(Modifier.weight(1f))
     IconButton(onClick = onClick) {
         Icon(painterResource(iconButton), stringResource(R.string.copy_to_clipboard))
+    }
+}
+
+/**
+ * One row on the Settings front page, opening a category screen.
+ *
+ * Same focus treatment as [SwitchSetting] — the whole row fills on D-pad focus — because these
+ * rows are now the first thing a TV user lands on, and a full-width fill cannot look crooked.
+ * The subtitle carries the state worth knowing without opening anything: how many sources are
+ * enabled, which installer is in use.
+ */
+@Composable
+fun SettingsCategory(
+    text: String,
+    subtitle: String?,
+    @DrawableRes icon: Int,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val rowColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent
+    val contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .background(rowColor, RoundedCornerShape(16.dp))
+            .heightIn(min = 64.dp)
+            .clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(horizontal = 8.dp),
+        verticalAlignment = CenterVertically
+    ) {
+        Icon(
+            painterResource(id = icon),
+            text,
+            Modifier.padding(end = 16.dp).size(24.dp),
+            tint = contentColor
+        )
+        Column(Modifier.weight(1f)) {
+            Text(text, color = contentColor)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (focused) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Icon(Icons.Filled.KeyboardArrowRight, null, tint = contentColor)
     }
 }

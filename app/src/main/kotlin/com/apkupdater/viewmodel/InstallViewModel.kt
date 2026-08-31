@@ -210,6 +210,15 @@ abstract class InstallViewModel(
             }
             is Link.Play -> {
                 val files = link.getInstallFiles()
+                // Same guard the standard path has had since 117: no usable file means Play
+                // refused delivery (a 429 throttle yields entries with an empty url, which
+                // PlayRepository now drops). Say so instead of failing deep in the downloader.
+                if (files.isEmpty()) {
+                    snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.play_no_files), type = SnackType.ERROR))
+                    cancelInstall(id)
+                    return@runCatching
+                }
                 val totalSize = files.sumOf { it.size }
                 if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
                 var downloadedSoFar = 0L
@@ -264,10 +273,10 @@ abstract class InstallViewModel(
             is Link.Play -> {
                 val files = link.getInstallFiles()
                 if (files.isEmpty()) {
-                    // Play returned nothing to download. This is what happens for PAID apps: we
-                    // sign in to Play with an anonymous shared account (Aurora's dispenser), which
-                    // owns no purchases, so the delivery request comes back empty. Committing an
-                    // empty session would fail cryptically — explain it instead.
+                    // Play gave us no usable file. NOT the paid-app case — that throws
+                    // AppNotPurchased and is answered by playErrorResId. In practice this is a
+                    // throttled delivery (HTTP 429). Committing an empty session would fail
+                    // cryptically, so explain it instead.
                     snackBar.snackBar(viewModelScope, TextSnack(
                         stringer.get(R.string.play_no_files), type = SnackType.ERROR))
                     cancelInstall(id)
@@ -506,6 +515,10 @@ abstract class InstallViewModel(
 
     private fun downloadPlayToFolder(id: Int, safeName: String, version: String, link: Link.Play) {
         val files = link.getInstallFiles()
+        // Without this the throttled case ends in a SUCCESS message: zipping zero entries does
+        // not fail, it just writes an empty archive, so the user was told "Saved: Foo.apks" and
+        // got a 22-byte file that opens in nothing.
+        if (files.isEmpty()) throw IOException("Download failed: no download link")
         val totalSize = files.sumOf { it.size }
         if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
 

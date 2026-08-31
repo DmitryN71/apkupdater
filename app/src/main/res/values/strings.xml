@@ -67,6 +67,13 @@
     <string name="settings_ui">UI</string>
     <string name="settings_alarm">Auto-Check</string>
     <string name="settings_options">Options</string>
+    <string name="settings_updates">Update Checks</string>
+    <string name="settings_install">Installation</string>
+    <string name="settings_versions">Version Filters</string>
+    <string name="settings_alarm_off">Off</string>
+    <string name="install_standard">Standard installer</string>
+    <string name="settings_sources_summary">%1$d of %2$d enabled</string>
+    <string name="settings_repos_summary">Added: %1$d</string>
     <string name="settings_utils">Utils</string>
     <string name="settings_hour">Check Hour</string>
     <string name="settings_alarm_daily">Daily</string>
@@ -118,7 +125,7 @@
     <string name="filter_only_ignored">Only ignored</string>
     <string name="filter_search_hint">Search installed apps</string>
     <string name="no_direct_download">No direct APK in this release — opening its page</string>
-    <string name="play_no_files">Google Play returned no files for this app. Paid apps can only be updated from Google Play itself.</string>
+    <string name="play_no_files">Google Play returned no download link for this app. This is usually a temporary limit — try again in a while.</string>
     <string name="play_not_supported">Google Play has no version of this app for this device.</string>
     <string name="play_not_purchased">This is a paid app. APKUpdater signs in to Google Play anonymously, so it cannot download purchases.</string>
     <string name="play_app_removed">This app is no longer available on Google Play.</string>

@@ -216,6 +216,19 @@ class UpdatesViewModel(
 				}
 				is com.apkupdater.data.ui.Link.Play -> {
 					val playFiles = link.getInstallFiles()
+					// No usable file means Play refused delivery — a 429 throttle hands back
+					// entries with an empty url, which PlayRepository drops. Explain that
+					// rather than letting it surface as a nameless download failure.
+					if (playFiles.isEmpty()) {
+						snackBar.snackBar(viewModelScope, TextSnack(
+							stringer.get(R.string.play_no_files),
+							type = com.apkupdater.data.snack.SnackType.ERROR))
+						// Balance the activeInstalls increment, or the counter never returns to
+						// zero and cleanUp() stops running for the rest of the process.
+						cleanUpIfLast()
+						cancelInstall(update.id)
+						return@launch
+					}
 					val totalSize = playFiles.sumOf { it.size }
 					if (totalSize > 0) installLog.emitProgress(AppInstallProgress(update.id, 0L, totalSize))
 					var downloadedSoFar = 0L
@@ -230,6 +243,7 @@ class UpdatesViewModel(
 				}
 				else -> {
 					snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.shizuku_install_not_supported)))
+					cleanUpIfLast()
 					cancelInstall(update.id)
 					return@launch
 				}

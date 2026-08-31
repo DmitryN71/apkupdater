@@ -81,10 +81,10 @@ class SearchViewModel(
     /**
      * Drops the results and stops any search in flight. Bumping the generation matters: coroutine
      * cancellation is cooperative, and the collect body below has no suspension point in it, so a
-     * clear landing mid-body would be overwritten a moment later by the very results it cleared —
+     * clearSearch landing mid-body would be overwritten a moment later by the very results it cleared —
      * leaving a stale list under an emptied field, which is the bug this is here to prevent.
      */
-    fun clear() {
+    fun clearSearch() {
         generation.incrementAndGet()
         job?.cancel()
         job = null
@@ -104,7 +104,7 @@ class SearchViewModel(
         badger.changeSearchBadge("")
         try {
             searchRepository.search(text).collect {
-                // Superseded by a clear() or a newer query — see the note on clear().
+                // Superseded by a clear() or a newer query — see the note on clearSearch().
                 if (generation.get() != mine) return@collect
                 it.onSuccess { apps ->
                     val enriched = apps.map { app ->

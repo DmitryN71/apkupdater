@@ -192,6 +192,21 @@ class SettingsViewModel(
 		state.value = SettingsUiState.About
 	}
 
+	fun setSources() { state.value = SettingsUiState.Sources }
+	fun setUpdates() { state.value = SettingsUiState.Updates }
+	fun setInstall() { state.value = SettingsUiState.Install }
+	fun setAppearance() { state.value = SettingsUiState.Appearance }
+	fun setTools() { state.value = SettingsUiState.Tools }
+
+	// Every source toggle, so the front page can say "7 of 9 enabled" without opening the list.
+	private val sourcePrefs get() = listOf(
+		prefs.useGitHub, prefs.useGitLab, prefs.useApkMirror, prefs.useFdroid, prefs.useIzzy,
+		prefs.useAptoide, prefs.useApkPure, prefs.usePlay, prefs.useRuStore
+	)
+
+	fun getEnabledSourceCount() = sourcePrefs.count { it.get() }
+	fun getSourceCount() = sourcePrefs.size
+
 	fun setSettings() {
 		state.value = SettingsUiState.Settings
 	}

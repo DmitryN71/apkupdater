@@ -2,6 +2,7 @@ package com.apkupdater.util
 
 import android.util.Log
 import okhttp3.Call
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -104,6 +105,12 @@ class Downloader(
         id: Int? = null,
         onProgress: ((bytesDownloaded: Long, totalBytes: Long) -> Unit)? = null
     ): File {
+        // A URL OkHttp cannot even parse will not parse on the next attempt either. This is not
+        // hypothetical: when Google Play rate-limits delivery (HTTP 429) the library still hands
+        // back file entries, just with an EMPTY url — and each of those used to burn the full
+        // retry budget, ~25 s apiece, for several apps at once, before reporting nothing useful.
+        if (url.toHttpUrlOrNull() == null) throw IOException("Download failed: no usable link")
+
         // Prune here, not only from cleanUp(): cleanUp() is skipped entirely when the user
         // turns "Clean Up After Install" off, and without this a run of failed downloads would
         // leave partials sitting on disk forever. Every download starts by taking out the trash.

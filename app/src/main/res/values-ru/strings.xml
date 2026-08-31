@@ -35,6 +35,13 @@
     <string name="settings_ui">Интерфейс</string>
     <string name="settings_alarm">Авто-проверка</string>
     <string name="settings_options">Настройки</string>
+    <string name="settings_updates">Проверка обновлений</string>
+    <string name="settings_install">Установка</string>
+    <string name="settings_versions">Фильтр версий</string>
+    <string name="settings_alarm_off">Выключена</string>
+    <string name="install_standard">Обычный установщик</string>
+    <string name="settings_sources_summary">Включено %1$d из %2$d</string>
+    <string name="settings_repos_summary">Добавлено: %1$d</string>
     <string name="settings_utils">Утилиты</string>
     <string name="settings_hour">Время проверки</string>
     <string name="settings_alarm_daily">Ежедневно</string>
@@ -71,7 +78,7 @@
     <string name="filter_only_ignored">Только игнорируемые</string>
     <string name="filter_search_hint">Поиск по установленным</string>
     <string name="no_direct_download">В этом релизе нет готового APK — открываю его страницу</string>
-    <string name="play_no_files">Google Play не выдал файлы для этого приложения. Платные приложения можно обновить только через сам Google Play.</string>
+    <string name="play_no_files">Google Play не выдал ссылку на скачивание. Обычно это временное ограничение — попробуйте позже.</string>
     <string name="play_not_supported">В Google Play нет версии этого приложения для этого устройства.</string>
     <string name="play_not_purchased">Это платное приложение. APKUpdater входит в Google Play анонимно и не может скачивать покупки.</string>
     <string name="play_app_removed">Приложения больше нет в Google Play.</string>

@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +67,7 @@ import com.apkupdater.ui.component.DropDownSetting
 import com.apkupdater.ui.component.LargeTitle
 import com.apkupdater.ui.component.LoadingImageApp
 import com.apkupdater.ui.component.SectionHeader
+import com.apkupdater.ui.component.SettingsCategory
 import com.apkupdater.ui.component.MediumText
 import com.apkupdater.ui.component.MediumTitle
 import com.apkupdater.ui.component.SegmentedButtonSetting
@@ -93,6 +93,26 @@ fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) = Column {
 		SettingsUiState.Settings -> {
 			SettingsTopBar(viewModel)
 			Settings(viewModel)
+		}
+		SettingsUiState.Sources -> {
+			SubSettingsTopBar(stringResource(R.string.settings_sources), viewModel)
+			SourcesSettings(viewModel)
+		}
+		SettingsUiState.Updates -> {
+			SubSettingsTopBar(stringResource(R.string.settings_updates), viewModel)
+			UpdatesSettings(viewModel)
+		}
+		SettingsUiState.Install -> {
+			SubSettingsTopBar(stringResource(R.string.settings_install), viewModel)
+			InstallSettings(viewModel)
+		}
+		SettingsUiState.Appearance -> {
+			SubSettingsTopBar(stringResource(R.string.settings_ui), viewModel)
+			AppearanceSettings(viewModel)
+		}
+		SettingsUiState.Tools -> {
+			SubSettingsTopBar(stringResource(R.string.settings_utils), viewModel)
+			ToolsSettings(viewModel)
 		}
 		SettingsUiState.CustomRepos -> {
 			CustomReposTopBar(viewModel)
@@ -149,28 +169,67 @@ fun AboutItem(
 @Composable
 fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 	item {
-		SectionHeader(stringResource(R.string.settings_ui))
-		SwitchSetting(
-			{ viewModel.getPlayTextAnimations() },
-			{ viewModel.setPlayTextAnimations(it) },
-			stringResource(R.string.play_text_animations),
-			R.drawable.ic_animation
-		)
-		SegmentedButtonSetting(
-			stringResource(R.string.theme),
-			listOf(
-				stringResource(R.string.theme_system),
-				stringResource(R.string.theme_dark),
-				stringResource(R.string.theme_light)
+		SettingsCategory(
+			stringResource(R.string.settings_sources),
+			stringResource(
+				R.string.settings_sources_summary,
+				viewModel.getEnabledSourceCount(),
+				viewModel.getSourceCount()
 			),
-			{ viewModel.getTheme() },
-			{ viewModel.setTheme(it) },
+			R.drawable.ic_appstore
+		) { viewModel.setSources() }
+		SettingsCategory(
+			stringResource(R.string.settings_custom_repos),
+			stringResource(R.string.settings_repos_summary, viewModel.getCustomGitRepos().size),
+			R.drawable.ic_github
+		) { viewModel.setCustomRepos() }
+		SettingsCategory(
+			stringResource(R.string.settings_updates),
+			if (viewModel.getEnableAlarm()) stringResource(
+				when (viewModel.getAlarmFrequency()) {
+					1 -> R.string.settings_alarm_3day
+					2 -> R.string.settings_alarm_weekly
+					else -> R.string.settings_alarm_daily
+				}
+			) else stringResource(R.string.settings_alarm_off),
+			R.drawable.ic_alarm
+		) { viewModel.setUpdates() }
+		SettingsCategory(
+			stringResource(R.string.settings_install),
+			// The first thing we ask a reporter whenever an install misbehaves — the three
+			// install paths fail in completely different ways. Now it is on the front page.
+			stringResource(
+				when {
+					viewModel.getRootInstall() -> R.string.root_install
+					viewModel.getShizukuInstall() -> R.string.shizuku_install
+					else -> R.string.install_standard
+				}
+			),
+			R.drawable.ic_install
+		) { viewModel.setInstall() }
+		SettingsCategory(
+			stringResource(R.string.settings_ui),
+			stringResource(
+				when (viewModel.getTheme()) {
+					1 -> R.string.theme_dark
+					2 -> R.string.theme_light
+					else -> R.string.theme_system
+				}
+			),
 			R.drawable.ic_theme
-		)
+		) { viewModel.setAppearance() }
+		SettingsCategory(stringResource(R.string.settings_utils), null, R.drawable.ic_export) {
+			viewModel.setTools()
+		}
+		SettingsCategory(stringResource(R.string.about), null, R.drawable.ic_info) {
+			viewModel.setAbout()
+		}
 	}
+}
 
+@Composable
+fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn {
 	item {
-		SectionHeader(stringResource(R.string.settings_sources))
 		SwitchSetting(
 			{ viewModel.getUseGitHub() },
 			{ viewModel.setUseGitHub(it) },
@@ -239,77 +298,6 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			stringResource(R.string.source_rustore),
 			R.drawable.ic_rustore
 		)
-	}
-
-	item {
-		SectionHeader(stringResource(R.string.settings_custom_repos))
-		Row(
-			Modifier
-				.fillMaxWidth()
-				.clickable { viewModel.setCustomRepos() }
-				.heightIn(min = 56.dp)
-				.padding(start = 16.dp, end = 12.dp),
-			verticalAlignment = CenterVertically
-		) {
-			Icon(painterResource(R.drawable.ic_github), null, Modifier.size(24.dp))
-			Text(
-				stringResource(R.string.manage_custom_repos),
-				Modifier.weight(1f).padding(start = 16.dp)
-			)
-			Icon(Icons.Filled.KeyboardArrowRight, null)
-		}
-	}
-
-	item {
-		SectionHeader(stringResource(R.string.settings_options))
-		SwitchSetting(
-			{ viewModel.getRootInstall() },
-			{ viewModel.setRootInstall(it) },
-			stringResource(R.string.root_install),
-			R.drawable.ic_root
-		)
-		SwitchSetting(
-			{ viewModel.getShizukuInstall() },
-			{ viewModel.setShizukuInstall(it) },
-			stringResource(R.string.shizuku_install),
-			R.drawable.ic_shizuku
-		)
-		SwitchSetting(
-			{ viewModel.getFakePlayStore() },
-			{ viewModel.setFakePlayStore(it) },
-			stringResource(R.string.fake_play_store),
-			R.drawable.ic_play
-		)
-		SwitchSetting(
-			{ viewModel.getCleanUpAfterInstall() },
-			{ viewModel.setCleanUpAfterInstall(it) },
-			stringResource(R.string.clean_up_after_install),
-			R.drawable.ic_cleanup
-		)
-		SwitchSetting(
-			{ viewModel.getNotifyOnInstall() },
-			{ viewModel.setNotifyOnInstall(it) },
-			stringResource(R.string.notify_on_install),
-			R.drawable.ic_notification
-		)
-		SwitchSetting(
-			{ viewModel.getIgnoreAlpha() },
-			{ viewModel.setIgnoreAlpha(it) },
-			stringResource(R.string.ignore_alpha),
-			R.drawable.ic_alpha
-		)
-		SwitchSetting(
-			{ viewModel.getIgnoreBeta() },
-			{ viewModel.setIgnoreBeta(it) },
-			stringResource(R.string.ignore_beta),
-			R.drawable.ic_beta
-		)
-		SwitchSetting(
-			{ viewModel.getIgnorePreRelease() },
-			{ viewModel.setIgnorePreRelease(it) },
-			stringResource(R.string.ignore_preRelease),
-			R.drawable.ic_pre_release
-		)
 		SwitchSetting(
 			{ viewModel.getUseSafeStores() },
 			{ viewModel.setUseSafeStores(it) },
@@ -317,7 +305,10 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_safe
 		)
 	}
+}
 
+@Composable
+fun UpdatesSettings(viewModel: SettingsViewModel) = LazyColumn {
 	item {
 		val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 		var alarmEnabled by remember { mutableStateOf(viewModel.getEnableAlarm()) }
@@ -362,6 +353,90 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 		}
 	}
 	item {
+		SectionHeader(stringResource(R.string.settings_versions))
+		SwitchSetting(
+			{ viewModel.getIgnoreAlpha() },
+			{ viewModel.setIgnoreAlpha(it) },
+			stringResource(R.string.ignore_alpha),
+			R.drawable.ic_alpha
+		)
+		SwitchSetting(
+			{ viewModel.getIgnoreBeta() },
+			{ viewModel.setIgnoreBeta(it) },
+			stringResource(R.string.ignore_beta),
+			R.drawable.ic_beta
+		)
+		SwitchSetting(
+			{ viewModel.getIgnorePreRelease() },
+			{ viewModel.setIgnorePreRelease(it) },
+			stringResource(R.string.ignore_preRelease),
+			R.drawable.ic_pre_release
+		)
+	}
+}
+
+@Composable
+fun InstallSettings(viewModel: SettingsViewModel) = LazyColumn {
+	item {
+		SwitchSetting(
+			{ viewModel.getRootInstall() },
+			{ viewModel.setRootInstall(it) },
+			stringResource(R.string.root_install),
+			R.drawable.ic_root
+		)
+		SwitchSetting(
+			{ viewModel.getShizukuInstall() },
+			{ viewModel.setShizukuInstall(it) },
+			stringResource(R.string.shizuku_install),
+			R.drawable.ic_shizuku
+		)
+		SwitchSetting(
+			{ viewModel.getFakePlayStore() },
+			{ viewModel.setFakePlayStore(it) },
+			stringResource(R.string.fake_play_store),
+			R.drawable.ic_play
+		)
+		SwitchSetting(
+			{ viewModel.getCleanUpAfterInstall() },
+			{ viewModel.setCleanUpAfterInstall(it) },
+			stringResource(R.string.clean_up_after_install),
+			R.drawable.ic_cleanup
+		)
+		SwitchSetting(
+			{ viewModel.getNotifyOnInstall() },
+			{ viewModel.setNotifyOnInstall(it) },
+			stringResource(R.string.notify_on_install),
+			R.drawable.ic_notification
+		)
+	}
+}
+
+@Composable
+fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn {
+	item {
+		SwitchSetting(
+			{ viewModel.getPlayTextAnimations() },
+			{ viewModel.setPlayTextAnimations(it) },
+			stringResource(R.string.play_text_animations),
+			R.drawable.ic_animation
+		)
+		SegmentedButtonSetting(
+			stringResource(R.string.theme),
+			listOf(
+				stringResource(R.string.theme_system),
+				stringResource(R.string.theme_dark),
+				stringResource(R.string.theme_light)
+			),
+			{ viewModel.getTheme() },
+			{ viewModel.setTheme(it) },
+			R.drawable.ic_theme
+		)
+	}
+}
+
+@Composable
+fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn {
+	item {
 		val context = LocalContext.current
 		val exportLauncher = rememberLauncherForActivityResult(
 			ActivityResultContracts.CreateDocument("application/json")
@@ -388,7 +463,6 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 			}
 		}
 
-		SectionHeader(stringResource(R.string.settings_utils))
 		ButtonSetting(
 			stringResource(R.string.export_config),
 			{ exportLauncher.launch("apkupdater-config.json") },
@@ -632,6 +706,18 @@ fun AboutTopBar(viewModel: SettingsViewModel) = TopAppBar(
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
 			Icon(Icons.Filled.Info, null)
+		}
+	}
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SubSettingsTopBar(title: String, viewModel: SettingsViewModel) = TopAppBar(
+	title = { Text(title) },
+	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
+	navigationIcon = {
+		IconButton(onClick = { viewModel.setSettings() }) {
+			Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.tab_settings))
 		}
 	}
 )
