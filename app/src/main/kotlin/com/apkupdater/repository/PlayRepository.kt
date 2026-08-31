@@ -23,6 +23,7 @@ import com.google.gson.Gson
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 
 class PlayRepository(
@@ -36,7 +37,11 @@ class PlayRepository(
         // Bump whenever getNativeDeviceProperties() changes in a way Play must be told about.
         // 1 = report the device's own locales first, so Play stops defaulting to English splits.
         const val DEVICE_PROFILE_VERSION = 1
+        /** Shared with every Aurora user, so don't ask it for a new account more often. */
+        private const val FORCED_AUTH_COOLDOWN_MS = 60_000L
     }
+
+    private val lastForcedAuth = AtomicLong(0L)
 
     private fun refreshAuth(): AuthData {
         Log.i("PlayRepository", "Refreshing token.")
@@ -159,15 +164,50 @@ class PlayRepository(
         Log.e("PlayRepository", "Error looking for updates.", it)
     }
 
+    /**
+     * Asks Play for an app's files, and if it refuses, tries once more on a different anonymous
+     * account.
+     *
+     * The refusal looks like HTTP 429 on `/fdfe/delivery` while `/fdfe/purchase` still answers
+     * 200, and gplayapi hands back file entries with an empty url rather than an error. The
+     * limit is bound to the ACCOUNT, not to the device or the IP — Aurora Store users hitting
+     * the same wall report that a VPN (three different servers) and wiping app data both change
+     * nothing, while asking the dispenser for another anonymous account makes updates work
+     * again. Dmitry saw the same thing by hand: the twentieth attempt succeeded, because every
+     * attempt re-requests the link.
+     *
+     * So: one retry on a fresh account, no more often than [FORCED_AUTH_COOLDOWN_MS], because
+     * the dispenser is shared with every Aurora user and a batch of ten failing apps must not
+     * turn into ten sign-ups. Not a cure — for some users on that thread only a real Google
+     * account helped — but it automates the retry that does work.
+     */
     private fun getInstallFiles(app: App): List<File> {
-        val files = PurchaseHelper(auth())
+        val files = purchaseFiles(app, auth())
+        if (files.isNotEmpty()) return files
+
+        val now = System.currentTimeMillis()
+        val previous = lastForcedAuth.get()
+        if (now - previous < FORCED_AUTH_COOLDOWN_MS) return files
+        if (!lastForcedAuth.compareAndSet(previous, now)) return files
+
+        Log.i("PlayRepository", "No download link for ${app.packageName}; trying a fresh account.")
+        // Only the sign-up is guarded: a purchase that THROWS carries the real reason
+        // (AppNotSupported, AppNotPurchased, AppRemoved) and must reach the caller intact.
+        val fresh = runCatching { refreshAuth() }.getOrElse {
+            Log.e("PlayRepository", "Could not get a fresh anonymous account", it)
+            return files
+        }
+        return purchaseFiles(app, fresh)
+    }
+
+    private fun purchaseFiles(app: App, authData: AuthData): List<File> {
+        val files = PurchaseHelper(authData)
             .using(playHttpClient)
             .purchase(app.packageName, app.versionCode, app.offerType)
             .filter { it.type == File.FileType.BASE || it.type == File.FileType.SPLIT }
-        // A delivery that Play throttled (HTTP 429) still yields file entries — with an empty
-        // url. All or nothing on purpose: dropping only the blank ones could leave a base APK
-        // without one of its splits, which installs as a broken app instead of failing
-        // honestly. An empty list is what the install paths already know how to explain.
+        // All or nothing on purpose: dropping only the blank ones could leave a base APK without
+        // one of its splits, which installs as a broken app instead of failing honestly. An empty
+        // list is what the install paths already know how to explain.
         return if (files.any { it.url.isBlank() }) emptyList() else files
     }
 
