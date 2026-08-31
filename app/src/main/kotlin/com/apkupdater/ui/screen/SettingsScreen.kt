@@ -74,6 +74,7 @@ import com.apkupdater.ui.component.SegmentedButtonSetting
 import com.apkupdater.ui.component.SliderSetting
 import com.apkupdater.ui.component.SourceIcon
 import com.apkupdater.ui.component.SwitchSetting
+import com.apkupdater.ui.component.TvIconButton
 import com.apkupdater.ui.theme.statusBarColor
 import com.apkupdater.util.isAndroidTv
 import com.apkupdater.viewmodel.SettingsViewModel
@@ -652,7 +653,7 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 						Text(repo.installedPackageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 					}
 				}
-				IconButton(onClick = {
+				TvIconButton(onClick = {
 					viewModel.removeCustomGitRepo(repo.id)
 					repos = viewModel.getCustomGitRepos()
 					if (editingId == repo.id) clearRepoForm()
@@ -670,7 +671,7 @@ fun CustomReposTopBar(viewModel: SettingsViewModel) = TopAppBar(
 	title = { Text(stringResource(R.string.settings_custom_repos)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	navigationIcon = {
-		IconButton(onClick = { viewModel.setSettings() }) {
+		TvIconButton(onClick = { viewModel.setSettings() }) {
 			Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.tab_settings))
 		}
 	}
@@ -682,7 +683,7 @@ fun SettingsTopBar(viewModel: SettingsViewModel) = TopAppBar(
 	title = { Text(stringResource(R.string.tab_settings)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	actions = {
-		IconButton(onClick = { viewModel.setAbout() }) {
+		TvIconButton(onClick = { viewModel.setAbout() }) {
 			Icon(painterResource(R.drawable.ic_info), stringResource(R.string.about))
 		}
 	},
@@ -699,7 +700,7 @@ fun AboutTopBar(viewModel: SettingsViewModel) = TopAppBar(
 	title = { Text(stringResource(R.string.about)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	actions = {
-		IconButton(onClick = { viewModel.setSettings() }) {
+		TvIconButton(onClick = { viewModel.setSettings() }) {
 			Icon(Icons.Default.Settings, stringResource(R.string.tab_settings))
 		}
 	},
@@ -716,7 +717,7 @@ fun SubSettingsTopBar(title: String, viewModel: SettingsViewModel) = TopAppBar(
 	title = { Text(title) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	navigationIcon = {
-		IconButton(onClick = { viewModel.setSettings() }) {
+		TvIconButton(onClick = { viewModel.setSettings() }) {
 			Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.tab_settings))
 		}
 	}

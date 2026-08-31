@@ -10,6 +10,9 @@ import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -25,6 +28,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
@@ -39,9 +43,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import com.apkupdater.util.isAndroidTv
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.util.Consumer
@@ -232,7 +238,36 @@ fun RowScope.BottomBarItem(
     screen: Screen,
     selected: Boolean,
     badge: String
-) = NavigationBarItem(
+) {
+	// Material's own focus indication on a navigation item is a faint state layer. Reported from
+	// 4PDA: "на них при переходе пультом фокус теряется из виду, блеклый цвет с расстояния плохо
+	// видно", and worse on a light background. Google's TV focus guide lists four indications —
+	// scale, outline, glow, colour — and colour is the one that fits here: scale would push the
+	// item past the bar's edge and an outline traces the invisible touch target, both already
+	// tried and rejected in earlier builds. So the focused item fills solid primary and its icon
+	// and label invert, exactly like the card action buttons and the settings rows.
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	// The inset is TV-only on purpose. It keeps the filled block off the bar's edges, but it
+	// also takes 12dp of height away from the item, and on a phone — where touch never focuses
+	// anything, so the fill would never be seen anyway — that could squeeze the label for no
+	// benefit at all. Phones keep exactly the layout they had.
+	val inset = if (LocalContext.current.isAndroidTv())
+		Modifier.padding(horizontal = 4.dp, vertical = 6.dp) else Modifier
+	NavigationBarItem(
+	modifier = inset.background(
+		if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+		RoundedCornerShape(16.dp)
+	),
+	interactionSource = interaction,
+	colors = if (focused) NavigationBarItemDefaults.colors(
+		selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+		selectedTextColor = MaterialTheme.colorScheme.onPrimary,
+		unselectedIconColor = MaterialTheme.colorScheme.onPrimary,
+		unselectedTextColor = MaterialTheme.colorScheme.onPrimary,
+		// Otherwise the selected item's own pill sits inside the filled block.
+		indicatorColor = Color.Transparent
+	) else NavigationBarItemDefaults.colors(),
 	icon = {
 		BadgedBox({ BadgeText(badge) }) {
 			Icon(if (selected) screen.iconSelected else screen.icon, contentDescription = null)
@@ -247,7 +282,8 @@ fun RowScope.BottomBarItem(
 	},
 	selected = selected,
 	onClick = { mainViewModel.navigateTo(navController, screen.route) }
-)
+	)
+}
 
 @Composable
 fun NavHost(

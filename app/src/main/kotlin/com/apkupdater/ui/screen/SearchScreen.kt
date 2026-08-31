@@ -50,6 +50,7 @@ import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvInstalledGrid
 import com.apkupdater.ui.component.TvSearchItem
+import com.apkupdater.ui.component.TvIconButton
 import com.apkupdater.ui.theme.statusBarColor
 import com.apkupdater.viewmodel.SearchViewModel
 import kotlinx.coroutines.delay
@@ -157,7 +158,7 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 		},
 		trailingIcon = {
 			if (value.isNotEmpty()) {
-				IconButton(onClick = { value = ""; viewModel.clearSearch() }) {
+				TvIconButton(onClick = { value = ""; viewModel.clearSearch() }) {
 					Icon(Icons.Filled.Close, stringResource(R.string.clear_search_cd))
 				}
 			}

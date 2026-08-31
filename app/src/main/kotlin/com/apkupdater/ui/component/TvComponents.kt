@@ -31,6 +31,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.PlainTooltip
@@ -633,3 +634,34 @@ private fun inlineMd(text: String): String = text
 	.replace(Regex("\\*\\*(.+?)\\*\\*"), "<b>$1</b>")
 	.replace(Regex("\\*(.+?)\\*"), "<i>$1</i>")
 	.replace(Regex("`(.+?)`"), "<tt>$1</tt>")
+
+/**
+ * An icon button that fills solid on D-pad focus.
+ *
+ * Material's own focus indication on an IconButton is a faint state layer — reported from 4PDA
+ * as "с расстояния 1-2 метра сливается с общим фоном", and worse still on a light background.
+ * Google's TV focus guide offers four indications — scale, outline, glow, colour — and colour is
+ * the one that suits a 40dp icon: scale on a button was rejected in build 107 for drawing beyond
+ * its bounds, and an outline hugs the invisible 48dp touch target rather than the visible shape.
+ * This is the same treatment the card action buttons have used since build 106.
+ */
+@Composable
+fun TvIconButton(
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
+	content: @Composable () -> Unit
+) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	IconButton(
+		onClick = onClick,
+		modifier = modifier,
+		interactionSource = interaction,
+		colors = IconButtonDefaults.iconButtonColors(
+			containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else LocalContentColor.current
+		),
+		content = content
+	)
+}
+
