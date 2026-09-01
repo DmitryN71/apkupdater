@@ -6,6 +6,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -50,8 +51,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.items
 import com.apkupdater.R
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import com.apkupdater.util.isAndroidTv
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.EmptyGrid
 import com.apkupdater.ui.component.LoadingGrid
@@ -65,14 +68,38 @@ import com.apkupdater.viewmodel.UpdatesViewModel
 
 
 @Composable
-fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, onRefresh: () -> Unit = {}) {
-	val progress = viewModel.refreshProgress.collectAsStateWithLifecycle().value
+fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, onRefresh: () -> Unit = {}) = Column {
+	// The top bar is built ONCE here, outside the state branches. It used to be repeated inside
+	// UpdatesScreenLoading and UpdatesScreenSuccess — two different call sites, so every switch
+	// between "checking" and "done" DISPOSED the Refresh button the user had just pressed. With
+	// its node gone the focus system fell back to the first item of the bottom bar and sat there
+	// for the whole check, which is exactly what was reported from a TV. Hoisting it keeps the
+	// button alive, so focus stays where the user left it.
+	UpdatesTopBar(viewModel)
+	ProgressBanner(viewModel.refreshProgress.collectAsStateWithLifecycle().value)
+
+	// Placed once per visit to the tab, not once per refresh. UpdatesScreen survives the state
+	// changes now, so LaunchedEffect(Unit) fires only when the tab is opened: it waits for the
+	// list to have something in it, then puts focus on the first card. Re-firing after every
+	// check would yank focus off the Refresh button the moment the check finished — the other
+	// half of what was reported from the TV.
+	val firstItemFocus = remember { FocusRequester() }
+	val isTv = LocalContext.current.isAndroidTv()
+	LaunchedEffect(Unit) {
+		if (!isTv) return@LaunchedEffect
+		viewModel.state().first { it is UpdatesUiState.Success && it.updates.isNotEmpty() }
+		repeat(3) {
+			delay(150)
+			if (runCatching { firstItemFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+		}
+	}
+
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
-		UpdatesScreenLoading(viewModel, progress, isRefreshing, onRefresh)
+		UpdatesScreenLoading(isRefreshing, onRefresh)
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
-		UpdatesScreenSuccess(viewModel, it.updates, progress, isRefreshing, onRefresh)
+		UpdatesScreenSuccess(viewModel, it.updates, isRefreshing, onRefresh, firstItemFocus, isTv)
 	}
 }
 
@@ -146,14 +173,10 @@ fun ProgressBanner(text: String?) {
 }
 
 @Composable
-fun UpdatesScreenLoading(
-	viewModel: UpdatesViewModel,
-	progressSubtitle: String? = null,
+fun ColumnScope.UpdatesScreenLoading(
 	isRefreshing: Boolean = false,
 	onRefresh: () -> Unit = {}
-) = Column {
-	UpdatesTopBar(viewModel)
-	ProgressBanner(progressSubtitle)
+) {
 	val pullState = rememberPullRefreshState(isRefreshing, onRefresh)
 	Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
 		LoadingGrid()
@@ -170,19 +193,16 @@ fun UpdatesScreenError() = DefaultErrorScreen()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdatesScreenSuccess(
+fun ColumnScope.UpdatesScreenSuccess(
 	viewModel: UpdatesViewModel,
 	updates: List<AppUpdate>,
-	progressSubtitle: String? = null,
 	isRefreshing: Boolean = false,
-	onRefresh: () -> Unit = {}
-) = Column {
+	onRefresh: () -> Unit = {},
+	firstItemFocus: FocusRequester? = null,
+	isTv: Boolean = false
+) {
 	val handler = LocalUriHandler.current
 	val context = LocalContext.current
-
-	UpdatesTopBar(viewModel)
-	ProgressBanner(progressSubtitle)
-
 	val pullState = rememberPullRefreshState(isRefreshing, onRefresh)
 	if (updates.isEmpty()) {
 		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
@@ -194,27 +214,7 @@ fun UpdatesScreenSuccess(
 			)
 		}
 	} else {
-		// On TV nothing in the grid claimed focus, so it settled on the bottom navigation bar:
-		// pressing DOWN did nothing (it is already the bottom) and pressing UP ran a geometric
-		// search that landed on the LAST visible card and yanked the whole list with it. Put
-		// focus on the first card's Update button instead — the button, not the action row,
-		// because a row focusGroup is entered at its leftmost child, which is Skip.
-		val isTv = context.isAndroidTv()
-		val firstItemFocus = remember { FocusRequester() }
 		val firstId = updates.firstOrNull()?.id
-		// Keyed on "the list became non-empty", NOT on which app is first: a refresh that
-		// reorders the list must not yank focus away from wherever the user put it. And always
-		// wait first — the grid subcomposes its items during layout, which happens after this
-		// effect starts, so an immediate request would either throw or, worse, succeed against
-		// the previous frame's item and then lose focus when that item is recycled.
-		LaunchedEffect(isTv, updates.isNotEmpty()) {
-			if (isTv && updates.isNotEmpty()) {
-				repeat(3) {
-					delay(150)
-					if (runCatching { firstItemFocus.requestFocus() }.isSuccess) return@LaunchedEffect
-				}
-			}
-		}
 		val pendingUpdates = updates.filter { !it.isInstalled }
 		val showFab = pendingUpdates.size > 1 && !pendingUpdates.any { it.isInstalling }
 		val gridPadding = if (showFab) PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)

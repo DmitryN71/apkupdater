@@ -322,6 +322,7 @@ fun SettingsCategory(
     text: String,
     subtitle: String?,
     @DrawableRes icon: Int,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -329,7 +330,7 @@ fun SettingsCategory(
     val rowColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent
     val contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .background(rowColor, RoundedCornerShape(16.dp))

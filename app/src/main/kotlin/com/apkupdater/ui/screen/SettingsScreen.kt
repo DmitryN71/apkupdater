@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -68,6 +70,7 @@ import com.apkupdater.ui.component.LargeTitle
 import com.apkupdater.ui.component.LoadingImageApp
 import com.apkupdater.ui.component.SectionHeader
 import com.apkupdater.ui.component.SettingsCategory
+import com.apkupdater.ui.component.RequestInitialTvFocus
 import com.apkupdater.ui.component.MediumText
 import com.apkupdater.ui.component.MediumTitle
 import com.apkupdater.ui.component.SegmentedButtonSetting
@@ -170,6 +173,10 @@ fun AboutItem(
 @Composable
 fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 	item {
+		// Otherwise opening this tab leaves focus on the bottom bar: DOWN does nothing and UP
+		// jumps to the LAST row. Same fix Updates got in 130.
+		val firstRowFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(firstRowFocus)
 		SettingsCategory(
 			stringResource(R.string.settings_sources),
 			stringResource(
@@ -177,7 +184,8 @@ fun Settings(viewModel: SettingsViewModel) = LazyColumn {
 				viewModel.getEnabledSourceCount(),
 				viewModel.getSourceCount()
 			),
-			R.drawable.ic_appstore
+			R.drawable.ic_appstore,
+			modifier = Modifier.focusRequester(firstRowFocus)
 		) { viewModel.setSources() }
 		SettingsCategory(
 			stringResource(R.string.settings_custom_repos),

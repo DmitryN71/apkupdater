@@ -44,6 +44,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,8 @@ import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.Source
 import com.apkupdater.util.getAppName
+import kotlinx.coroutines.delay
+import com.apkupdater.util.isAndroidTv
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -390,11 +393,16 @@ fun TvFocusCard(
 	Card(
 		modifier = modifier
 			.fillMaxWidth()
-			// Glow, not an outline. Google's TV focus guide names glow as the indication for
-			// CARDS specifically, and the 130 border was called out on 4PDA as too much. The
-			// colour is inverseSurface, so a dark theme glows light and a light theme glows dark
-			// — the same inversion the rows and buttons use. clip = false: the glow has to fall
-			// OUTSIDE the card, which is the whole point of it.
+			// The build-134 glow, restored. Four variants were tried on an actual TV: a 3dp
+			// outline (130) read as excessive, this one, a faint halo of concentric strokes
+			// (135) was invisible, and a stronger halo (136) banded into a visible stack of
+			// outlines. This is the one that looked right on the screen, so it wins.
+			//
+			// It IS slightly lopsided — heavier below and toward the screen edge — and that is
+			// unavoidable: an elevation shadow models a light source above the display, so it
+			// falls away from that light and cannot be centred. Noticed on 4PDA and judged not
+			// critical there either. clip = false so the glow falls outside the card, which is
+			// the whole point; colored shadows need API 28+, older Android draws plain black.
 			.then(
 				if (focused) Modifier.shadow(
 					elevation = 16.dp,
@@ -678,5 +686,29 @@ fun TvIconButton(
 		),
 		content = content
 	)
+}
+
+/**
+ * Puts D-pad focus on a screen's first item when that screen appears. TV only.
+ *
+ * Without it nothing on a freshly opened tab claims focus, so it stays on the bottom navigation:
+ * DOWN then does nothing — the bar is already the bottom — and UP runs a geometric search that
+ * lands on the LAST visible row and drags the list with it. Reported from a TV for Settings,
+ * after the same thing was fixed for Updates in build 130.
+ *
+ * Always waits a frame first: a lazy list subcomposes its items during layout, which happens
+ * after this effect starts, so an immediate request would either throw or bind to a stale node
+ * from the previous frame and then lose focus when that node is recycled.
+ */
+@Composable
+fun RequestInitialTvFocus(focusRequester: FocusRequester, enabled: Boolean = true) {
+	val isTv = LocalContext.current.isAndroidTv()
+	LaunchedEffect(isTv, enabled) {
+		if (!isTv || !enabled) return@LaunchedEffect
+		repeat(3) {
+			delay(150)
+			if (runCatching { focusRequester.requestFocus() }.isSuccess) return@LaunchedEffect
+		}
+	}
 }
 

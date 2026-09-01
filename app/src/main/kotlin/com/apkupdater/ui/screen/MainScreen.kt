@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -53,6 +54,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.LocalContext
 import com.apkupdater.util.isAndroidTv
 import androidx.compose.ui.res.stringResource
@@ -254,13 +259,39 @@ fun checkNotificationIntent(
 	Log.e("MainScreen", "Error checking notification intent.", it)
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun BottomBar(mainViewModel: MainViewModel, navController: NavController) = BottomAppBar {
-	val badges = get<Badger>().flow().collectAsStateWithLifecycle().value
-	mainViewModel.screens.forEach { screen ->
-		val state = navController.currentBackStackEntryAsState().value
-		val selected = state?.destination?.route  == screen.route
-		BottomBarItem(mainViewModel, navController, screen, selected, badges[screen.route].orEmpty())
+fun BottomBar(mainViewModel: MainViewModel, navController: NavController) {
+	// ATTEMPTED AND IT DOES NOT WORK — verified on a real TV, left in place because it is inert.
+	//
+	// Pressing DOWN out of a screen lands on whichever tab sits nearest the centre of the screen:
+	// from the full-width settings rows that is Search, not the tab you are actually on. The idea
+	// here was that `focusProperties { enter }` intercepts focus arriving at the bar from any
+	// direction and redirects it to the SELECTED tab. It does not: DOWN still lands on the
+	// geometrically nearest item, so 2D directional search evidently does not consult `enter` the
+	// way one-dimensional traversal does.
+	//
+	// If this is picked up again, do NOT reach for `focusProperties { down = … }` on the screen
+	// content: focus properties are inherited by every child, so that would hijack DOWN inside
+	// the list as well and make the list unnavigable. The remaining lever is probably an explicit
+	// `down` on the LAST item of each list only, which means every screen has to know which of
+	// its items is last. Judged not worth it — Dmitry chose to live with it.
+	val selectedTabFocus = remember { FocusRequester() }
+	BottomAppBar(
+		modifier = Modifier
+			.focusGroup()
+			.focusProperties { enter = { selectedTabFocus } }
+	) {
+		val badges = get<Badger>().flow().collectAsStateWithLifecycle().value
+		mainViewModel.screens.forEach { screen ->
+			val state = navController.currentBackStackEntryAsState().value
+			val selected = state?.destination?.route  == screen.route
+			BottomBarItem(
+				mainViewModel, navController, screen, selected,
+				badges[screen.route].orEmpty(),
+				if (selected) selectedTabFocus else null
+			)
+		}
 	}
 }
 
@@ -271,7 +302,9 @@ fun RowScope.BottomBarItem(
     navController: NavController,
     screen: Screen,
     selected: Boolean,
-    badge: String
+    badge: String,
+    // Set on the selected tab only, so BottomBar can route incoming focus here.
+    tabFocus: FocusRequester? = null
 ) {
 	// Material's own focus indication on a navigation item is a faint state layer. Reported from
 	// 4PDA: "на них при переходе пультом фокус теряется из виду, блеклый цвет с расстояния плохо
@@ -287,7 +320,8 @@ fun RowScope.BottomBarItem(
 	// anything, so the fill would never be seen anyway — that could squeeze the label for no
 	// benefit at all. Phones keep exactly the layout they had.
 	val isTv = LocalContext.current.isAndroidTv()
-	val inset = if (isTv) Modifier.padding(horizontal = 4.dp, vertical = 6.dp) else Modifier
+	val inset = (if (isTv) Modifier.padding(horizontal = 4.dp, vertical = 6.dp) else Modifier)
+		.then(if (tabFocus != null) Modifier.focusRequester(tabFocus) else Modifier)
 	// inverseSurface rather than the brand colour: dark on a light theme, light on a dark one.
 	// Neutral and system-like, and the same language the settings rows have spoken since 112 —
 	// asked for on 4PDA, and it stops the interface answering in two different voices.
