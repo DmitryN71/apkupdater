@@ -2,7 +2,6 @@ package com.apkupdater.ui.component
 
 import android.net.Uri
 import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -386,14 +386,26 @@ fun TvFocusCard(
 ) {
 	var focused by remember { mutableStateOf(false) }
 	val shape = RoundedCornerShape(20.dp)
+	val glow = MaterialTheme.colorScheme.inverseSurface
 	Card(
 		modifier = modifier
 			.fillMaxWidth()
+			// Glow, not an outline. Google's TV focus guide names glow as the indication for
+			// CARDS specifically, and the 130 border was called out on 4PDA as too much. The
+			// colour is inverseSurface, so a dark theme glows light and a light theme glows dark
+			// — the same inversion the rows and buttons use. clip = false: the glow has to fall
+			// OUTSIDE the card, which is the whole point of it.
+			.then(
+				if (focused) Modifier.shadow(
+					elevation = 16.dp,
+					shape = shape,
+					clip = false,
+					ambientColor = glow,
+					spotColor = glow
+				) else Modifier
+			)
 			.onFocusChanged { focused = it.hasFocus },
 		shape = shape,
-		// Card's own border parameter, not Modifier.border: it is drawn with the card's shape by
-		// construction, so the outline can never sit a pixel off the rounded corners.
-		border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
 		colors = CardDefaults.cardColors(
 			containerColor = if (focused) MaterialTheme.colorScheme.surfaceContainerHighest
 			else MaterialTheme.colorScheme.surfaceContainerHigh
@@ -657,9 +669,12 @@ fun TvIconButton(
 		onClick = onClick,
 		modifier = modifier,
 		interactionSource = interaction,
+		// inverseSurface, not primary: the settings rows have highlighted this way since 112 and
+		// it reads as neutral and system-like rather than branded — dark on a light theme, light on
+		// a dark one. Asked for on 4PDA, and it makes the whole interface answer in one voice.
 		colors = IconButtonDefaults.iconButtonColors(
-			containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
-			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else LocalContentColor.current
+			containerColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent,
+			contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
 		),
 		content = content
 	)

@@ -91,14 +91,14 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 			// Also a D-pad stop, and the one that had no focus indication at all.
 			val chipInteraction = remember { MutableInteractionSource() }
 			val chipFocused by chipInteraction.collectIsFocusedAsState()
-			val chipContent = if (chipFocused) MaterialTheme.colorScheme.onPrimary
+			val chipContent = if (chipFocused) MaterialTheme.colorScheme.inverseOnSurface
 				else MaterialTheme.colorScheme.onSecondaryContainer
 			Row(
 				Modifier
 					.padding(end = 4.dp)
 					.clip(RoundedCornerShape(50))
 					.background(
-						if (chipFocused) MaterialTheme.colorScheme.primary
+						if (chipFocused) MaterialTheme.colorScheme.inverseSurface
 						else MaterialTheme.colorScheme.secondaryContainer
 					)
 					.clickable(interactionSource = chipInteraction, indication = null) {

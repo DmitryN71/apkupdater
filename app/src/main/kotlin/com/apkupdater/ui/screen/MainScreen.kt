@@ -28,12 +28,17 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalRippleConfiguration
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -43,6 +48,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,59 +125,85 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	val snackBarHostState = handleSnackBar()
 
 	AppTheme(theme) {
-		Box {
-			Scaffold(
-				bottomBar = { BottomBar(mainViewModel, navController) }
-			) { padding ->
-				NavHost(
-					navController, padding, mainViewModel, appsViewModel,
-					updatesViewModel, searchViewModel, settingsViewModel,
-					isRefreshing = isRefreshing.value,
-					onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
-				)
+		Scaffold(
+			bottomBar = { BottomBar(mainViewModel, navController) },
+			// In Scaffold's own slot rather than floating in a Box over everything: Scaffold puts
+			// the snackbar ABOVE the bottom bar, so an error no longer covers the navigation the
+			// way it did in the screenshot from 4PDA.
+			snackbarHost = { AppSnackbarHost(snackBarHostState) }
+		) { padding ->
+			NavHost(
+				navController, padding, mainViewModel, appsViewModel,
+				updatesViewModel, searchViewModel, settingsViewModel,
+				isRefreshing = isRefreshing.value,
+				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
+			)
+		}
+	}
+}
+
+/**
+ * The app's snackbars, with swipe-to-dismiss.
+ *
+ * A snackbar you cannot get rid of is worse than no snackbar — during a batch update they pile
+ * up over the buttons, which is what was reported. Material3's Compose snackbar has no swipe
+ * built in (the old View one did), so it is wrapped here. `key(data)` matters: without it the
+ * swipe state survives into the next snackbar, which would then arrive already dismissed.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppSnackbarHost(hostState: SnackbarHostState) = SnackbarHost(hostState) { data ->
+	val snack = data.visuals as? TextSnack
+	val containerColor = when (snack?.type) {
+		SnackType.ERROR -> MaterialTheme.colorScheme.errorContainer
+		else -> MaterialTheme.colorScheme.inverseSurface
+	}
+	val contentColor = when (snack?.type) {
+		SnackType.ERROR -> MaterialTheme.colorScheme.onErrorContainer
+		else -> MaterialTheme.colorScheme.inverseOnSurface
+	}
+	val icon = when (snack?.type) {
+		SnackType.SUCCESS -> Icons.Outlined.CheckCircle
+		SnackType.ERROR -> Icons.Outlined.Warning
+		else -> null
+	}
+	val iconTint = when (snack?.type) {
+		SnackType.SUCCESS -> Color(0xFF66BB6A)
+		else -> contentColor
+	}
+	// key(data) matters: without it the swipe state survives into the NEXT snackbar, which
+	// would then arrive already dismissed.
+	key(data) {
+		val dismissState = rememberSwipeToDismissBoxState(
+			confirmValueChange = { value ->
+				if (value == SwipeToDismissBoxValue.Settled) false else { data.dismiss(); true }
 			}
-			SnackbarHost(
-				hostState = snackBarHostState,
-				// Keep the snackbar above the system navigation bar (edge-to-edge on API 35+).
-				modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
-			) { data ->
-				val snack = data.visuals as? TextSnack
-				val containerColor = when (snack?.type) {
-					SnackType.ERROR -> MaterialTheme.colorScheme.errorContainer
-					else -> MaterialTheme.colorScheme.inverseSurface
-				}
-				val contentColor = when (snack?.type) {
-					SnackType.ERROR -> MaterialTheme.colorScheme.onErrorContainer
-					else -> MaterialTheme.colorScheme.inverseOnSurface
-				}
-				val icon = when (snack?.type) {
-					SnackType.SUCCESS -> Icons.Outlined.CheckCircle
-					SnackType.ERROR -> Icons.Outlined.Warning
-					else -> null
-				}
-				val iconTint = when (snack?.type) {
-					SnackType.SUCCESS -> Color(0xFF66BB6A)
-					else -> contentColor
-				}
-				Snackbar(
-					modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-					shape = RoundedCornerShape(16.dp),
-					containerColor = containerColor,
-					contentColor = contentColor,
-					dismissActionContentColor = contentColor
-				) {
-					Row(verticalAlignment = Alignment.CenterVertically) {
-						if (icon != null) {
-							Icon(icon, null, Modifier.size(20.dp), tint = iconTint)
-							Spacer(Modifier.width(10.dp))
-						}
-						Text(data.visuals.message)
+		)
+		SwipeToDismissBox(
+			state = dismissState,
+			// Nothing behind it: the snackbar simply slides off, as it does everywhere else.
+			backgroundContent = {},
+			modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+		) {
+			Snackbar(
+				shape = RoundedCornerShape(16.dp),
+				containerColor = containerColor,
+				contentColor = contentColor,
+				dismissActionContentColor = contentColor
+			) {
+				Row(verticalAlignment = Alignment.CenterVertically) {
+					if (icon != null) {
+						Icon(icon, null, Modifier.size(20.dp), tint = iconTint)
+						Spacer(Modifier.width(10.dp))
 					}
+					Text(data.visuals.message)
 				}
 			}
 		}
 	}
 }
+
+
 
 @Composable
 fun handleSnackBar(): SnackbarHostState {
@@ -231,6 +264,7 @@ fun BottomBar(mainViewModel: MainViewModel, navController: NavController) = Bott
 	}
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RowScope.BottomBarItem(
 	mainViewModel: MainViewModel,
@@ -252,19 +286,28 @@ fun RowScope.BottomBarItem(
 	// also takes 12dp of height away from the item, and on a phone — where touch never focuses
 	// anything, so the fill would never be seen anyway — that could squeeze the label for no
 	// benefit at all. Phones keep exactly the layout they had.
-	val inset = if (LocalContext.current.isAndroidTv())
-		Modifier.padding(horizontal = 4.dp, vertical = 6.dp) else Modifier
+	val isTv = LocalContext.current.isAndroidTv()
+	val inset = if (isTv) Modifier.padding(horizontal = 4.dp, vertical = 6.dp) else Modifier
+	// inverseSurface rather than the brand colour: dark on a light theme, light on a dark one.
+	// Neutral and system-like, and the same language the settings rows have spoken since 112 —
+	// asked for on 4PDA, and it stops the interface answering in two different voices.
+	// Suppressing the ripple is the other half of that request: Material draws its own focus
+	// state layer as a paler pill around the icon, which showed through the fill in the
+	// reporter's screenshots. Only on TV — on a phone the ripple IS the press feedback.
+	CompositionLocalProvider(
+		LocalRippleConfiguration provides if (isTv) null else LocalRippleConfiguration.current
+	) {
 	NavigationBarItem(
 	modifier = inset.background(
-		if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+		if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent,
 		RoundedCornerShape(16.dp)
 	),
 	interactionSource = interaction,
 	colors = if (focused) NavigationBarItemDefaults.colors(
-		selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-		selectedTextColor = MaterialTheme.colorScheme.onPrimary,
-		unselectedIconColor = MaterialTheme.colorScheme.onPrimary,
-		unselectedTextColor = MaterialTheme.colorScheme.onPrimary,
+		selectedIconColor = MaterialTheme.colorScheme.inverseOnSurface,
+		selectedTextColor = MaterialTheme.colorScheme.inverseOnSurface,
+		unselectedIconColor = MaterialTheme.colorScheme.inverseOnSurface,
+		unselectedTextColor = MaterialTheme.colorScheme.inverseOnSurface,
 		// Otherwise the selected item's own pill sits inside the filled block.
 		indicatorColor = Color.Transparent
 	) else NavigationBarItemDefaults.colors(),
@@ -283,6 +326,7 @@ fun RowScope.BottomBarItem(
 	selected = selected,
 	onClick = { mainViewModel.navigateTo(navController, screen.route) }
 	)
+	}
 }
 
 @Composable
