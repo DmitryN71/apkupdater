@@ -10,7 +10,6 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.apkupdater.data.ui.Screen
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.util.UpdatesNotification
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 
@@ -19,8 +18,6 @@ class MainViewModel(
 ) : ViewModel() {
 
 	val screens = listOf(Screen.Apps, Screen.Search, Screen.Updates, Screen.Settings)
-
-	val isRefreshing = MutableStateFlow(false)
 
 	private var didStartupRefresh = false
 
@@ -45,11 +42,10 @@ class MainViewModel(
 		appsViewModel: AppsViewModel,
 		updatesViewModel: UpdatesViewModel
 	) = viewModelScope.launch {
-		isRefreshing.value = true
+		// Nothing tracks "a refresh is running" here any more: UpdatesViewModel.isChecking is
+		// the one source of truth for that, and it is what the Refresh button reads.
 		appsViewModel.refresh(false)
-		updatesViewModel.refresh(false).invokeOnCompletion {
-			isRefreshing.value = false
-		}
+		updatesViewModel.refresh(false)
 	}
 
 	private var didProcessLaunchIntent = false

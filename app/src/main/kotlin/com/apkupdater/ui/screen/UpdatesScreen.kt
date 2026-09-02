@@ -73,7 +73,7 @@ import com.apkupdater.viewmodel.UpdatesViewModel
 
 
 @Composable
-fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, onRefresh: () -> Unit = {}) = Column {
+fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Column {
 	// The top bar is built ONCE here, outside the state branches. It used to be repeated inside
 	// UpdatesScreenLoading and UpdatesScreenSuccess — two different call sites, so every switch
 	// between "checking" and "done" DISPOSED the Refresh button the user had just pressed. With
@@ -113,8 +113,7 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, on
 		UpdatesScreenError()
 	}.onSuccess {
 		UpdatesScreenSuccess(
-			viewModel, it.updates, isRefreshing, onRefresh, firstItemFocus, isTv,
-			notificationPermission
+			viewModel, it.updates, onRefresh, firstItemFocus, isTv, notificationPermission
 		)
 	}
 }
@@ -203,7 +202,7 @@ fun ProgressBanner(text: String?) {
 fun ColumnScope.UpdatesScreenLoading() {
 	// No pull-to-refresh at all on this branch, indicator or gesture.
 	//
-	// The indicator used to be fed `isRefreshing`, so it sat spinning in the middle of the
+	// The indicator used to reflect a running check, so it sat spinning in the middle of the
 	// screen for the whole check — a second indicator on top of the shimmer, while the Refresh
 	// button that could have been showing it sat idle in the corner. The button spins now.
 	// Keeping the gesture without its indicator was worse than either: a check is already
@@ -223,7 +222,6 @@ fun UpdatesScreenError() = DefaultErrorScreen()
 fun ColumnScope.UpdatesScreenSuccess(
 	viewModel: UpdatesViewModel,
 	updates: List<AppUpdate>,
-	isRefreshing: Boolean = false,
 	onRefresh: () -> Unit = {},
 	firstItemFocus: FocusRequester? = null,
 	isTv: Boolean = false,
@@ -231,12 +229,18 @@ fun ColumnScope.UpdatesScreenSuccess(
 ) {
 	val handler = LocalUriHandler.current
 	val context = LocalContext.current
-	val pullState = rememberPullRefreshState(isRefreshing, onRefresh)
+	// Gesture feedback ONLY: this never reflects that a check is running.
+	//
+	// Driven by it, this indicator hung in the middle of the screen for the entire check: the
+	// very duplicate that was taken off the shimmer branch, just reached by pulling instead of
+	// tapping. Pulling keeps working and the indicator still follows the finger; what shows
+	// that a check is RUNNING is the button in the corner, and only that.
+	val pullState = rememberPullRefreshState(refreshing = false, onRefresh = onRefresh)
 	if (updates.isEmpty()) {
 		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
 			EmptyGrid()
 			PullRefreshIndicator(
-				isRefreshing, pullState,
+				false, pullState,
 				Modifier.align(Alignment.TopCenter),
 				contentColor = MaterialTheme.colorScheme.primary
 			)
@@ -288,7 +292,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 				}
 			}
 			PullRefreshIndicator(
-				isRefreshing, pullState,
+				false, pullState,
 				Modifier.align(Alignment.TopCenter),
 				contentColor = MaterialTheme.colorScheme.primary
 			)

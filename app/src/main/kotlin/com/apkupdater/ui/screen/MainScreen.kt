@@ -104,7 +104,6 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	val navController = rememberNavController()
 
 	// Refresh
-	val isRefreshing = mainViewModel.isRefreshing.collectAsStateWithLifecycle()
 	LaunchedEffect(Unit) {
 		mainViewModel.refreshOnStart(appsViewModel, updatesViewModel)
 	}
@@ -140,7 +139,6 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 			NavHost(
 				navController, padding, mainViewModel, appsViewModel,
 				updatesViewModel, searchViewModel, settingsViewModel,
-				isRefreshing = isRefreshing.value,
 				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
 			)
 		}
@@ -380,7 +378,6 @@ fun NavHost(
 	updatesViewModel: UpdatesViewModel,
 	searchViewModel: SearchViewModel,
 	settingsViewModel: SettingsViewModel,
-	isRefreshing: Boolean = false,
 	onRefresh: () -> Unit = {}
 ) = NavHost(
 	navController = navController,
@@ -392,6 +389,6 @@ fun NavHost(
 ) {
 	composable(Screen.Apps.route) { AppsScreen(appsViewModel) }
 	composable(Screen.Search.route) { SearchScreen(searchViewModel) }
-	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, isRefreshing, onRefresh) }
+	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, onRefresh) }
 	composable(Screen.Settings.route) { SettingsScreen(settingsViewModel) }
 }
