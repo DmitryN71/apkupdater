@@ -13,6 +13,7 @@ import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.AppVisibility
 import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.clearDownloadCacheBytes
@@ -26,8 +27,11 @@ import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import com.apkupdater.util.launchWithMutex
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,10 +55,64 @@ class UpdatesViewModel(
 
 	private val mutex = Mutex()
 	private val installMutex = Mutex()
-	private val activeInstalls = AtomicInteger(0)
 	private val state = MutableStateFlow<UpdatesUiState>(UpdatesUiState.Loading())
 	private val _refreshProgress = MutableStateFlow<String?>(null)
 	val refreshProgress: StateFlow<String?> = _refreshProgress
+
+	/**
+	 * True while an update check is running, so the Refresh button can spin instead of sitting
+	 * idle next to a separate indicator — and so tapping it can stop the check. Worth stopping:
+	 * one slow source (F-Droid Main, reliably) holds the whole check up long after the others
+	 * have answered.
+	 */
+	private val _isChecking = MutableStateFlow(false)
+	val isChecking: StateFlow<Boolean> = _isChecking
+	private var refreshJob: Job? = null
+	/** Bumped by every new check and by every cancel, so a superseded one keeps its hands off. */
+	private val refreshGeneration = AtomicInteger(0)
+
+	/**
+	 * Everything the sources have answered with so far in the running check.
+	 *
+	 * Deliberately NOT published as it arrives. Publishing one source at a time would make the
+	 * list shrink and then re-sort under the user on every answer, and a list that reorders
+	 * itself mid-read is what build 130 removed for stranding D-pad focus on a television.
+	 * It is kept here so that stopping the check can show what was found instead of nothing.
+	 */
+	@Volatile
+	private var partialResults: List<AppUpdate> = emptyList()
+
+	/**
+	 * Aborts a running check. Whatever the sources already returned stays on screen.
+	 *
+	 * The screen is put right HERE rather than in the job's own finally, because cancelling a
+	 * coroutine does not stop it — it asks it to stop, and the job stays alive until its
+	 * children unwind. A source in the middle of a long blocking read can take a moment, and
+	 * waiting for that left the button still spinning after the tap, which read as "the button
+	 * does nothing". The finally checks the generation and does not undo any of this.
+	 */
+	fun cancelRefresh() {
+		val job = refreshJob ?: return
+		refreshJob = null
+		refreshGeneration.incrementAndGet()
+		job.cancel()
+		_isChecking.value = false
+		_refreshProgress.value = null
+		// What the sources managed to answer with, if any of them did. Stopping a check with
+		// only one slow source left used to publish an empty list and claim "All up to date",
+		// because the results of the eight that had already answered lived nowhere the screen
+		// could see them. Falling back to the list Loading is carrying covers the other case:
+		// stopped before anything answered at all, so put back what was on screen before.
+		if (partialResults.isNotEmpty()) {
+			setSuccess(partialResults)
+		} else {
+			state.update {
+				if (it is UpdatesUiState.Loading) UpdatesUiState.Success(it.updates) else it
+			}
+			badger.changeUpdatesBadge(state.value.updates().size.toString())
+		}
+	}
+
 	private val _cacheSize = MutableStateFlow(0L)
 	val cacheSize: StateFlow<Long> = _cacheSize
 
@@ -63,6 +121,14 @@ class UpdatesViewModel(
 	}
 
 	fun clearCache() = viewModelScope.launch(Dispatchers.IO) {
+		// The other door into the download directory, and the only one that also wipes the
+		// resumable partials. Tapping the chip during "Update all" would delete the APKs of
+		// everything still queued behind the install lock — the exact failure the sweep guard
+		// in Downloader.cleanUp() exists to prevent, reached from a different button.
+		if (background.tasks.value.isNotEmpty()) {
+			snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.cache_busy)))
+			return@launch
+		}
 		context.clearDownloadCacheBytes()
 		_cacheSize.value = 0L
 	}
@@ -70,39 +136,90 @@ class UpdatesViewModel(
 	init {
 		subscribeToInstallStatus { state.value.updates() }
 		subscribeToInstallProgress { progress ->
-			state.value = UpdatesUiState.Success(state.value.mutableUpdates().setProgress(progress))
+			state.update { it.withUpdates(it.mutableUpdates().setProgress(progress)) }
 		}
 	}
 
 	fun state(): StateFlow<UpdatesUiState> = state
 
-	fun refresh(load: Boolean = true) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		if (load) state.value = UpdatesUiState.Loading()
-		_refreshProgress.value = stringer.get(R.string.checking_updates)
-		badger.changeUpdatesBadge("")
-		updatesRepository.updates(
-			onSourceError = { errors, total ->
-				snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.source_errors, errors, total)))
-			},
-			onSourceComplete = { completed, total, remaining ->
-				_refreshProgress.value = if (remaining.isNotEmpty()) {
-					stringer.get(R.string.checking_sources, remaining.joinToString(", "))
-				} else null
-				if (state.value is UpdatesUiState.Loading) {
-					state.value = UpdatesUiState.Loading(completed, total)
+	fun refresh(load: Boolean = true): Job {
+		// One check at a time. A second call would only queue behind the mutex, and refreshJob
+		// would then point at the QUEUED job — so Stop would cancel something that had not
+		// started while the real check ran on, with the button spinning and the button dead.
+		// Returning the running job also keeps MainViewModel's invokeOnCompletion honest.
+		// Safe without locking: every caller reaches this on the main thread.
+		refreshJob?.takeIf { it.isActive }?.let { return it }
+		val mine = refreshGeneration.incrementAndGet()
+		val job = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+			_isChecking.value = true
+			var emitted = false
+			partialResults = emptyList()
+			try {
+				// The WHOLE list is carried into Loading, not just the in-flight cards.
+				//
+				// setSuccess() looks here for downloads and installs still running, so a Refresh
+				// during a download does not bring their cards back reading "Update" — that part
+				// would only need the in-flight ones. The rest is carried because a check that
+				// fails before ANY source answers never reaches setSuccess, and then this is all
+				// the finally block has to put back on screen. setSuccess re-filters to in-flight
+				// inside its own update block, so carrying everything costs nothing normally.
+				if (load) state.update { current ->
+					UpdatesUiState.Loading(updates = current.updates())
+				}
+				_refreshProgress.value = stringer.get(R.string.checking_updates)
+				badger.changeUpdatesBadge("")
+				updatesRepository.updates(
+					onSourceError = { errors, total ->
+						snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.source_errors, errors, total)))
+					},
+					onSourceComplete = { completed, total, remaining ->
+						_refreshProgress.value = if (remaining.isNotEmpty()) {
+							stringer.get(R.string.checking_sources, remaining.joinToString(", "))
+						} else null
+						// copy(), not a fresh Loading: a new one would drop the in-flight cards
+						// this state is carrying. Inside update{} so the check and the write cannot
+						// be separated by a concurrent install result landing between them.
+						state.update {
+							if (it is UpdatesUiState.Loading) it.copy(completed = completed, total = total)
+							else it
+						}
+					}
+				).collect {
+					// One emission per source now, each carrying everything found so far.
+					// Recorded rather than published — see partialResults for why — and the
+					// banner is left to onSourceComplete, which clears it when nothing is
+					// left. The last emission is the complete answer, published below.
+					emitted = true
+					partialResults = it
+				}
+				if (emitted) setSuccess(partialResults)
+				refreshCacheSize()
+			} finally {
+				// Only if this is still the current check. A stopped one can take a while to
+				// unwind, and by the time it gets here the user may have started another —
+				// clearing the flag or replacing the list then would break the new one.
+				if (refreshGeneration.get() == mine) {
+					_isChecking.value = false
+					_refreshProgress.value = null
+					// The net for a check that published nothing — it failed before any source
+					// answered, so the state is still Loading. Put back the list the shimmer
+					// replaced rather than leaving the shimmer up for good. A finished check
+					// has already published Success, and a stopped one was handled by
+					// cancelRefresh, so in both of those this is a no-op.
+					state.update {
+						if (it is UpdatesUiState.Loading) UpdatesUiState.Success(it.updates) else it
+					}
+					badger.changeUpdatesBadge(state.value.updates().size.toString())
 				}
 			}
-		).collect {
-			setSuccess(it)
-			_refreshProgress.value = null
 		}
-		refreshCacheSize()
+		refreshJob = job
+		return job
 	}
 
 	fun hideUpdate(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		val updates = state.value.mutableUpdates().removeId(id)
-		state.value = UpdatesUiState.Success(updates)
-		badger.changeUpdatesBadge(updates.size.toString())
+		val updated = state.updateAndGet { it.withUpdates(it.mutableUpdates().removeId(id)) }
+		badger.changeUpdatesBadge(updated.updates().size.toString())
 	}
 
 	fun ignoreVersion(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
@@ -112,28 +229,29 @@ class UpdatesViewModel(
 		setSuccess(state.value.mutableUpdates())
 	}
 
-	override fun cancelInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(id, false))
-		installer.finish()
+	override fun cancelInstall(id: Int): Job {
+		// Released BEFORE queuing behind the refresh mutex. It guards nothing that mutex
+		// protects, and refresh() holds that mutex for a whole multi-source check — so the
+		// next install in a batch sat suspended on the commit lock until the check finished.
+		installer.finish(id)
+		return viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+			state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, false)) }
+		}
 	}
 
-	override fun finishInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-		// Deliberately NOT sorted here any more. Floating a finished app to the top made the
-		// whole list jump the instant an install completed — everything below shifted, and on a
-		// D-pad that strands the focus somewhere the user did not put it. The ordering still
-		// happens in setSuccess(), i.e. on the next refresh, so a long list still gathers the
-		// handled ones at the top; it just stops moving under the user mid-session. A finished
-		// card is already obvious in place: it turns tertiary and its button becomes Open.
-		val updates = state.value.mutableUpdates().setIsInstalled(id)
-		state.value = UpdatesUiState.Success(updates)
-		badger.changeUpdatesBadge(updates.count { !it.isInstalled }.toString())
-		installer.finish()
-	}
-
-	/** Calls cleanUp() only when the last parallel install completes. */
-	private fun cleanUpIfLast() {
-		if (prefs.cleanUpAfterInstall.get() && activeInstalls.decrementAndGet() == 0) {
-			downloader.cleanUp()
+	override fun finishInstall(id: Int): Job {
+		// Same reason as cancelInstall: never behind the refresh mutex.
+		installer.finish(id)
+		return viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+			// Deliberately NOT sorted here any more. Floating a finished app to the top made
+			// the whole list jump the instant an install completed — everything below shifted,
+			// and on a D-pad that strands the focus somewhere the user did not put it. The
+			// ordering still happens in setSuccess(), i.e. on the next refresh, so a long list
+			// still gathers the handled ones at the top; it just stops moving under the user
+			// mid-session. A finished card is already obvious in place: it turns tertiary and
+			// its button becomes Open.
+			val updated = state.updateAndGet { it.withUpdates(it.mutableUpdates().setIsInstalled(id)) }
+			badger.changeUpdatesBadge(updated.updates().count { !it.isInstalled }.toString())
 		}
 	}
 
@@ -142,8 +260,7 @@ class UpdatesViewModel(
 	override fun downloadAndRootInstall(update: AppUpdate) = background.scope.launch {
 		background.begin(update.id, update.name)
 		try {
-			activeInstalls.incrementAndGet()
-			state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+			state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
 			val link = resolveLink(update)
 			if (link !is com.apkupdater.data.ui.Link.Url) {
 				snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.root_install_not_supported)))
@@ -156,11 +273,13 @@ class UpdatesViewModel(
 				cancelInstall(update.id)
 				return@launch
 			}
+			// The download is done and the file is the installer's now: from here a Cancel would
+			// stop nothing, and setting its flag would go on to mute this install's own failure.
+			downloader.beginInstall(update.id)
 			// Same package guard as the standard path (root installs via pm install too).
 			val wrongPackage = installer.verifyPackage(file, update.packageName)
 			if (wrongPackage != null) {
 				file.delete()
-				cleanUpIfLast()
 				snackBar.snackBar(viewModelScope, TextSnack(
 					stringer.get(R.string.install_error_wrong_package, wrongPackage),
 					type = com.apkupdater.data.snack.SnackType.ERROR))
@@ -171,19 +290,28 @@ class UpdatesViewModel(
 			installMutex.withLock {
 				runCatching {
 					val fake = prefs.fakePlayStore.get()
-					if (installer.rootInstall(file, fake)) {
-						cleanUpIfLast()
+					// Returns the reason now instead of a bare Boolean, so a root failure finally
+					// says what pm said — and a root SUCCESS finally says anything at all, which
+					// it never did on this path.
+					val error = installer.rootInstall(file, fake)
+					if (error == null) {
+						// Only when the user is looking. notifyInstalledIfBackground posts a
+						// notification otherwise, and emitting both meant a backgrounded success
+						// arrived twice: as a notification, then again as a queued message.
+						if (notifyOnInstall() && AppVisibility.foreground) {
+							snackBar.snackBar(viewModelScope, TextSnack(
+								stringer.get(R.string.install_success, update.name),
+								type = com.apkupdater.data.snack.SnackType.SUCCESS))
+						}
 						notifyInstalledIfBackground(update)
 						finishInstall(update.id)
 					} else {
 						file.delete()
-						cleanUpIfLast()
-						snackInstallFailure(update.name, id = update.id)
+						reportFailure(update.name, error, update.id)
 						cancelInstall(update.id)
 					}
 				}.getOrElse {
 					file.delete()
-					cleanUpIfLast()
 					snackInstallFailure(update.name, it, update.id)
 					cancelInstall(update.id)
 				}
@@ -196,8 +324,7 @@ class UpdatesViewModel(
 	override fun downloadAndShizukuInstall(update: AppUpdate) = background.scope.launch {
 		background.begin(update.id, update.name)
 		try {
-		activeInstalls.incrementAndGet()
-		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
 		val link = resolveLink(update)
 		// Download in parallel (no mutex) — shizuku install methods delete files themselves
 		val files = runCatching {
@@ -223,9 +350,6 @@ class UpdatesViewModel(
 						snackBar.snackBar(viewModelScope, TextSnack(
 							stringer.get(R.string.play_no_files),
 							type = com.apkupdater.data.snack.SnackType.ERROR))
-						// Balance the activeInstalls increment, or the counter never returns to
-						// zero and cleanUp() stops running for the rest of the process.
-						cleanUpIfLast()
 						cancelInstall(update.id)
 						return@launch
 					}
@@ -243,7 +367,6 @@ class UpdatesViewModel(
 				}
 				else -> {
 					snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.shizuku_install_not_supported)))
-					cleanUpIfLast()
 					cancelInstall(update.id)
 					return@launch
 				}
@@ -257,6 +380,9 @@ class UpdatesViewModel(
 			cancelInstall(update.id)
 			return@launch
 		}
+		// Downloads are done; the wait for the install lock below can be long, and a Cancel
+		// pressed during it would stop nothing while muting the failure message.
+		downloader.beginInstall(update.id)
 		// Install sequentially
 		installMutex.withLock {
 			runCatching {
@@ -268,7 +394,6 @@ class UpdatesViewModel(
 					installer.verifyPackage(files.first(), update.packageName) else null
 				if (wrongPackage != null) {
 					files.forEach { it.delete() }
-					cleanUpIfLast()
 					snackBar.snackBar(viewModelScope, TextSnack(
 						stringer.get(R.string.install_error_wrong_package, wrongPackage),
 						type = com.apkupdater.data.snack.SnackType.ERROR))
@@ -282,21 +407,23 @@ class UpdatesViewModel(
 					else -> installer.shizukuInstall(files.first(), fake)
 				}
 				if (error == null) {
-					cleanUpIfLast()
-					if (notifyOnInstall()) snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.install_success, update.name), type = com.apkupdater.data.snack.SnackType.SUCCESS))
+					if (notifyOnInstall() && AppVisibility.foreground) {
+						snackBar.snackBar(viewModelScope, TextSnack(
+							stringer.get(R.string.install_success, update.name),
+							type = com.apkupdater.data.snack.SnackType.SUCCESS))
+					}
 					notifyInstalledIfBackground(update)
 					finishInstall(update.id)
 				} else {
 					files.forEach { it.delete() }
-					cleanUpIfLast()
-					val msg = stringer.get(R.string.install_failure, update.name) + "\n" + error
-					snackBar.snackBar(viewModelScope, TextSnack(msg, type = com.apkupdater.data.snack.SnackType.ERROR))
+					reportFailure(update.name, error, update.id)
 					installLog.emitProgress(AppInstallProgress(update.id, 0L))
 					cancelInstall(update.id)
 				}
 			}.getOrElse {
 				files.forEach { it.delete() }
-				cleanUpIfLast()
+				// Was silent: every sibling branch in this function reports, this one did not.
+				snackInstallFailure(update.name, it, update.id)
 				cancelInstall(update.id)
 			}
 		}
@@ -309,7 +436,7 @@ class UpdatesViewModel(
 		if (installer.checkPermission()) {
 			background.begin(update.id, update.name)
 			try {
-				state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+				state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
 				// No ViewModel mutex — downloads run in parallel.
 				// SessionInstaller has its own mutex for commit sequencing.
 				val link = resolveLink(update)
@@ -320,22 +447,29 @@ class UpdatesViewModel(
 		}
 	}
 
-	fun installAll(uriHandler: androidx.compose.ui.platform.UriHandler) {
+	fun installAll(
+		uriHandler: androidx.compose.ui.platform.UriHandler,
+		notificationPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>? = null
+	) {
 		// ApkMirror has no direct download — install() opens its page in the browser — so
 		// "Update all" used to open one browser tab per ApkMirror update on top of the real
 		// installs. Those stay a manual tap.
 		val updates = state.value.updates().filter {
 			!it.isInstalling && !it.isInstalled && it.source != com.apkupdater.data.ui.ApkMirrorSource
 		}
-		updates.forEach { update -> install(update, uriHandler) }
+		// Only the first carries the launcher: Android allows one permission request at a
+		// time and answers the rest with an immediate cancel, filling the log with warnings.
+		updates.forEachIndexed { index, update ->
+			install(update, uriHandler, if (index == 0) notificationPermission else null)
+		}
 	}
 
 	override fun startDownloadProgress(id: Int) {
-		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(id, true))
+		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, true)) }
 	}
 
 	override fun finishDownloadProgress(id: Int) {
-		state.value = UpdatesUiState.Success(state.value.mutableUpdates().setIsInstalling(id, false))
+		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, false)) }
 	}
 
 	private fun List<AppUpdate>.filterIgnoredVersions(ignoredVersions: List<Int>) = this
@@ -352,30 +486,37 @@ class UpdatesViewModel(
 	)
 
 	private fun setSuccess(updates: List<AppUpdate>) {
+		// Read the ignore list once, outside: the block below can be re-run under contention
+		// and must stay free of side effects.
+		val ignored = prefs.ignoredVersions.get()
 		// A refresh rebuilds the list from scratch, but downloads/installs keep running in
 		// BackgroundInstaller's process-wide scope. Carry their state over, otherwise a refresh
 		// would reset a running download's card back to "Update" while it is still downloading.
-		val inFlight = state.value.updates()
-			.filter { it.isInstalling || it.isInstalled }
-			.associateBy { it.id }
-		updates
-			.filterIgnoredVersions(prefs.ignoredVersions.get())
-			.distinctBy { it.id }
-			.map { fresh ->
-				inFlight[fresh.id]?.let {
-					fresh.copy(
-						isInstalling = it.isInstalling,
-						isInstalled = it.isInstalled,
-						progress = it.progress,
-						total = it.total
-					)
-				} ?: fresh
-			}
-			.sortFinishedFirst()
-			.let {
-				state.value = UpdatesUiState.Success(it)
-				badger.changeUpdatesBadge(it.size.toString())
-			}
+		// The carry-over is read INSIDE the update block on purpose: the writers that flip a
+		// card to installing run on the background scope and take no mutex, so a tap landing
+		// between a separate read and the write was published and then thrown away.
+		val merged = state.updateAndGet { current ->
+			val inFlight = current.updates()
+				.filter { it.isInstalling || it.isInstalled }
+				.associateBy { it.id }
+			UpdatesUiState.Success(
+				updates
+					.filterIgnoredVersions(ignored)
+					.distinctBy { it.id }
+					.map { fresh ->
+						inFlight[fresh.id]?.let {
+							fresh.copy(
+								isInstalling = it.isInstalling,
+								isInstalled = it.isInstalled,
+								progress = it.progress,
+								total = it.total
+							)
+						} ?: fresh
+					}
+					.sortFinishedFirst()
+			)
+		}
+		badger.changeUpdatesBadge(merged.updates().size.toString())
 	}
 
 }

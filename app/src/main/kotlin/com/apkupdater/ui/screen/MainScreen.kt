@@ -252,11 +252,19 @@ fun checkNotificationIntent(
 	updatesViewModel: UpdatesViewModel,
 	navController: NavController,
 	launcher: ManagedActivityResultLauncher<Intent, ActivityResult>
-) = runCatching {
-	val activity = LocalContext.current as ComponentActivity
-	mainViewModel.processIntent(activity.intent, launcher, updatesViewModel, navController)
-}.getOrElse {
-	Log.e("MainScreen", "Error checking notification intent.", it)
+) {
+	val activity = LocalContext.current as? ComponentActivity ?: return
+	// In an effect, and through the guarded entry point. This used to run in plain
+	// composition, so it fired again on every recomposition and every Activity recreation:
+	// opening the app from the "updates available" notification and then rotating the phone
+	// restarted the entire multi-source check.
+	LaunchedEffect(Unit) {
+		runCatching {
+			mainViewModel.processLaunchIntent(activity.intent, launcher, updatesViewModel, navController)
+		}.onFailure {
+			Log.e("MainScreen", "Error checking notification intent.", it)
+		}
+	}
 }
 
 @OptIn(ExperimentalComposeUiApi::class)

@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.apkupdater.R
@@ -40,6 +41,9 @@ class DownloadService : Service() {
     }
 
     private val background: BackgroundInstaller by inject()
+
+    /** Latest start id, so a self-stop cannot cancel a start that arrived after it. */
+    @Volatile private var lastStartId = 0
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -68,15 +72,32 @@ class DownloadService : Service() {
             }
             .distinctUntilChanged()
             .onEach {
-                if (background.tasks.value.isEmpty()) stopSelf()
-                else notificationManager().notify(NOTIFICATION_ID, buildNotification())
+                // stopSelfResult, not stopSelf: a task finishing and a new one starting can
+                // cross, and a plain stopSelf() would tear the service down under the new one,
+                // leaving its download running with no foreground protection.
+                if (background.tasks.value.isEmpty()) {
+                    if (lastStartId != 0) stopSelfResult(lastStartId) else stopSelf()
+                } else {
+                    notificationManager().notify(NOTIFICATION_ID, buildNotification())
+                }
             }
             .launchIn(serviceScope)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (intent?.action == ACTION_CANCEL) background.cancelAll()
         return START_NOT_STICKY
+    }
+
+    /**
+     * Android 15 caps a dataSync foreground service at six hours per day and then calls this.
+     * Not stopping here is an uncatchable ForegroundServiceDidNotStopInTimeException. The work
+     * itself lives in BackgroundInstaller.scope and carries on — just unprotected.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w("DownloadService", "Foreground service timed out; stopping")
+        stopSelf()
     }
 
     override fun onDestroy() {

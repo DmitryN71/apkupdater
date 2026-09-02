@@ -2,12 +2,16 @@ package com.apkupdater.ui.component
 
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
@@ -109,6 +113,37 @@ fun BoxScope.InstallProgressIcon(
         InstallIcon(
             { onClick() },
             Modifier.align(Alignment.TopEnd).padding(4.dp)
+        )
+    }
+}
+
+/**
+ * What the Refresh button becomes while a check is running: a cross with a ring turning
+ * around it.
+ *
+ * A spinning refresh arrow was the first attempt and it read as "busy, wait" — nobody would
+ * guess it could be pressed. The cross says what the tap does; the ring says something is
+ * still running.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StopCheckingIcon(
+    text: String
+) = TooltipBox(
+    positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+    state = rememberTooltipState(),
+    tooltip = { PlainTooltip { Text(text) } }
+) {
+    Box(contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(24.dp),
+            color = LocalContentColor.current,
+            strokeWidth = 2.dp
+        )
+        Icon(
+            Icons.Filled.Close,
+            contentDescription = text,
+            modifier = Modifier.size(12.dp)
         )
     }
 }

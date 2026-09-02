@@ -34,4 +34,13 @@ sealed class SearchUiState {
         }
         return emptyList()
     }
+
+    /**
+     * Publishes a changed list without changing which state we are in — used inside
+     * `state.update {}` so concurrent writers cannot overwrite each other. A progress tick
+     * arriving while a search is running is dropped rather than turning the screen into an
+     * empty result list mid-search.
+     */
+    fun withUpdates(updates: List<AppUpdate>): SearchUiState =
+        if (this is Success) Success(updates) else this
 }

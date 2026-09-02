@@ -13,8 +13,13 @@ import com.apkupdater.data.ui.getVersionCode
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.FdroidService
 import com.google.gson.Gson
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.job
+import okhttp3.ResponseBody
 import java.io.InputStream
 import java.util.jar.JarInputStream
 
@@ -30,7 +35,7 @@ class FdroidRepository(
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val response = service.getJar("${url}index-v1.jar")
-        val data = jarToJson(response.byteStream())
+        val data = response.toDataStoppably()
         val appNames = apps.map { it.packageName }
         val updates = data.apps
             .asSequence()
@@ -47,7 +52,7 @@ class FdroidRepository(
 
     suspend fun search(text: String) = flow {
         val response = service.getJar("${url}index-v1.jar")
-        val data = jarToJson(response.byteStream())
+        val data = response.toDataStoppably()
         val updates = data.apps
             .asSequence()
             .map { FdroidUpdate(data.packages[it.packageName]!![0], it) }
@@ -87,6 +92,56 @@ class FdroidRepository(
         update.apk.nativecode.isEmpty() -> true
         update.apk.nativecode.intersect(arch).isNotEmpty() -> true
         else -> false
+    }
+
+    /**
+     * Parses the index, and gives up when the check is stopped.
+     *
+     * This is the one source that ignored cancellation. The index is several megabytes of
+     * JSON streamed straight off the network into Gson — a single blocking call with no
+     * suspension point anywhere inside it — and coroutine cancellation is cooperative, so
+     * there was nothing to notice the check had been cancelled. Pressing Stop appeared to do
+     * nothing at all whenever F-Droid (or Izzy, which is this same class) was enabled, while
+     * with F-Droid switched off it stopped instantly.
+     *
+     * Closing the body from the job's completion handler breaks the read out of Gson with an
+     * IOException. The handler runs on the thread doing the cancelling, so it does not have to
+     * wait for the blocked one, and it also fires on the source timeout.
+     */
+    private suspend fun ResponseBody.toDataStoppably(): FdroidData {
+        val job = currentCoroutineContext().job
+        // Belt: breaks a read that has not started yet, and covers the socket going quiet.
+        val handle = job.invokeOnCompletion { runCatching { close() } }
+        return try {
+            jarToJson(byteStream().stoppable(job))
+        } finally {
+            handle.dispose()
+        }
+    }
+
+    /**
+     * The braces: a stream that refuses to keep reading once the check is cancelled.
+     *
+     * Closing the body from a completion handler was the first attempt and it was not enough —
+     * closing an OkHttp body does not reliably break a read that is already in flight, so the
+     * parse carried on to the end and the whole check hung on it. Gson pulls this stream in 8 KB
+     * chunks, so checking between chunks stops it within a few kilobytes, and those checks are
+     * the only cancellation points a single blocking parse of a 14 MB index has.
+     */
+    private fun InputStream.stoppable(job: Job) = object : InputStream() {
+        override fun read(): Int {
+            job.ensureActive()
+            return this@stoppable.read()
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            job.ensureActive()
+            return this@stoppable.read(b, off, len)
+        }
+
+        override fun available() = this@stoppable.available()
+
+        override fun close() = this@stoppable.close()
     }
 
     private fun jarToJson(stream: InputStream): FdroidData {

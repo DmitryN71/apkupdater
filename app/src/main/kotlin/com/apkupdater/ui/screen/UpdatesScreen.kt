@@ -1,5 +1,7 @@
 package com.apkupdater.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -41,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -60,6 +63,7 @@ import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.EmptyGrid
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.RefreshIcon
+import com.apkupdater.ui.component.StopCheckingIcon
 import com.apkupdater.ui.component.TvInstalledGrid
 import com.apkupdater.ui.component.TvUpdateItem
 import com.apkupdater.ui.component.TvIconButton
@@ -86,6 +90,14 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, on
 	// half of what was reported from the TV.
 	val firstItemFocus = remember { FocusRequester() }
 	val isTv = LocalContext.current.isAndroidTv()
+	// Asked at the first Update tap, which is the only moment it makes sense: until now the
+	// scheduled-check switch was the ONLY thing that ever requested it, so for most users every
+	// notification this app posts was dropped by the system without a word — the confirmation,
+	// the success and now the failure alike. The result is ignored on purpose; if the user says
+	// no, the in-app messages still work exactly as before.
+	val notificationPermission = rememberLauncherForActivityResult(
+		ActivityResultContracts.RequestPermission()
+	) {}
 	LaunchedEffect(Unit) {
 		if (!isTv) return@LaunchedEffect
 		viewModel.state().first { it is UpdatesUiState.Success && it.updates.isNotEmpty() }
@@ -96,11 +108,14 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, isRefreshing: Boolean = false, on
 	}
 
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
-		UpdatesScreenLoading(isRefreshing, onRefresh)
+		UpdatesScreenLoading()
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
-		UpdatesScreenSuccess(viewModel, it.updates, isRefreshing, onRefresh, firstItemFocus, isTv)
+		UpdatesScreenSuccess(
+			viewModel, it.updates, isRefreshing, onRefresh, firstItemFocus, isTv,
+			notificationPermission
+		)
 	}
 }
 
@@ -149,8 +164,19 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 				)
 			}
 		}
-		TvIconButton(onClick = { viewModel.refresh() }) {
-			RefreshIcon(stringResource(R.string.refresh_updates))
+		// The button IS the progress indicator now. It used to sit idle in the corner while a
+		// separate spinner turned in the middle of the screen, and there was no way at all to
+		// stop a check — which matters, because one slow source holds up the whole list long
+		// after the others have answered.
+		val checking = viewModel.isChecking.collectAsStateWithLifecycle().value
+		TvIconButton(
+			onClick = { if (checking) viewModel.cancelRefresh() else viewModel.refresh() }
+		) {
+			if (checking) {
+				StopCheckingIcon(stringResource(R.string.stop_checking))
+			} else {
+				RefreshIcon(stringResource(R.string.refresh_updates))
+			}
 		}
 	},
 	navigationIcon = {
@@ -174,18 +200,18 @@ fun ProgressBanner(text: String?) {
 }
 
 @Composable
-fun ColumnScope.UpdatesScreenLoading(
-	isRefreshing: Boolean = false,
-	onRefresh: () -> Unit = {}
-) {
-	val pullState = rememberPullRefreshState(isRefreshing, onRefresh)
-	Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
+fun ColumnScope.UpdatesScreenLoading() {
+	// No pull-to-refresh at all on this branch, indicator or gesture.
+	//
+	// The indicator used to be fed `isRefreshing`, so it sat spinning in the middle of the
+	// screen for the whole check — a second indicator on top of the shimmer, while the Refresh
+	// button that could have been showing it sat idle in the corner. The button spins now.
+	// Keeping the gesture without its indicator was worse than either: a check is already
+	// running, so a pull starts nothing the user can see, and each one queued another whole
+	// check behind the mutex. The Success branches below keep both, where a pull is the only
+	// way to start a check and its indicator is direct feedback for the drag.
+	Box(Modifier.weight(1f).fillMaxWidth()) {
 		LoadingGrid()
-		PullRefreshIndicator(
-			isRefreshing, pullState,
-			Modifier.align(Alignment.TopCenter),
-			contentColor = MaterialTheme.colorScheme.primary
-		)
 	}
 }
 
@@ -200,7 +226,8 @@ fun ColumnScope.UpdatesScreenSuccess(
 	isRefreshing: Boolean = false,
 	onRefresh: () -> Unit = {},
 	firstItemFocus: FocusRequester? = null,
-	isTv: Boolean = false
+	isTv: Boolean = false,
+	notificationPermission: ManagedActivityResultLauncher<String, Boolean>? = null
 ) {
 	val handler = LocalUriHandler.current
 	val context = LocalContext.current
@@ -228,7 +255,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 				items(updates, key = { it.id }) { update ->
 					TvUpdateItem(
 						update,
-						{ viewModel.install(update, handler) },
+						{ viewModel.install(update, handler, notificationPermission) },
 						{ viewModel.ignoreVersion(update.id) },
 						onOpen = { packageName ->
 							context.packageManager.getLaunchIntentForPackage(packageName)?.let {
@@ -251,7 +278,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 						state = rememberTooltipState()
 					) {
 						FloatingActionButton(
-							onClick = { viewModel.installAll(handler) },
+							onClick = { viewModel.installAll(handler, notificationPermission) },
 							containerColor = MaterialTheme.colorScheme.primaryContainer,
 							contentColor = MaterialTheme.colorScheme.onPrimaryContainer
 						) {

@@ -3,12 +3,11 @@ package com.apkupdater.repository
 import android.util.Log
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.prefs.Prefs
-import com.apkupdater.util.combine
 import com.apkupdater.util.isVersionDowngrade
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicInteger
@@ -85,14 +84,25 @@ class UpdatesRepository(
                             onSourceComplete?.invoke(completed, totalSources, left)
                         }
                     }
-                    wrappedSources
-                        .combine { updates ->
-                            // No deduplication — show every source's update so the user
-                            // can choose where to install from (e.g. avoid ApkMirror in
-                            // favor of GitHub/F-Droid for direct install).
-                            emit(updates.flatMap { it }.filter { !isVersionDowngrade(it.oldVersion, it.version) })
-                        }
-                        .collect()
+                    // Publish results AS EACH SOURCE ANSWERS, rather than waiting for the
+                    // slowest one.
+                    //
+                    // This used to be combine(), which produces nothing at all until every
+                    // flow has emitted. One slow source held back everything the others had
+                    // already found — F-Droid streams and parses a 14 MB index, so the list
+                    // routinely sat empty behind it — and stopping the check then threw those
+                    // results away, because nothing had ever reached the screen. Each wrapped
+                    // source emits exactly once, with its whole result, so accumulating across
+                    // them cannot double-count. The collect lambda is sequential, so the list
+                    // needs no locking.
+                    val found = mutableListOf<AppUpdate>()
+                    wrappedSources.merge().collect { updates ->
+                        found.addAll(updates)
+                        // No deduplication — show every source's update so the user
+                        // can choose where to install from (e.g. avoid ApkMirror in
+                        // favor of GitHub/F-Droid for direct install).
+                        emit(found.filter { !isVersionDowngrade(it.oldVersion, it.version) })
+                    }
                     val errors = errorCount.get()
                     if (errors > 0) onSourceError?.invoke(errors, totalSources)
                 } else {

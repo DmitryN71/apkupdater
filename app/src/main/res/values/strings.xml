@@ -32,6 +32,7 @@
     <string name="source_errors">%1$d of %2$d sources failed to check updates.</string>
     <string name="checking_sources">Checking: %1$s</string>
     <string name="checking_updates">Checking for updates…</string>
+    <string name="stop_checking">Stop checking</string>
     <string name="clear_search_cd">Clear search</string>
     <string name="search_no_results">Nothing found for this search.</string>
     <string name="search_empty">Search for apps by name across all sources.</string>
@@ -92,6 +93,8 @@
     <string name="download_not_supported">Download not available for this source.</string>
     <string name="downloading_file">Downloading %1$s…</string>
     <string name="download_failed">Download failed.</string>
+    <string name="cancel_too_late">Already installing — too late to cancel.</string>
+    <string name="cache_busy">Downloads are running — try again when they finish.</string>
     <string name="saved_to_downloads">Saved: %1$s</string>
     <string name="saved_to_downloads_fallback">Chosen folder unavailable, saved to Downloads: %1$s</string>
     <string name="download_folder">Download Folder</string>
@@ -164,6 +167,8 @@
     <string name="notification_success_channel_name">Install results</string>
     <string name="notification_installed_title">%1$s installed</string>
     <string name="notification_installed_text">Tap Open to launch it.</string>
+    <string name="notification_failed_title">%1$s failed to update</string>
+    <string name="notification_failure_channel_name">Install failures</string>
     <string name="dismiss_cd">Dismiss</string>
     <string name="manage_custom_repos">Manage repositories</string>
     <string name="save_repo">Save</string>

@@ -190,7 +190,12 @@ class PlayRepository(
         if (now - previous < FORCED_AUTH_COOLDOWN_MS) return files
         if (!lastForcedAuth.compareAndSet(previous, now)) return files
 
-        Log.i("PlayRepository", "No download link for ${app.packageName}; trying a fresh account.")
+        val retryAfter = playHttpClient.lastRetryAfterSeconds
+        Log.i(
+            "PlayRepository",
+            "No download link for ${app.packageName}; trying a fresh account." +
+                if (retryAfter > 0) " Play asked for ${retryAfter}s." else ""
+        )
         // Only the sign-up is guarded: a purchase that THROWS carries the real reason
         // (AppNotSupported, AppNotPurchased, AppRemoved) and must reach the caller intact.
         val fresh = runCatching { refreshAuth() }.getOrElse {

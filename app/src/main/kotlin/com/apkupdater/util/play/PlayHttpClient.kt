@@ -172,6 +172,17 @@ class PlayHttpClient(
         return urlBuilder.build()
     }
 
+    /**
+     * Seconds Google asked us to wait, from the last 429 it sent, or 0 if it sent no
+     * Retry-After. We could not previously see this at all: the library's response model
+     * carries only the status and the body, so the one piece of information that would tell us
+     * how long a delivery throttle actually lasts was dropped on the floor. Read it out of a
+     * user's log next time delivery is refused.
+     */
+    @Volatile
+    var lastRetryAfterSeconds: Long = 0L
+        private set
+
     private fun buildPlayResponse(response: Response): PlayResponse {
         return PlayResponse().apply {
             isSuccessful = response.isSuccessful
@@ -185,6 +196,13 @@ class PlayHttpClient(
                 errorString = response.message
             }
         }.also {
+            if (response.code == 429) {
+                lastRetryAfterSeconds = response.header("Retry-After")?.toLongOrNull() ?: 0L
+                Log.w(
+                    "PlayHttpClient",
+                    "Play throttled us: HTTP 429, Retry-After=${response.header("Retry-After") ?: "absent"} ${response.request.url}"
+                )
+            }
             _responseCode.value = response.code
             Log.i("PlayHttpClient", "OKHTTP [${response.code}] ${response.request.url}")
         }

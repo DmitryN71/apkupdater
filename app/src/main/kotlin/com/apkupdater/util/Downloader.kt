@@ -54,6 +54,10 @@ class Downloader(
     private class Session {
         val calls: MutableList<Call> = Collections.synchronizedList(mutableListOf())
         @Volatile var cancelled = false
+        /** A task is running for this id: between BackgroundInstaller's begin() and end(). */
+        @Volatile var active = false
+        /** The download phase is over and the installer has the file. Cancel is too late. */
+        @Volatile var installing = false
     }
 
     private val sessions = ConcurrentHashMap<Int, Session>()
@@ -75,8 +79,40 @@ class Downloader(
      * in one list and a single cancel reaches every one of them.
      */
     fun beginDownloads(id: Int) {
-        sessions.computeIfAbsent(id) { Session() }.cancelled = false
+        sessions.computeIfAbsent(id) { Session() }.apply {
+            cancelled = false
+            installing = false
+            active = true
+        }
     }
+
+    /**
+     * Marks the task finished, from [BackgroundInstaller.end]. While any task is active
+     * [cleanUp] refuses to delete, so this is also what lets the last one out sweep.
+     */
+    fun endDownloads(id: Int) {
+        sessions[id]?.apply {
+            active = false
+            installing = false
+            // Streaming downloads deliberately leave their Call registered while the installer
+            // reads the body, and nothing ever removed them again, so the list grew for the
+            // life of the process. The task is over here, so nothing can still need them.
+            calls.clear()
+        }
+    }
+
+    /**
+     * The download is done and the installer now owns the file. Called at the point of no
+     * return in every install path, so [isCancellable] can tell an honest "too late" from a
+     * cancel that will still work — and so a cancel pressed here never sets the flag that
+     * would go on to mute the install's own failure message.
+     */
+    fun beginInstall(id: Int) {
+        sessions[id]?.installing = true
+    }
+
+    /** True while cancelling this task would actually stop something. */
+    fun isCancellable(id: Int) = sessions[id]?.let { it.active && !it.installing } == true
 
     private fun registerCall(id: Int?, call: Call) {
         if (id == null) return
@@ -361,6 +397,19 @@ class Downloader(
     }
 
     fun cleanUp() = runCatching {
+        // NEVER sweep while a task is running. A downloaded APK sits in this directory between
+        // the download finishing and the installer reading it — waiting for the install mutex,
+        // or being verified — and deleting it in that window fails the install with a
+        // meaningless error. Rotating the screen did exactly that on every "Update all",
+        // because MainActivity swept on each onCreate, and so did any other app's install
+        // finishing. The last task out calls this from BackgroundInstaller.end(), which is
+        // the only moment it can safely do its job.
+        if (sessions.values.any { it.active }) {
+            // Age-based and therefore safe: a partial being written right now has a fresh
+            // timestamp, so it is never the one pruned.
+            prunePartials()
+            return@runCatching
+        }
         // Delete finished downloads, but keep the partial directory: it holds resumable
         // files, and cleanUp() also runs on the failure path — wiping it there would
         // defeat resume at exactly the moment it is needed.

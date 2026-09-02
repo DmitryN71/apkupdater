@@ -52,6 +52,28 @@ class MainViewModel(
 		}
 	}
 
+	private var didProcessLaunchIntent = false
+
+	/**
+	 * The cold-start path. An Activity keeps the Intent it was launched with, so every
+	 * recreation — a rotation, most obviously — handed the same UpdateAction back and restarted
+	 * the whole update check. This ViewModel outlives the Activity, so the flag holds.
+	 * [processIntent] itself stays unguarded: onNewIntent means the user tapped again and does
+	 * deserve a fresh check.
+	 */
+	fun processLaunchIntent(
+		intent: Intent,
+		launcher: ManagedActivityResultLauncher<Intent, ActivityResult>,
+		updatesViewModel: UpdatesViewModel,
+		navController: NavController
+	) {
+		if (didProcessLaunchIntent) return
+		// Marked AFTER the work, not before: the caller swallows exceptions, so setting it
+		// first would consume the launch intent for good if anything in there threw.
+		processIntent(intent, launcher, updatesViewModel, navController)
+		didProcessLaunchIntent = true
+	}
+
 	fun processIntent(
 		intent: Intent,
 		launcher: ManagedActivityResultLauncher<Intent, ActivityResult>,

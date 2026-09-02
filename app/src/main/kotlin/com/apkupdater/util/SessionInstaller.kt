@@ -19,19 +19,49 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.zip.ZipFile
 
 
 class SessionInstaller(
     private val context: Context,
-    private val installLog: InstallLog
+    private val installLog: InstallLog,
+    private val downloader: Downloader
 ) {
 
     companion object {
         const val INSTALL_ACTION = "installAction"
+
+        /**
+         * How long a queued install waits for the one ahead of it before forcing its way in.
+         *
+         * Generous, because the wait is legitimate: the holder is showing the system
+         * confirmation dialog and the user may be slow. But it has to be bounded. An
+         * ownership-checked [finish] removed the accidental escape hatch the old
+         * unlock-for-anyone had, so if the holder's result never arrives — the dialog was
+         * opened and abandoned, and no broadcast is ever sent — an unbounded wait would hang
+         * every later install for the life of the process, and with it the download-cache
+         * sweep and the foreground notification, since the waiter never reaches its
+         * `finally { background.end(id) }`.
+         */
+        private const val COMMIT_LOCK_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
     private val installMutex = Mutex()
+
+    /**
+     * Which install currently holds [installMutex], or null.
+     *
+     * The mutex serialises commits so only one system confirmation dialog is up at a time.
+     * [finish] used to unlock it for whoever called, which collapsed that sequencing after the
+     * first failure in a batch: install A committed and was waiting for the user, install B's
+     * download failed, B's cancelInstall called finish(), and C — queued behind the lock —
+     * committed on top of A's dialog. Tracked by hand rather than via Mutex's own owner
+     * parameter because ids are boxed Ints and the owner comparison is not something to bet
+     * a wedged install queue on.
+     */
+    @Volatile private var lockOwner: Int? = null
+    private val ownerLock = Any()
 
     suspend fun install(id: Int, packageName: String, stream: InputStream, trackProgress: Boolean = true) =
         install(id, packageName, listOf(stream), trackProgress)
@@ -77,41 +107,82 @@ class SessionInstaller(
 
         val sessionId = packageInstaller.createSession(params)
         var bytes = 0L
-        packageInstaller.openSession(sessionId).use { session ->
-            streams.forEach {
-                session.openWrite("$packageName.${randomUUID()}", 0, -1).use { output ->
-                    if (trackProgress) {
-                        bytes += it.copyToAndNotify(output, id, installLog, bytes)
-                    } else {
-                        it.copyTo(output)
+        var committed = false
+        try {
+            packageInstaller.openSession(sessionId).use { session ->
+                streams.forEach {
+                    session.openWrite("$packageName.${randomUUID()}", 0, -1).use { output ->
+                        if (trackProgress) {
+                            bytes += it.copyToAndNotify(output, id, installLog, bytes)
+                        } else {
+                            it.copyTo(output)
+                        }
+                        it.close()
+                        session.fsync(output)
                     }
-                    it.close()
-                    session.fsync(output)
                 }
-            }
 
-            // Deliver results to a BroadcastReceiver: unlike an Activity PendingIntent,
-            // it is reliably delivered while the app is in the background.
-            val intent = Intent(context, InstallReceiver::class.java).apply {
-                action = "$INSTALL_ACTION.$id"
-            }
+                // Deliver results to a BroadcastReceiver: unlike an Activity PendingIntent,
+                // it is reliably delivered while the app is in the background.
+                val intent = Intent(context, InstallReceiver::class.java).apply {
+                    action = "$INSTALL_ACTION.$id"
+                }
 
-            installMutex.lock()
-            val pending = PendingIntent.getBroadcast(context, id, intent, FLAG_MUTABLE)
-            session.commit(pending.intentSender)
-            session.close()
+                // Point of no return for THIS install: every stream has been written and
+                // fsynced into the session, so a Cancel can no longer stop anything. It has to
+                // be marked HERE and not at the call sites, because on the Play and XAPK paths
+                // the download itself streams through the loop above — marking it before the
+                // call would make a whole 100 MB transfer refuse to cancel.
+                downloader.beginInstall(id)
+                acquireCommitLock(id)
+                val pending = PendingIntent.getBroadcast(context, id, intent, FLAG_MUTABLE)
+                try {
+                    session.commit(pending.intentSender)
+                    committed = true
+                } catch (t: Throwable) {
+                    // Nothing will ever deliver a result for this session, so nothing would
+                    // ever call finish() to release the lock we just took.
+                    synchronized(ownerLock) {
+                        lockOwner = null
+                        runCatching { installMutex.unlock() }
+                    }
+                    throw t
+                }
+                session.close()
+            }
+        } catch (t: Throwable) {
+            // An uncommitted session keeps its staged bytes — a whole APK — in
+            // /data/app/vmdl*.tmp until the system expires it days later. Cancelling a large
+            // install mid-stream used to leak exactly that. Never abandon a committed one:
+            // the install is already under way and only the result is still outstanding.
+            if (!committed) runCatching { packageInstaller.abandonSession(sessionId) }
+            throw t
         }
     }
 
-    fun rootInstall(file: File, fakePlayStore: Boolean = false): Boolean {
+    /**
+     * Returns null on success, or a localized reason on failure — same contract as the Shizuku
+     * methods. It used to return a bare Boolean and throw the command output away, so every
+     * root failure in the app read "unexpected error" no matter what pm actually said.
+     */
+    fun rootInstall(file: File, fakePlayStore: Boolean = false): String? {
         val cmd = if (fakePlayStore) {
             "pm install -r -i com.android.vending ${file.absolutePath}"
         } else {
             "pm install -r ${file.absolutePath}"
         }
-        val res = Shell.cmd(cmd).exec().isSuccess
+        // Collect stderr EXPLICITLY. libsu leaves Result.getErr() empty unless the job was
+        // given a list for it (or FLAG_REDIRECT_STDERR was set), and plenty of ROMs print the
+        // "Failure [INSTALL_FAILED_...]" line there — so reading only stdout would have left
+        // the reason blank and put us straight back to "unexpected error".
+        val out = ArrayList<String>()
+        val err = ArrayList<String>()
+        val result = Shell.cmd(cmd).to(out, err).exec()
         file.delete()
-        return res
+        if (result.isSuccess) return null
+        val output = (err + out).filter { it.isNotBlank() }.joinToString(" ")
+        Log.e("SessionInstaller", "Root install failed: $output")
+        return parseInstallError(output)
     }
 
     private fun shizukuProcess(args: Array<String>): Process {
@@ -243,7 +314,40 @@ class SessionInstaller(
     private fun parseInstallError(error: String): String =
         context.getString(installErrorResId(error))
 
-    fun finish() = runCatching { installMutex.unlock() }
+    /**
+     * Takes the commit lock for [id], giving up on the previous holder after
+     * [COMMIT_LOCK_TIMEOUT_MS]. A timed-out `lock()` leaves the mutex untouched, so forcing it
+     * is safe: the worst case is a second confirmation dialog for a user who really did sit on
+     * the first one for five minutes, against a permanent wedge if we waited forever.
+     */
+    private suspend fun acquireCommitLock(id: Int) {
+        val acquired = withTimeoutOrNull(COMMIT_LOCK_TIMEOUT_MS) { installMutex.lock() } != null
+        if (!acquired) {
+            Log.w("SessionInstaller", "Commit lock held for too long by $lockOwner; taking it")
+            synchronized(ownerLock) {
+                lockOwner = null
+                runCatching { installMutex.unlock() }
+            }
+            installMutex.lock()
+        }
+        synchronized(ownerLock) { lockOwner = id }
+    }
+
+    /**
+     * Releases the commit lock, but only for the install that actually holds it. Called from
+     * every path — including root and Shizuku, which never take this lock at all — so the
+     * ownership check is what keeps one task's outcome from letting another task's queue jump.
+     */
+    fun finish(id: Int) = runCatching {
+        // Both ViewModels subscribe to the install-status flow, so one result produces two
+        // finish() calls on two IO threads. Check-then-act has to be atomic, or both can see
+        // themselves as the owner and the second unlock releases whoever acquired in between.
+        synchronized(ownerLock) {
+            if (lockOwner != id) return@runCatching
+            lockOwner = null
+            installMutex.unlock()
+        }
+    }
 
     fun checkPermission(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -260,36 +364,42 @@ class SessionInstaller(
 
     @Suppress("BlockingMethodInNonBlockingContext")
     suspend fun installXapk(id: Int, packageName: String, stream: InputStream, totalSize: Long = 0L) {
-        // Copy file to disk with progress tracking
+        // Copy file to disk with progress tracking. The copy lands in cacheDir's ROOT, which
+        // no sweep reaches — not Downloader.cleanUp(), which only touches cacheDir/downloads —
+        // so anything thrown below used to strand a file the size of the whole XAPK, plus an
+        // open ZipFile. Hence the finally.
         val file = File(context.cacheDir, randomUUID())
-        file.outputStream().use { output ->
-            var bytesCopied = 0L
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            var bytes = stream.read(buffer)
-            while (bytes >= 0) {
-                output.write(buffer, 0, bytes)
-                bytesCopied += bytes
-                if (totalSize > 0) {
-                    installLog.emitProgress(AppInstallProgress(id, bytesCopied, totalSize))
+        var zip: ZipFile? = null
+        try {
+            file.outputStream().use { output ->
+                var bytesCopied = 0L
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var bytes = stream.read(buffer)
+                while (bytes >= 0) {
+                    output.write(buffer, 0, bytes)
+                    bytesCopied += bytes
+                    if (totalSize > 0) {
+                        installLog.emitProgress(AppInstallProgress(id, bytesCopied, totalSize))
+                    }
+                    bytes = stream.read(buffer)
                 }
-                bytes = stream.read(buffer)
             }
+            stream.close()
+
+            // Get entries
+            zip = ZipFile(file)
+            val entries = zip.entries().toList()
+
+            // Install all the apks (skip progress tracking — download phase already tracked)
+            // TODO: Try to install only needed apks
+            // TODO: Add root install support
+            val apks = entries.filter { it.name.contains(".apk") }.map { zip.getInputStream(it) }
+            install(id, packageName, apks, trackProgress = false)
+        } finally {
+            runCatching { stream.close() }
+            runCatching { zip?.close() }
+            file.delete()
         }
-        stream.close()
-
-        // Get entries
-        val zip = ZipFile(file)
-        val entries = zip.entries().toList()
-
-        // Install all the apks (skip progress tracking — download phase already tracked)
-        // TODO: Try to install only needed apks
-        // TODO: Add root install support
-        val apks = entries.filter { it.name.contains(".apk") }.map { zip.getInputStream(it) }
-        install(id, packageName, apks, trackProgress = false)
-
-        // Cleanup
-        zip.close()
-        file.delete()
     }
 
     suspend fun playInstall(id: Int, packageName: String, streams: List<InputStream>) =

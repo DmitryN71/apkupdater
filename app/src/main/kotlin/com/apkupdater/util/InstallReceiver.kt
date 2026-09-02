@@ -54,12 +54,21 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 if (AppVisibility.foreground) {
                     runCatching { context.startActivity(confirm) }
-                        .onFailure { notification.showConfirmInstallNotification(confirm, id) }
+                        .onFailure {
+                            installLog.rememberConfirm(id, confirm)
+                            notification.showConfirmInstallNotification(confirm, id)
+                        }
                 } else {
+                    // Keep it as well as posting it. The notification is silently dropped when
+                    // notifications are not permitted, and losing the confirmation strands the
+                    // install AND the commit lock — see InstallLog.pendingConfirm.
+                    installLog.rememberConfirm(id, confirm)
                     notification.showConfirmInstallNotification(confirm, id)
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
+                installLog.forgetConfirm(id)
+                notification.cancelFailureFor(appLabel(context, intent))
                 notification.cancelConfirmInstallNotification(id)
                 installLog.emitStatus(AppInstallStatus(true, id))
                 // If the app isn't in front, post a "installed — Open?" notification,
@@ -67,23 +76,42 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                 if (!AppVisibility.foreground && prefs.notifyOnInstall.get()) {
                     val pkg = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
                     if (!pkg.isNullOrBlank()) {
-                        val label = runCatching {
-                            context.packageManager.getApplicationLabel(
-                                context.packageManager.getApplicationInfo(pkg, 0)
-                            ).toString()
-                        }.getOrDefault(pkg)
-                        notification.showInstallSuccessNotification(pkg, label, id)
+                        notification.showInstallSuccessNotification(pkg, appLabel(context, intent), id)
                     }
                 }
             }
             else -> {
                 val status = intent.extras?.getInt(PackageInstaller.EXTRA_STATUS) ?: -1
                 val rawMessage = intent.extras?.getString(PackageInstaller.EXTRA_STATUS_MESSAGE)
+                val reason = installErrorReason(status, rawMessage)
+                installLog.forgetConfirm(id)
                 notification.cancelConfirmInstallNotification(id)
-                installLog.emitStatus(AppInstallStatus(false, id, reason = installErrorReason(status, rawMessage)))
+                installLog.emitStatus(AppInstallStatus(false, id, reason = reason))
+                // Posted from HERE, not from the ViewModel collector that receives the status
+                // above. That collector runs in viewModelScope and is cancelled the moment the
+                // Activity is destroyed — precisely the case a notification exists for. This
+                // receiver is process-scoped and always runs.
+                // Only with a name to put in it: an empty title would read as a bug. The
+                // system omits the package on some refusals, and the receiver has no other
+                // way to learn it — the in-app message still covers that case.
+                val label = appLabel(context, intent)
+                if (!AppVisibility.foreground && label.isNotBlank()) {
+                    notification.showInstallFailureNotification(label, reason, id)
+                }
                 Log.e("InstallReceiver", "Install failed (status $status): $rawMessage")
             }
         }
+    }
+
+    /** The app's own name where the system told us the package, its package name otherwise. */
+    private fun appLabel(context: Context, intent: Intent): String {
+        val pkg = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME)
+        if (pkg.isNullOrBlank()) return ""
+        return runCatching {
+            context.packageManager.getApplicationLabel(
+                context.packageManager.getApplicationInfo(pkg, 0)
+            ).toString()
+        }.getOrDefault(pkg)
     }
 
     private fun installErrorReason(status: Int, rawMessage: String?): String {

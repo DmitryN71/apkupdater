@@ -1,5 +1,7 @@
 package com.apkupdater.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -85,6 +87,11 @@ fun SearchScreenSuccess(
 ) {
 	val uriHandler = LocalUriHandler.current
 	val context = LocalContext.current
+	// Same as the Updates tab: ask for POST_NOTIFICATIONS the first time the user actually
+	// installs something, so the confirmation and result notifications are not dropped.
+	val notificationPermission = rememberLauncherForActivityResult(
+		ActivityResultContracts.RequestPermission()
+	) {}
 
 	if (state.updates.isEmpty()) {
 		// Three different situations used to show the same "type something to search" hint:
@@ -111,7 +118,7 @@ fun SearchScreenSuccess(
 		items(state.updates, key = { it.id }) { update ->
 			TvSearchItem(
 				update,
-				onInstall = { viewModel.install(update, uriHandler) },
+				onInstall = { viewModel.install(update, uriHandler, notificationPermission) },
 				onOpen = { packageName ->
 					context.packageManager.getLaunchIntentForPackage(packageName)?.let {
 						context.startActivity(it)

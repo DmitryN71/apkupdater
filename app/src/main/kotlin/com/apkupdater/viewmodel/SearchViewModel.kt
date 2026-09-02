@@ -24,6 +24,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,7 +69,7 @@ class SearchViewModel(
     init {
         subscribeToInstallStatus { state.value.updates() }
         subscribeToInstallProgress { progress ->
-            state.value = SearchUiState.Success(state.value.mutableUpdates().setProgress(progress))
+            state.update { it.withUpdates(it.mutableUpdates().setProgress(progress)) }
         }
     }
 
@@ -111,8 +113,27 @@ class SearchViewModel(
                         val installed = getInstalledVersionCode(app.packageName)
                         if (installed > 0L) app.copy(oldVersionCode = installed) else app
                     }
-                    state.value = SearchUiState.Success(enriched)
-                    badger.changeSearchBadge(enriched.size.toString())
+                    // Results arrive one source at a time and each emission replaces the whole
+                    // list. Carry over anything already downloading or installed, or tapping
+                    // Update and then waiting for a slower source turned the card back into
+                    // "Update" mid-download — and tapping it again started a second one.
+                    // Same merge UpdatesViewModel.setSuccess does.
+                    val merged = state.updateAndGet { current ->
+                        val inFlight = current.updates()
+                            .filter { u -> u.isInstalling || u.isInstalled }
+                            .associateBy { u -> u.id }
+                        SearchUiState.Success(enriched.map { fresh ->
+                            inFlight[fresh.id]?.let { live ->
+                                fresh.copy(
+                                    isInstalling = live.isInstalling,
+                                    isInstalled = live.isInstalled,
+                                    progress = live.progress,
+                                    total = live.total
+                                )
+                            } ?: fresh
+                        })
+                    }
+                    badger.changeSearchBadge(merged.updates().size.toString())
                 }.onFailure {
                     badger.changeSearchBadge("!")
                     state.value = SearchUiState.Error
@@ -123,16 +144,20 @@ class SearchViewModel(
         }
     }
 
-    override fun cancelInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(id, false))
-        installer.finish()
+    override fun cancelInstall(id: Int): Job {
+        // Released before queuing behind this screen own mutex — see UpdatesViewModel.
+        installer.finish(id)
+        return viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+            state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, false)) }
+        }
     }
 
-    override fun finishInstall(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-        val updates = state.value.mutableUpdates().setIsInstalled(id)
-        state.value = SearchUiState.Success(updates)
-        badger.changeSearchBadge(updates.count { !it.isInstalled }.toString())
-        installer.finish()
+    override fun finishInstall(id: Int): Job {
+        installer.finish(id)
+        return viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+            val updated = state.updateAndGet { it.withUpdates(it.mutableUpdates().setIsInstalled(id)) }
+            badger.changeSearchBadge(updated.updates().count { !it.isInstalled }.toString())
+        }
     }
 
     // Install work runs in the process-lifetime background scope (not viewModelScope)
@@ -140,10 +165,10 @@ class SearchViewModel(
     override fun downloadAndRootInstall(update: AppUpdate) = background.scope.launch {
         background.begin(update.id, update.name)
         try {
-            state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+            state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
             installMutex.withLock {
                 val link = resolveLink(update)
-                downloadAndRootInstall(update.id, link)
+                downloadAndRootInstall(update.id, update.name, link)
             }
         } finally {
             background.end(update.id)
@@ -153,7 +178,7 @@ class SearchViewModel(
     override fun downloadAndShizukuInstall(update: AppUpdate) = background.scope.launch {
         background.begin(update.id, update.name)
         try {
-            state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+            state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
             installMutex.withLock {
                 val link = resolveLink(update)
                 downloadAndShizukuInstall(update.id, update.name, link)
@@ -167,7 +192,7 @@ class SearchViewModel(
         if(installer.checkPermission()) {
             background.begin(update.id, update.name)
             try {
-                state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(update.id, true))
+                state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
                 installMutex.withLock {
                     val link = resolveLink(update)
                     downloadAndInstall(update.id, update.packageName, link, update.name)
@@ -179,11 +204,11 @@ class SearchViewModel(
     }
 
     override fun startDownloadProgress(id: Int) {
-        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(id, true))
+        state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, true)) }
     }
 
     override fun finishDownloadProgress(id: Int) {
-        state.value = SearchUiState.Success(state.value.mutableUpdates().setIsInstalling(id, false))
+        state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, false)) }
     }
 
 }

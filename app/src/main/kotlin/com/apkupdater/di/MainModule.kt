@@ -241,7 +241,7 @@ val mainModule = module {
 
 	single { Clipboard(androidContext()) }
 
-	single { SessionInstaller(get(), get()) }
+	single { SessionInstaller(get(), get(), get()) }
 
 	single { SnackBar() }
 
@@ -253,7 +253,7 @@ val mainModule = module {
 
 	single { InstallLog() }
 
-	single { BackgroundInstaller(androidContext(), get(), get()) }
+	single { BackgroundInstaller(androidContext(), get(), get(), get()) }
 
 	single { PlayHttpClient(get()) }
 

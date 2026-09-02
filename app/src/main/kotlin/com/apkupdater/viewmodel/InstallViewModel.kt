@@ -3,6 +3,7 @@ package com.apkupdater.viewmodel
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.compose.ui.platform.UriHandler
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -51,7 +52,7 @@ abstract class InstallViewModel(
     private val ruStoreService: RuStoreService,
     protected val context: Context,
     protected val background: BackgroundInstaller,
-    private val notification: UpdatesNotification
+    protected val notification: UpdatesNotification
 ): ViewModel() {
 
     /**
@@ -68,7 +69,27 @@ abstract class InstallViewModel(
         }
     }
 
-    fun install(update: AppUpdate, uriHandler: UriHandler) {
+    /**
+     * [notificationPermission] is asked for here, at the first Update tap, and nowhere else.
+     * Until now the only thing that ever requested POST_NOTIFICATIONS was the scheduled-check
+     * switch, so for anyone who never turned that on every notification this app posts was
+     * silently dropped by the system — including the install confirmation, which is what left
+     * cards stuck at "Cancel 100%". Fire-and-forget: the dialog appears over the app while the
+     * download runs, and the answer is in long before anything needs to be posted.
+     */
+    fun install(
+        update: AppUpdate,
+        uriHandler: UriHandler,
+        notificationPermission: ManagedActivityResultLauncher<String, Boolean>? = null
+    ) {
+        notificationPermission?.let { notification.checkNotificationPermission(it) }
+        // Clear whatever the LAST attempt on this app left in the shade. It has to happen
+        // here, when a new attempt starts — doing it in finishInstall() cancelled the success
+        // notification that had just been posted a line earlier, because both use the same id.
+        // By name as well as by id: the id encodes the version, so a failure recorded before a
+        // newer version appeared is filed under an id this update no longer has.
+        notification.cancelInstallNotification(update.id)
+        notification.cancelFailureFor(update.name)
         // Some releases have no directly downloadable APK (e.g. a GitLab project that only
         // publishes source archives). Without this, Update silently did nothing and Download
         // failed deep inside OkHttp — open the release page so the user can still get it.
@@ -153,11 +174,12 @@ abstract class InstallViewModel(
     // the app, so install success/failure messages were silently never shown.
     protected fun subscribeToInstallStatus(updates: () -> List<AppUpdate>) = installLog.status().onEach {
         sendInstallSnack(updates(), it)
+        // No cleanUp() here any more. This collector runs on the MAIN thread, and the sweep
+        // ends in an OkHttp cache eviction that can block behind an IO-thread one. The last
+        // task out already sweeps, from BackgroundInstaller.end().
         if (it.success) {
-            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
             finishInstall(it.id).join()
         } else {
-            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
             installLog.emitProgress(AppInstallProgress(it.id, 0L))
             cancelInstall(it.id).join()
         }
@@ -169,18 +191,22 @@ abstract class InstallViewModel(
         block(it)
     }.launchIn(viewModelScope)
 
-    protected fun downloadAndRootInstall(id: Int, link: Link) = runCatching {
+    protected fun downloadAndRootInstall(id: Int, name: String, link: Link) = runCatching {
         val fake = prefs.fakePlayStore.get()
         when (link) {
             is Link.Url -> {
                 // Pass the id: without it the call isn't registered anywhere and Cancel can't
                 // reach it — which now matters much more, since a failing download retries.
-                if (installer.rootInstall(downloader.downloadFile(link.link, id), fake)) {
-                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
+                val file = downloader.downloadFile(link.link, id)
+                downloader.beginInstall(id)
+                val error = installer.rootInstall(file, fake)
+                if (error == null) {
+                    if (notifyOnInstall()) snackBar.snackBar(viewModelScope, TextSnack(
+                        stringer.get(R.string.install_success, name), type = SnackType.SUCCESS
+                    ))
                     finishInstall(id)
                 } else {
-                    if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-                    snackInstallFailure("", id = id)
+                    reportFailure(name, error, id)
                     cancelInstall(id)
                 }
             }
@@ -191,8 +217,7 @@ abstract class InstallViewModel(
         }
     }.getOrElse {
         Log.e("InstallViewModel", "Error in downloadAndRootInstall.", it)
-        if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-        snackInstallFailure("", it, id)
+        snackInstallFailure(name, it, id)
         cancelInstall(id)
     }
 
@@ -204,6 +229,7 @@ abstract class InstallViewModel(
                 val file = downloader.downloadFile(link.link, id) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
+                downloader.beginInstall(id)
                 installer.shizukuInstall(file, fake)
             }
             is Link.Play -> {
@@ -228,12 +254,14 @@ abstract class InstallViewModel(
                     downloadedSoFar += file.length()
                     file
                 }
+                downloader.beginInstall(id)
                 installer.shizukuInstallSplit(tempFiles, fake)
             }
             is Link.Xapk -> {
                 val file = downloader.downloadFile(link.link, id) { progress, total ->
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
+                downloader.beginInstall(id)
                 installer.shizukuInstallXapk(file, fake)
             }
             else -> {
@@ -248,9 +276,7 @@ abstract class InstallViewModel(
             ))
             finishInstall(id)
         } else {
-            if (prefs.cleanUpAfterInstall.get()) downloader.cleanUp()
-            val msg = stringer.get(R.string.install_failure, name) + "\n" + error
-            snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
+            reportFailure(name, error, id)
             installLog.emitProgress(AppInstallProgress(id, 0L))
             cancelInstall(id)
         }
@@ -285,11 +311,22 @@ abstract class InstallViewModel(
                 // raised a message-less NPE, which the error classifier could only call an
                 // unknown install error — so Cancel on a Play update answered with a red
                 // failure toast. Say which of the two it was and let the classifier do its job.
-                val streams = files.map { playFile ->
-                    downloader.downloadStream(playFile.url, id) ?: throw IOException(
-                        if (downloader.isCancelled(id)) "Canceled" else "Download failed"
-                    )
+                // Opened one at a time and closed on the way out if a later one fails —
+                // otherwise the earlier response bodies stayed open until the GC noticed.
+                val streams = mutableListOf<java.io.InputStream>()
+                try {
+                    files.forEach { playFile ->
+                        streams += downloader.downloadStream(playFile.url, id) ?: throw IOException(
+                            if (downloader.isCancelled(id)) "Canceled" else "Download failed"
+                        )
+                    }
+                } catch (t: Throwable) {
+                    streams.forEach { runCatching { it.close() } }
+                    throw t
                 }
+                // No beginInstall() here: these streams carry the download itself, and it
+                // runs inside playInstall. SessionInstaller marks the point of no return once
+                // the bytes are actually in the session.
                 installer.playInstall(id, packageName, streams)
             }
             is Link.Url -> {
@@ -299,6 +336,11 @@ abstract class InstallViewModel(
                 val file = downloader.downloadFile(link.link, id) { downloaded, total ->
                     installLog.emitProgress(AppInstallProgress(id, downloaded, total))
                 }
+                // Before verifyPackage, which parses the whole APK and takes a noticeable
+                // moment on a big one. A Cancel landing in there stops nothing anyway, and
+                // would leave the flag raised to mute the install's own failure. The root path
+                // marks it at the same point.
+                downloader.beginInstall(id)
                 val wrongPackage = installer.verifyPackage(file, packageName)
                 if (wrongPackage != null) {
                     file.delete()
@@ -321,6 +363,7 @@ abstract class InstallViewModel(
                     if (result.size > 0) {
                         installLog.emitProgress(AppInstallProgress(id, 0L, result.size))
                     }
+                    // Same as the Play branch: the transfer happens inside installXapk.
                     installer.installXapk(id, packageName, result.stream, result.size)
                 } else {
                     // downloadStreamWithSize swallows its own exceptions and returns null, so
@@ -352,13 +395,45 @@ abstract class InstallViewModel(
      * .onFailure handlers, which call cancelInstall(id) to reset UI state.
      */
     fun userCancelInstall(id: Int) {
+        // Once the installer has the file there is nothing left to abort: no HTTP call to
+        // cancel, and pm/the session is already running. Pressing Cancel then used to do
+        // NOTHING AT ALL — the button kept saying Cancel, the install went ahead — and worse,
+        // it left the cancel flag raised, which made snackInstallFailure swallow the install's
+        // own failure a moment later. Say so instead of lying twice.
+        if (!downloader.isCancellable(id)) {
+            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.cancel_too_late)))
+            return
+        }
         downloader.cancel(id)
     }
 
     /**
-     * Reports a failed download/install. Every install path must call this: silence was the
-     * single most confusing thing users hit ("it downloads, then nothing happens"). Only a
-     * cancel the user asked for stays quiet.
+     * Reports a failure by whichever route the user can actually see.
+     *
+     * An in-app message emitted while the app is off screen is DROPPED — SnackBar is a
+     * SharedFlow with no replay, so with nobody collecting it simply evaporates. That is why a
+     * backgrounded batch update used to report nothing at all for the ones that failed.
+     */
+    protected fun reportFailure(name: String, reason: String, id: Int?) {
+        // Only skip the in-app message when the notification ACTUALLY went out. It is dropped
+        // without a word when notifications are not permitted, and returning regardless left a
+        // backgrounded failure completely silent for exactly the people who had denied that
+        // permission — worse than before this existed. The in-app message is not as useless as
+        // it first looks either: the collector lives in the composition, so while the Activity
+        // is merely stopped the message is queued and does reach the user on return. It is
+        // only lost once the Activity is destroyed, which is what the notification is for.
+        if (!AppVisibility.foreground && name.isNotBlank() &&
+            notification.showInstallFailureNotification(name, reason, id ?: 0)
+        ) return
+        val msg = stringer.get(R.string.install_failure, name).trim() +
+            if (reason.isNotBlank()) "\n" + reason else ""
+        snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
+    }
+
+    /**
+     * Turns a Throwable into a reason and reports it. Every install path must call this:
+     * silence was the single most confusing thing users hit ("it downloads, then nothing
+     * happens"). Only a cancel the user asked for stays quiet.
      */
     protected fun snackInstallFailure(name: String, error: Throwable? = null, id: Int? = null) {
         // Ask the downloader outright rather than reading tea leaves in the exception text.
@@ -374,8 +449,7 @@ abstract class InstallViewModel(
             isNetworkError(error) || isDownloadError(error) -> stringer.get(R.string.download_failed)
             else -> stringer.get(installErrorResId(error.message))
         }
-        val msg = stringer.get(R.string.install_failure, name).trim() + "\n" + reason
-        snackBar.snackBar(viewModelScope, TextSnack(msg, type = SnackType.ERROR))
+        reportFailure(name, reason, id)
     }
 
     private fun sendInstallSnack(updates: List<AppUpdate>, log: AppInstallStatus) {
@@ -386,6 +460,12 @@ abstract class InstallViewModel(
         // Search, whose list is empty. Failures raised by the install paths themselves go
         // through snackInstallFailure and are unaffected by this.
         val name = updates.find { log.id == it.id }?.name ?: return
+        // Only when the user is actually looking. This collector lives in viewModelScope, so
+        // once the Activity is destroyed it is cancelled and never runs at all — which is
+        // exactly when a message matters most. InstallReceiver owns both notifications for
+        // this path: it is a BroadcastReceiver, it is process-scoped, and it always runs.
+        // Without this check the two would double up whenever the app was merely stopped.
+        if (!AppVisibility.foreground) return
         if (log.success) {
             if (!notifyOnInstall()) return
             snackBar.snackBar(viewModelScope, TextSnack(
