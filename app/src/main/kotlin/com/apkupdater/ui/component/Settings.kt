@@ -310,12 +310,17 @@ fun ButtonSetting(
 }
 
 /**
- * One row on the Settings front page, opening a category screen.
+ * A tappable row with a title, an optional subtitle and an icon — the Settings front page rows
+ * that open a category, and inside a category any row whose whole job is one action.
  *
  * Same focus treatment as [SwitchSetting] — the whole row fills on D-pad focus — because these
- * rows are now the first thing a TV user lands on, and a full-width fill cannot look crooked.
- * The subtitle carries the state worth knowing without opening anything: how many sources are
- * enabled, which installer is in use.
+ * rows are the first thing a TV user lands on, and a full-width fill cannot look crooked. The
+ * subtitle carries the state worth knowing without opening anything: how many sources are
+ * enabled, which installer is in use, where downloads are saved.
+ *
+ * Set [trailingArrow] false for a row that acts rather than navigates. One action per row and
+ * nothing focusable nested inside it, so the D-pad has exactly one stop here — that is why the
+ * download folder is offered as two rows (pick, reset) instead of a row with a clear button.
  */
 @Composable
 fun SettingsCategory(
@@ -323,6 +328,7 @@ fun SettingsCategory(
     subtitle: String?,
     @DrawableRes icon: Int,
     modifier: Modifier = Modifier,
+    trailingArrow: Boolean = true,
     onClick: () -> Unit
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -355,6 +361,6 @@ fun SettingsCategory(
                 )
             }
         }
-        Icon(Icons.Filled.KeyboardArrowRight, null, tint = contentColor)
+        if (trailingArrow) Icon(Icons.Filled.KeyboardArrowRight, null, tint = contentColor)
     }
 }

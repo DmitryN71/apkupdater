@@ -16,6 +16,7 @@ import com.apkupdater.repository.AppsRepository
 import com.apkupdater.ui.theme.isDarkTheme
 import com.apkupdater.util.Clipboard
 import com.apkupdater.util.CrashHandler
+import com.apkupdater.util.DownloadFolder
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import com.apkupdater.util.Themer
@@ -118,6 +119,59 @@ class SettingsViewModel(
 	fun setCleanUpAfterInstall(b: Boolean) = prefs.cleanUpAfterInstall.put(b)
 	fun getNotifyOnInstall() = prefs.notifyOnInstall.get()
 	fun setNotifyOnInstall(b: Boolean) = prefs.notifyOnInstall.put(b)
+
+	/**
+	 * The folder shown under the setting, or null while the default is in use. A StateFlow
+	 * rather than a getter because the picker returns asynchronously and the row has to catch
+	 * up on its own; [refreshDownloadFolder] also re-checks the grant, which the user can
+	 * revoke from system settings behind our back.
+	 */
+	private val _downloadFolder = MutableStateFlow(downloadFolderLabel())
+	val downloadFolder: StateFlow<String?> = _downloadFolder
+
+	private fun downloadFolderLabel(): String? {
+		val uri = prefs.downloadFolder.get()
+		if (uri.isEmpty()) return null
+		if (!DownloadFolder.isUsable(context, uri)) {
+			// The grant did not survive but the pref did: a reinstall restores prefs from
+			// backup and never the grant, or the app providing the folder is gone. Left in
+			// place, the pref would turn every download into the red fallback message while
+			// this screen showed the default and offered no reset. Clearing it makes both
+			// sides agree again. Runs at app start too, since MainScreen builds this ViewModel.
+			prefs.downloadFolder.put("")
+			return null
+		}
+		return DownloadFolder.label(context, uri)
+	}
+
+	fun refreshDownloadFolder() { _downloadFolder.value = downloadFolderLabel() }
+
+	/**
+	 * Stores the picked folder only if the grant on it actually stuck. Storing a Uri we cannot
+	 * write to would show the user a folder their downloads never reach.
+	 */
+	fun setDownloadFolder(uri: Uri) {
+		val previous = prefs.downloadFolder.get()
+		if (DownloadFolder.remember(context, previous, uri)) {
+			prefs.downloadFolder.put(uri.toString())
+		} else {
+			snackBar.snackBar(viewModelScope, TextSnack(
+				stringer.get(R.string.download_folder_failed), type = SnackType.ERROR
+			))
+		}
+		refreshDownloadFolder()
+	}
+
+	fun resetDownloadFolder() {
+		DownloadFolder.release(context, prefs.downloadFolder.get())
+		prefs.downloadFolder.put("")
+		refreshDownloadFolder()
+	}
+
+	fun downloadFolderUnavailable() = snackBar.snackBar(viewModelScope, TextSnack(
+		stringer.get(R.string.download_folder_no_picker), type = SnackType.ERROR
+	))
+
 	fun getAlarmHour() = prefs.alarmHour.get()
 	fun getAlarmFrequency() = prefs.alarmFrequency.get()
 	fun getTheme() = prefs.theme.get()
@@ -194,7 +248,12 @@ class SettingsViewModel(
 
 	fun setSources() { state.value = SettingsUiState.Sources }
 	fun setUpdates() { state.value = SettingsUiState.Updates }
-	fun setInstall() { state.value = SettingsUiState.Install }
+	fun setInstall() {
+		// The grant can be revoked from system settings while we are not looking, so re-check
+		// it on the way in rather than trusting what was read when the ViewModel was built.
+		refreshDownloadFolder()
+		state.value = SettingsUiState.Install
+	}
 	fun setAppearance() { state.value = SettingsUiState.Appearance }
 	fun setTools() { state.value = SettingsUiState.Tools }
 

@@ -1,10 +1,7 @@
 package com.apkupdater.viewmodel
 
-import android.content.ContentValues
 import android.content.Context
 import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
 import androidx.compose.ui.platform.UriHandler
 import androidx.lifecycle.ViewModel
@@ -25,6 +22,7 @@ import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.AppVisibility
 import com.apkupdater.util.BackgroundInstaller
+import com.apkupdater.util.DownloadFolder
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.randomUUID
 import com.apkupdater.util.InstallLog
@@ -325,7 +323,13 @@ abstract class InstallViewModel(
                     }
                     installer.installXapk(id, packageName, result.stream, result.size)
                 } else {
+                    // downloadStreamWithSize swallows its own exceptions and returns null, so
+                    // nothing ever reached snackInstallFailure — the one branch 117 left silent.
                     Log.e("InstallViewModel", "Failed to download XAPK")
+                    installLog.emitProgress(AppInstallProgress(id, 0L))
+                    snackInstallFailure(name, IOException(
+                        if (downloader.isCancelled(id)) "Canceled" else "Download failed"
+                    ), id)
                     cancelInstall(id)
                 }
             }
@@ -478,18 +482,12 @@ abstract class InstallViewModel(
                         return@launch
                     }
 
-                    // Use application/octet-stream for both .apk and .xapk to prevent
-                    // MediaStore from appending an extension based on MIME type
-                    // (previously .xapk was getting saved as .xapk.zip).
-                    val mime = "application/octet-stream"
-                    saveToDownloads(tempFile, fileName, mime)
+                    val saved = saveToFolder(tempFile, fileName)
                     tempFile.delete()
                     downloader.cleanUp()
                     finishDownloadProgress(update.id)
 
-                    snackBar.snackBar(viewModelScope, TextSnack(
-                        stringer.get(R.string.saved_to_downloads, fileName), type = SnackType.SUCCESS
-                    ))
+                    snackBar.snackBar(viewModelScope, savedSnack(saved))
                 }
                 else -> {
                     finishDownloadProgress(update.id)
@@ -502,7 +500,11 @@ abstract class InstallViewModel(
             Log.e("InstallViewModel", "Error downloading to folder", it)
             downloader.cleanUp()
             finishDownloadProgress(update.id)
-            if (!isNetworkError(it) && !isCancellation(it)) {
+            // Ask the downloader whether this was the user's Cancel, as the install paths do
+            // since 129. Filtering on the exception text hid every real network failure — a
+            // Wi-Fi drop that outlived the retries ended in silence — while a cancel whose
+            // exception happened not to say "canceled" showed "Download failed".
+            if (!downloader.isCancelled(update.id)) {
                 snackBar.snackBar(viewModelScope, TextSnack(
                     stringer.get(R.string.download_failed), type = SnackType.ERROR
                 ))
@@ -550,37 +552,28 @@ abstract class InstallViewModel(
         }
 
         val fileName = "$safeName-${version}.apks"
-        saveToDownloads(apksFile, fileName, "application/octet-stream")
-        apksFile.delete()
+        // The zip sits in cacheDir's root, which no sweep touches — delete it on every exit,
+        // including a save that throws.
+        val saved = try { saveToFolder(apksFile, fileName) } finally { apksFile.delete() }
         downloader.cleanUp()
         finishDownloadProgress(id)
 
-        snackBar.snackBar(viewModelScope, TextSnack(
-            stringer.get(R.string.saved_to_downloads, fileName), type = SnackType.SUCCESS
-        ))
+        snackBar.snackBar(viewModelScope, savedSnack(saved))
     }
 
-    private fun saveToDownloads(file: File, fileName: String, mimeType: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                put(MediaStore.Downloads.MIME_TYPE, mimeType)
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + File.separator + "APKUpdater")
-            }
-            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            uri?.let {
-                context.contentResolver.openOutputStream(it)?.use { output ->
-                    file.inputStream().use { input -> input.copyTo(output) }
-                }
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val targetDir = File(downloadsDir, "APKUpdater").apply { if (!exists()) mkdirs() }
-            val dest = File(targetDir, fileName)
-            file.copyTo(dest, overwrite = true)
-        }
-    }
+    private fun saveToFolder(file: File, fileName: String) =
+        DownloadFolder.save(context, prefs.downloadFolder.get(), file, fileName)
+
+    /**
+     * A fallback is reported differently on purpose. The user chose a folder, so telling them
+     * "Saved: Foo.apk" while the file went to Downloads would send them looking in the wrong
+     * place — the one failure mode of this feature that costs them real time.
+     */
+    private fun savedSnack(saved: DownloadFolder.Saved) = TextSnack(
+        if (saved.usedFallback) stringer.get(R.string.saved_to_downloads_fallback, saved.fileName)
+        else stringer.get(R.string.saved_to_downloads, saved.fileName),
+        type = if (saved.usedFallback) SnackType.ERROR else SnackType.SUCCESS
+    )
 
     protected abstract fun downloadAndInstall(update: AppUpdate): Job
     protected abstract fun downloadAndRootInstall(update: AppUpdate): Job

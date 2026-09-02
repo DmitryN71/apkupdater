@@ -93,6 +93,12 @@
     <string name="downloading_file">Downloading %1$s…</string>
     <string name="download_failed">Download failed.</string>
     <string name="saved_to_downloads">Saved: %1$s</string>
+    <string name="saved_to_downloads_fallback">Chosen folder unavailable, saved to Downloads: %1$s</string>
+    <string name="download_folder">Download Folder</string>
+    <string name="download_folder_default">Downloads/APKUpdater</string>
+    <string name="download_folder_reset">Use the Default Folder</string>
+    <string name="download_folder_no_picker">This device has no folder picker.</string>
+    <string name="download_folder_failed">Could not keep access to that folder.</string>
     <string name="clean_up_after_install">Clean Up After Install</string>
     <string name="notify_on_install">Notify After Install</string>
     <string name="source_apkmirror" translatable="false">ApkMirror</string>

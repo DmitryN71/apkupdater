@@ -321,7 +321,12 @@ class UpdatesViewModel(
 	}
 
 	fun installAll(uriHandler: androidx.compose.ui.platform.UriHandler) {
-		val updates = state.value.updates().filter { !it.isInstalling && !it.isInstalled }
+		// ApkMirror has no direct download — install() opens its page in the browser — so
+		// "Update all" used to open one browser tab per ApkMirror update on top of the real
+		// installs. Those stay a manual tap.
+		val updates = state.value.updates().filter {
+			!it.isInstalling && !it.isInstalled && it.source != com.apkupdater.data.ui.ApkMirrorSource
+		}
 		updates.forEach { update -> install(update, uriHandler) }
 	}
 

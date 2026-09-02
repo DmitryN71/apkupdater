@@ -90,6 +90,12 @@
     <string name="downloading_file">Скачивание %1$s…</string>
     <string name="download_failed">Ошибка скачивания.</string>
     <string name="saved_to_downloads">Сохранено: %1$s</string>
+    <string name="saved_to_downloads_fallback">Выбранная папка недоступна, сохранено в Загрузки: %1$s</string>
+    <string name="download_folder">Папка для скачивания</string>
+    <string name="download_folder_default">Загрузки/APKUpdater</string>
+    <string name="download_folder_reset">Вернуть папку по умолчанию</string>
+    <string name="download_folder_no_picker">На этом устройстве нет системного выбора папок.</string>
+    <string name="download_folder_failed">Не удалось получить доступ к этой папке.</string>
     <string name="clean_up_after_install">Очистить после установки</string>
     <string name="notify_on_install">Уведомлять после установки</string>
     <string name="source_errors">%1$d из %2$d источников не удалось проверить.</string>

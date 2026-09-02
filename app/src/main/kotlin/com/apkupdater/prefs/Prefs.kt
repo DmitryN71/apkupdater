@@ -46,6 +46,9 @@ class Prefs(
 	// confusing thing users hit, and this switch exists to unclutter batch updates, where
 	// the success popups pile up over the Cancel buttons.
 	val notifyOnInstall = boolean("notifyOnInstall", defValue = true, backed = true)
+	// A tree Uri from the system folder picker, empty meaning Downloads/APKUpdater. Only ever
+	// written together with a persisted grant on it — see util/DownloadFolder.
+	val downloadFolder = string("downloadFolder", defValue = "", backed = true)
 	val lastTab = string("lastTab", defValue = Screen.Updates.route, backed = true)
 	val playAuthData = json("playAuthData", AuthData("", ""), true)
 	val lastPlayCheck = long("lastPlayCheck", 0L, true)

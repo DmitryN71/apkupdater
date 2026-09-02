@@ -417,6 +417,43 @@ fun InstallSettings(viewModel: SettingsViewModel) = LazyColumn {
 			stringResource(R.string.notify_on_install),
 			R.drawable.ic_notification
 		)
+
+		// Last on purpose: the installer switches above are why people open this screen, and
+		// the reset row below appears and disappears — at the bottom that shifts nothing.
+		// The picker returns a tree Uri; the ViewModel takes the grant on it before storing it,
+		// so a folder we cannot actually write to never becomes the setting.
+		val folderPicker = rememberLauncherForActivityResult(
+			ActivityResultContracts.OpenDocumentTree()
+		) { uri -> if (uri != null) viewModel.setDownloadFolder(uri) }
+		val folder = viewModel.downloadFolder.collectAsStateWithLifecycle().value
+		val folderRowFocus = remember { FocusRequester() }
+		val isTv = LocalContext.current.isAndroidTv()
+		SettingsCategory(
+			stringResource(R.string.download_folder),
+			folder ?: stringResource(R.string.download_folder_default),
+			R.drawable.ic_folder,
+			modifier = Modifier.focusRequester(folderRowFocus),
+			trailingArrow = false
+		) {
+			// Plenty of TV boxes ship without a documents provider, and launch() throws
+			// ActivityNotFoundException there rather than returning a null result.
+			runCatching { folderPicker.launch(null) }
+				.onFailure { viewModel.downloadFolderUnavailable() }
+		}
+		if (folder != null) {
+			SettingsCategory(
+				stringResource(R.string.download_folder_reset),
+				null,
+				R.drawable.ic_cleanup,
+				trailingArrow = false
+			) {
+				// This row removes itself on OK. Move focus off it FIRST, or the D-pad falls
+				// to the bottom bar — the very fault 137 fixed on Updates and Settings. TV
+				// only: on a phone a programmatic focus would paint the row's focus fill.
+				if (isTv) runCatching { folderRowFocus.requestFocus() }
+				viewModel.resetDownloadFolder()
+			}
+		}
 	}
 }
 

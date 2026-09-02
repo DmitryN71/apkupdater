@@ -53,6 +53,7 @@ import com.apkupdater.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import com.apkupdater.util.isAndroidTv
+import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.ui.component.DefaultErrorScreen
@@ -215,7 +216,9 @@ fun ColumnScope.UpdatesScreenSuccess(
 		}
 	} else {
 		val firstId = updates.firstOrNull()?.id
-		val pendingUpdates = updates.filter { !it.isInstalled }
+		// Same exclusion as installAll: an ApkMirror update cannot be batch-installed, so it
+		// must not be what makes the button appear.
+		val pendingUpdates = updates.filter { !it.isInstalled && it.source != ApkMirrorSource }
 		val showFab = pendingUpdates.size > 1 && !pendingUpdates.any { it.isInstalling }
 		val gridPadding = if (showFab) PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
 			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
