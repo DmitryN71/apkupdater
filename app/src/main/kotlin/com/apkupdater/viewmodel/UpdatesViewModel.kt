@@ -343,9 +343,8 @@ class UpdatesViewModel(
 				}
 				is com.apkupdater.data.ui.Link.Play -> {
 					val playFiles = link.getInstallFiles()
-					// No usable file means Play refused delivery — a 429 throttle hands back
-					// entries with an empty url, which PlayRepository drops. Explain that
-					// rather than letting it surface as a nameless download failure.
+					// Belt only: a refusal throws since gplayapi 3.6 and is worded by
+					// playErrorResId; an empty list here would be a library change.
 					if (playFiles.isEmpty()) {
 						snackBar.snackBar(viewModelScope, TextSnack(
 							stringer.get(R.string.play_no_files),

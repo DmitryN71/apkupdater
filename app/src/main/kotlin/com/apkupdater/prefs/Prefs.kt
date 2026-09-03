@@ -2,7 +2,6 @@ package com.apkupdater.prefs
 
 import com.apkupdater.data.github.CustomGitRepo
 import com.apkupdater.data.ui.Screen
-import com.aurora.gplayapi.data.models.AuthData
 import com.kryptoprefs.context.KryptoContext
 import com.kryptoprefs.gson.json
 import com.kryptoprefs.preferences.KryptoPrefs
@@ -50,7 +49,10 @@ class Prefs(
 	// written together with a persisted grant on it — see util/DownloadFolder.
 	val downloadFolder = string("downloadFolder", defValue = "", backed = true)
 	val lastTab = string("lastTab", defValue = Screen.Updates.route, backed = true)
-	val playAuthData = json("playAuthData", AuthData("", ""), true)
+	// The Play session as a JSON string, written and read with the library's own serialiser
+	// (see PlayRepository). Until build 142 this was a Gson-backed object under a different
+	// key; that key is simply left behind and a fresh anonymous sign-in happens once.
+	val playAuthJson = string("playAuthJson", defValue = "", backed = true)
 	val lastPlayCheck = long("lastPlayCheck", 0L, true)
 	// Device properties are uploaded once, when the Play session is created, so a saved
 	// session keeps using whatever profile it was made with. Bumping the version constant in

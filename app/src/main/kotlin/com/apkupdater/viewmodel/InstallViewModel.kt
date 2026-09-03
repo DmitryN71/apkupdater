@@ -32,7 +32,7 @@ import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.installErrorResId
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
-import com.aurora.gplayapi.exceptions.ApiException
+import com.aurora.gplayapi.exceptions.GooglePlayException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
@@ -234,9 +234,7 @@ abstract class InstallViewModel(
             }
             is Link.Play -> {
                 val files = link.getInstallFiles()
-                // Same guard the standard path has had since 117: no usable file means Play
-                // refused delivery (a 429 throttle yields entries with an empty url, which
-                // PlayRepository now drops). Say so instead of failing deep in the downloader.
+                // Belt only, as in downloadAndInstall: a refusal throws since gplayapi 3.6.
                 if (files.isEmpty()) {
                     snackBar.snackBar(viewModelScope, TextSnack(
                         stringer.get(R.string.play_no_files), type = SnackType.ERROR))
@@ -297,10 +295,9 @@ abstract class InstallViewModel(
             is Link.Play -> {
                 val files = link.getInstallFiles()
                 if (files.isEmpty()) {
-                    // Play gave us no usable file. NOT the paid-app case — that throws
-                    // AppNotPurchased and is answered by playErrorResId. In practice this is a
-                    // throttled delivery (HTTP 429). Committing an empty session would fail
-                    // cryptically, so explain it instead.
+                    // Belt only: since gplayapi 3.6 a refused delivery THROWS (Unknown) and
+                    // is answered by playErrorResId, so this list cannot be empty any more.
+                    // Kept so a future library change cannot commit an empty session.
                     snackBar.snackBar(viewModelScope, TextSnack(
                         stringer.get(R.string.play_no_files), type = SnackType.ERROR))
                     cancelInstall(id)
@@ -503,10 +500,17 @@ abstract class InstallViewModel(
      * minification, unlike hunting for substrings that aren't there in the first place.
      */
     private fun playErrorResId(error: Throwable): Int? = when (error) {
-        is ApiException.AppNotSupported -> R.string.play_not_supported
-        is ApiException.AppNotPurchased -> R.string.play_not_purchased
-        is ApiException.AppRemoved, is ApiException.AppNotFound -> R.string.play_app_removed
-        is ApiException.EmptyDownloads -> R.string.play_no_files
+        // A sealed class extending Exception since gplayapi 3.6, with a real message in it —
+        // the old ApiException nested types carried none, which is why every Play refusal
+        // once read "unexpected error". Matching on type is still the honest way to word it.
+        is GooglePlayException.AppNotSupported -> R.string.play_not_supported
+        is GooglePlayException.AppNotPurchased -> R.string.play_not_purchased
+        is GooglePlayException.AppRemoved, is GooglePlayException.NotFound -> R.string.play_app_removed
+        // A refused delivery THROWS now: a 429 throttle arrives as Unknown(429), an empty file
+        // list as Unknown(-1). Both mean "no link right now", which is what play_no_files says.
+        is GooglePlayException.EmptyDownloads, is GooglePlayException.Unknown -> R.string.play_no_files
+        is GooglePlayException.AuthException -> R.string.play_no_files
+        is GooglePlayException.Server -> R.string.download_failed
         else -> null
     }
 
@@ -540,10 +544,10 @@ abstract class InstallViewModel(
             when (link) {
                 is Link.Play -> downloadPlayToFolder(update.id, safeName, update.version, link)
                 is Link.Url, is Link.Xapk -> {
+                    // Exhaustive: the outer branch already narrowed link to Url or Xapk.
                     val url = when (link) {
                         is Link.Url -> link.link
                         is Link.Xapk -> link.link
-                        else -> return@launch
                     }
                     val isXapk = link is Link.Xapk || url.contains(".xapk", true)
                     val ext = if (isXapk) "xapk" else "apk"
@@ -585,8 +589,10 @@ abstract class InstallViewModel(
             // Wi-Fi drop that outlived the retries ended in silence — while a cancel whose
             // exception happened not to say "canceled" showed "Download failed".
             if (!downloader.isCancelled(update.id)) {
+                // A Play refusal is an exception now, and it reaches this path too: say what
+                // Play said rather than a generic "download failed".
                 snackBar.snackBar(viewModelScope, TextSnack(
-                    stringer.get(R.string.download_failed), type = SnackType.ERROR
+                    stringer.get(playErrorResId(it) ?: R.string.download_failed), type = SnackType.ERROR
                 ))
             }
         }

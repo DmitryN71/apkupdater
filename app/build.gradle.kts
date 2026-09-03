@@ -1,6 +1,7 @@
 import java.util.Properties
 import java.io.FileInputStream
 import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("com.android.application")
@@ -17,7 +18,7 @@ android {
         applicationId = "com.apkupdater" + System.getenv("BUILD_TAG").orEmpty()
         minSdk = 21
         targetSdk = 35
-        versionCode = 141
+        versionCode = 142
         versionName = if (buildNumber.isEmpty()) "3.7.0" else "0.0.$buildNumber"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -64,7 +65,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -79,6 +79,23 @@ android {
     lint {
         warning.addAll(arrayOf("ExtraTranslation", "MissingTranslation", "MissingQuantity"))
     }
+}
+
+// The kotlinOptions {} block this replaces has been deprecated since Kotlin 2.0 and is not
+// guaranteed to exist in 2.3.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+configurations.all {
+    // kotlin-parcelize-runtime, pulled in by gplayapi 3.6, ships every kotlinx.android.parcel
+    // class that the long-retired kotlin-android-extensions-runtime 1.3.50 (2019) does. An old
+    // transitive dependency still asks for the latter, and the two collide at packaging with
+    // "Duplicate class kotlinx.android.parcel.Parcelize". The only classes lost by dropping the
+    // old one are kotlinx.android.extensions.* — synthetic view binding, which nothing here uses.
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-android-extensions-runtime")
 }
 
 dependencies {
@@ -99,11 +116,25 @@ dependencies {
     implementation("com.github.topjohnwu.libsu:core:5.2.1")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
-    implementation("com.aurora:gplayapi:3.2.11")
+    // New group id: 3.5.7 onward is published as com.auroraoss. Not a version bump — this is
+    // what forced Kotlin 2.3 and OkHttp 5 above, and it renamed half the surface we touch.
+    // serialization-json is a runtime-only dependency of the library, so it has to be named
+    // here to be on our compile classpath: the Play session is persisted with the library's
+    // own serialiser now, not Gson.
+    implementation("com.auroraoss:gplayapi:3.6.4")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    // Also runtime-only in the AAR pom. Needed at COMPILE time to walk the search response
+    // ourselves — see PlayRepository.search. Same version the library resolves, so nothing
+    // new is packaged.
+    implementation("com.google.protobuf:protobuf-javalite:4.34.1")
     implementation("com.google.code.gson:gson:2.11.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
+    // OkHttp 5: gplayapi 3.6.x depends on 5.3.2, and Gradle would resolve to it anyway, so
+    // pin it and keep the interceptor on the same line. Retrofit 3 is the release built
+    // against the Kotlin-era OkHttp; it keeps binary compatibility with 2.x.
+    implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation("com.squareup.okhttp3:logging-interceptor:5.3.2")
+    implementation("com.squareup.retrofit2:converter-gson:3.0.0")
+    implementation("com.squareup.retrofit2:retrofit:3.0.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.github.g00fy2:versioncompare:1.5.0")
     implementation("io.insert-koin:koin-android:3.5.6")

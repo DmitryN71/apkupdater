@@ -156,6 +156,24 @@ class PlayHttpClient(
         return processRequest(request)
     }
 
+    /**
+     * Raw bytes of the last Play search response.
+     *
+     * gplayapi 3.6.1+ collapses a search into ONE result cluster (it keys every cluster of a
+     * search by the same id and puts them in a map), so the library's own return value drops
+     * most of what Play sent. The bytes are kept here so PlayRepository can walk the response
+     * itself with the library's public parsing methods. Taken, not read: clearing on read means
+     * a response left behind by a search the user has already replaced cannot be consumed twice.
+     */
+    @Volatile
+    private var searchBytes: ByteArray? = null
+
+    fun takeSearchResponse(): ByteArray? {
+        val bytes = searchBytes
+        searchBytes = null
+        return bytes
+    }
+
     private fun processRequest(request: Request): PlayResponse {
         // Reset response code as flow doesn't sends the same value twice
         _responseCode.value = 0
@@ -184,27 +202,30 @@ class PlayHttpClient(
         private set
 
     private fun buildPlayResponse(response: Response): PlayResponse {
-        return PlayResponse().apply {
-            isSuccessful = response.isSuccessful
-            code = response.code
-
-            if (response.body != null) {
-                responseBytes = response.body!!.bytes()
-            }
-
-            if (!isSuccessful) {
-                errorString = response.message
-            }
-        }.also {
-            if (response.code == 429) {
-                lastRetryAfterSeconds = response.header("Retry-After")?.toLongOrNull() ?: 0L
-                Log.w(
-                    "PlayHttpClient",
-                    "Play throttled us: HTTP 429, Retry-After=${response.header("Retry-After") ?: "absent"} ${response.request.url}"
-                )
-            }
-            _responseCode.value = response.code
-            Log.i("PlayHttpClient", "OKHTTP [${response.code}] ${response.request.url}")
+        // Built in one go: PlayResponse is an immutable data class since gplayapi 3.6. Mirrors
+        // the library's own DefaultHttpClient. The content type is not decoration — on a
+        // failed request bytesOrThrow() uses it to decide whether the body is a protobuf
+        // ServerResponse carrying Google's own error message, or plain text to show as-is.
+        // OkHttp 5's body is never null; an absent body reads as empty.
+        val bytes = response.body.bytes()
+        if (response.code == 429) {
+            lastRetryAfterSeconds = response.header("Retry-After")?.toLongOrNull() ?: 0L
+            Log.w(
+                "PlayHttpClient",
+                "Play throttled us: HTTP 429, Retry-After=${response.header("Retry-After") ?: "absent"} ${response.request.url}"
+            )
         }
+        _responseCode.value = response.code
+        if (response.isSuccessful && response.request.url.encodedPath.endsWith("/fdfe/search")) {
+            searchBytes = bytes
+        }
+        Log.i("PlayHttpClient", "OKHTTP [${response.code}] ${response.request.url}")
+        return PlayResponse(
+            isSuccessful = response.isSuccessful,
+            code = response.code,
+            responseBytes = bytes,
+            errorString = if (!response.isSuccessful) response.message else String(),
+            type = response.header("Content-Type", "application/octet-stream")
+        )
     }
 }

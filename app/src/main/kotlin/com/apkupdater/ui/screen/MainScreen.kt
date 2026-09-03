@@ -231,17 +231,19 @@ fun intentListener(
 	updatesViewModel: UpdatesViewModel,
 	navController: NavController,
 	launcher: ManagedActivityResultLauncher<Intent, ActivityResult>
-) = runCatching {
-	val activity = LocalContext.current as ComponentActivity
+) {
+	// No runCatching around composable calls — the Compose compiler that ships with Kotlin
+	// 2.3 rejects it outright, and it only ever guarded the cast below. A safe cast does that.
+	val activity = LocalContext.current as? ComponentActivity ?: return
 	DisposableEffect(Unit) {
 		val listener = Consumer<Intent> {
-			mainViewModel.processIntent(it, launcher, updatesViewModel, navController)
+			runCatching {
+				mainViewModel.processIntent(it, launcher, updatesViewModel, navController)
+			}.onFailure { e -> Log.e("MainScreen", "Error handling intent.", e) }
 		}
 		activity.addOnNewIntentListener(listener)
 		onDispose { activity.removeOnNewIntentListener(listener) }
 	}
-}.getOrElse {
-	Log.e("MainScreen", "Error listening to intent.", it)
 }
 
 @Composable
