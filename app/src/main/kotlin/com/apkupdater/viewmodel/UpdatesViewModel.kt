@@ -67,6 +67,19 @@ class UpdatesViewModel(
 	 */
 	private val _isChecking = MutableStateFlow(false)
 	val isChecking: StateFlow<Boolean> = _isChecking
+
+	/**
+	 * How far the running check has got, 0f..1f, or null while that is not yet known.
+	 *
+	 * The sources have been reporting their completion counts since build 140 — the Loading
+	 * state has carried `completed` and `total` all along and nothing has ever read them. The
+	 * button fills a ring with them now instead of turning meaninglessly. Null covers the two
+	 * moments where a fraction would be a lie: before the app list is read, when even the
+	 * number of sources is unknown, and at nought answered, where an empty ring on a
+	 * just-pressed button reads as a freeze. Both spin instead.
+	 */
+	private val _checkProgress = MutableStateFlow<Float?>(null)
+	val checkProgress: StateFlow<Float?> = _checkProgress
 	private var refreshJob: Job? = null
 	/** Bumped by every new check and by every cancel, so a superseded one keeps its hands off. */
 	private val refreshGeneration = AtomicInteger(0)
@@ -98,6 +111,7 @@ class UpdatesViewModel(
 		job.cancel()
 		_isChecking.value = false
 		_refreshProgress.value = null
+		_checkProgress.value = null
 		// What the sources managed to answer with, if any of them did. Stopping a check with
 		// only one slow source left used to publish an empty list and claim "All up to date",
 		// because the results of the eight that had already answered lived nowhere the screen
@@ -152,6 +166,7 @@ class UpdatesViewModel(
 		val mine = refreshGeneration.incrementAndGet()
 		val job = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 			_isChecking.value = true
+			_checkProgress.value = null
 			var emitted = false
 			partialResults = emptyList()
 			try {
@@ -170,18 +185,31 @@ class UpdatesViewModel(
 				badger.changeUpdatesBadge("")
 				updatesRepository.updates(
 					onSourceError = { errors, total ->
-						snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.source_errors, errors, total)))
+						if (refreshGeneration.get() == mine) {
+							snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.source_errors, errors, total)))
+						}
 					},
 					onSourceComplete = { completed, total, remaining ->
-						_refreshProgress.value = if (remaining.isNotEmpty()) {
-							stringer.get(R.string.checking_sources, remaining.joinToString(", "))
-						} else null
-						// copy(), not a fresh Loading: a new one would drop the in-flight cards
-						// this state is carrying. Inside update{} so the check and the write cannot
-						// be separated by a concurrent install result landing between them.
-						state.update {
-							if (it is UpdatesUiState.Loading) it.copy(completed = completed, total = total)
-							else it
+						// Same guard as the finally below, and for the same reason. A stopped
+						// check keeps unwinding long after the tap, and every source still
+						// running reports its completion on the way out — writing the banner
+						// back over the blank one cancelRefresh had just set. Nothing clears it
+						// afterwards, because the finally is generation-guarded too, so the
+						// stale "Checking: <source>" stayed up until the app was restarted.
+						if (refreshGeneration.get() == mine) {
+							_refreshProgress.value = if (remaining.isNotEmpty()) {
+								stringer.get(R.string.checking_sources, remaining.joinToString(", "))
+							} else null
+							_checkProgress.value =
+								if (total > 0 && completed > 0) completed.toFloat() / total else null
+							// copy(), not a fresh Loading: a new one would drop the in-flight
+							// cards this state is carrying. Inside update{} so the check and the
+							// write cannot be separated by a concurrent install result landing
+							// between them.
+							state.update {
+								if (it is UpdatesUiState.Loading) it.copy(completed = completed, total = total)
+								else it
+							}
 						}
 					}
 				).collect {
@@ -201,6 +229,7 @@ class UpdatesViewModel(
 				if (refreshGeneration.get() == mine) {
 					_isChecking.value = false
 					_refreshProgress.value = null
+					_checkProgress.value = null
 					// The net for a check that published nothing — it failed before any source
 					// answered, so the state is still Loading. Put back the list the shimmer
 					// replaced rather than leaving the shimmer up for good. A finished check

@@ -9,7 +9,7 @@
     <string name="ignore_version">Пропустить версию</string>
     <string name="ignore_cd">Игнорировать приложение</string>
     <string name="unignore_cd">Перестать игнорировать приложение</string>
-    <string name="refresh_updates">Следить за обновлениями</string>
+    <string name="refresh_updates">Проверить обновления</string>
     <string name="exclude_system_apps">Исключить системные приложения</string>
     <string name="include_system_apps">Включить системные приложения</string>
     <string name="exclude_app_store">Исключить магазин приложений</string>

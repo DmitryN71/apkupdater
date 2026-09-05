@@ -168,11 +168,12 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel) = TopAppBar(
 		// stop a check — which matters, because one slow source holds up the whole list long
 		// after the others have answered.
 		val checking = viewModel.isChecking.collectAsStateWithLifecycle().value
+		val checkProgress = viewModel.checkProgress.collectAsStateWithLifecycle().value
 		TvIconButton(
 			onClick = { if (checking) viewModel.cancelRefresh() else viewModel.refresh() }
 		) {
 			if (checking) {
-				StopCheckingIcon(stringResource(R.string.stop_checking))
+				StopCheckingIcon(stringResource(R.string.stop_checking), checkProgress)
 			} else {
 				RefreshIcon(stringResource(R.string.refresh_updates))
 			}

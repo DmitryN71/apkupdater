@@ -74,14 +74,23 @@ class UpdatesRepository(
                             errorCount.incrementAndGet()
                             emit(emptyList())
                         }.onCompletion {
-                            val completed: Int
-                            val left: List<String>
+                            // Reported INSIDE the lock, not after it. Sources finish on
+                            // different threads, and computing "who is left" atomically is not
+                            // enough if the reports themselves can then overtake each other:
+                            // the source that saw an empty list could announce first and the
+                            // one still naming a straggler second, leaving the banner claiming
+                            // a source that had already finished. A normal check hid that,
+                            // because its finally clears the banner at the end; a STOPPED
+                            // check does not, since cancelRefresh has already moved the
+                            // generation on and the finally then keeps its hands off. That is
+                            // how "Checking: Izzy" stayed on screen overnight after a check
+                            // was stopped. onCompletion runs on cancellation too, so this path
+                            // is exactly the one a stop takes.
                             synchronized(lock) {
                                 remaining.remove(sourceNames[index])
-                                completed = completedCount.incrementAndGet()
-                                left = remaining.toList()
+                                val completed = completedCount.incrementAndGet()
+                                onSourceComplete?.invoke(completed, totalSources, remaining.toList())
                             }
-                            onSourceComplete?.invoke(completed, totalSources, left)
                         }
                     }
                     // Publish results AS EACH SOURCE ANSWERS, rather than waiting for the
