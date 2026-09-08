@@ -11,7 +11,11 @@ import com.apkupdater.util.name
 
 
 @Suppress("DEPRECATION")
-fun PackageInfo.toAppInstalled(context: Context, ignored: List<String>) = AppInstalled(
+fun PackageInfo.toAppInstalled(
+	context: Context,
+	ignored: List<String>,
+	installer: String = ""
+) = AppInstalled(
 	name(context),
 	packageName,
 	versionName.orEmpty(),
@@ -19,7 +23,10 @@ fun PackageInfo.toAppInstalled(context: Context, ignored: List<String>) = AppIns
 	iconUri(packageName, applicationInfo?.icon ?: 0),
 	ignored.contains(packageName),
 	getSignatureSha1(),
-	getSignatureSha256()
+	getSignatureSha256(),
+	lastUpdateTime,
+	firstInstallTime,
+	installer
 )
 
 fun iconUri(packageName: String, id: Int): Uri = Uri.parse("android.resource://$packageName/$id")

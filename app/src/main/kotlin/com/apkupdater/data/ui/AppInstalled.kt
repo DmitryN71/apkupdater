@@ -12,7 +12,12 @@ data class AppInstalled(
 	val iconUri: Uri = Uri.EMPTY,
 	val ignored: Boolean = false,
 	val signature: String = "",
-	val signatureSha256: String = ""
+	val signatureSha256: String = "",
+	/** When the system last replaced this app. Sorting by it shows what changed behind you. */
+	val lastUpdateTime: Long = 0L,
+	val firstInstallTime: Long = 0L,
+	/** Package that installed it, "" when nothing claims it — i.e. sideloaded. */
+	val installer: String = ""
 )
 
 fun List<AppInstalled>.getApp(packageName: String) = find { packageName == it.packageName }

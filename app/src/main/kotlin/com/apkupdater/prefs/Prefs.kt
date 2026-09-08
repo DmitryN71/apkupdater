@@ -19,6 +19,11 @@ class Prefs(
 	val portraitColumns = int("portraitColumns", 3, true)
 	val landscapeColumns = int("landscapeColumns", 6, true)
 	val playTextAnimations = boolean("playTextAnimations", defValue = true, backed = true)
+	// Off by default: it changes how every list in the app looks, and nobody asked for that
+	// on their behalf. Whoever finds the cards too big turns it on.
+	val compactCards = boolean("compactCards", defValue = false, backed = true)
+	/** 0 = by name, 1 = recently updated, 2 = recently installed. See AppsSort. */
+	val appsSortOrder = int("appsSortOrder", 0, true)
 	val ignoreAlpha = boolean("ignoreAlpha", defValue = true, backed = true)
 	val ignoreBeta = boolean("ignoreBeta", defValue = true, backed = true)
 	val ignorePreRelease = boolean("ignorePreRelease", defValue = true, backed = true)

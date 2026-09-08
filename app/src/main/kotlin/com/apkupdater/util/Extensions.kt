@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.net.Uri
 import android.content.res.Resources
 import android.graphics.Typeface
 import android.os.Build
@@ -227,3 +228,43 @@ fun isVersionDowngrade(oldVersion: String, newVersion: String): Boolean {
 	}
 	return false
 }
+
+/**
+ * A readable name for the package that installed an app.
+ *
+ * Answers the question that otherwise takes a forum round trip — "why does this never update
+ * from Play?" — because the answer is usually that Play did not install it. Returns "" when
+ * nothing useful is known: an empty installer covers both a sideloaded APK and a system app, and
+ * labelling the latter "sideloaded" would be a lie. The system installers are mapped to "" for
+ * the same reason — "com.android.packageinstaller" tells the user nothing they can act on.
+ *
+ * Unknown installers are returned as-is: a raw package name is still a real answer.
+ */
+fun installerLabel(installer: String): String = when {
+	installer.isEmpty() -> ""
+	installer.startsWith("com.android.vending") -> "Google Play"
+	installer.startsWith("ru.vk.store") -> "RuStore"
+	installer.startsWith("org.fdroid") -> "F-Droid"
+	installer.startsWith("com.aurora.store") -> "Aurora Store"
+	installer.startsWith("com.apkupdater") -> "APKUpdater"
+	installer.startsWith("com.amazon") -> "Amazon"
+	installer.startsWith("com.huawei.appmarket") -> "AppGallery"
+	installer.startsWith("com.sec.android.app.samsungapps") -> "Galaxy Store"
+	installer.startsWith("com.xiaomi") || installer.startsWith("com.mi.") -> "GetApps"
+	installer.endsWith("packageinstaller") -> ""
+	else -> installer
+}
+
+/**
+ * The system's own "App info" screen for a package: open, force stop, uninstall, permissions and
+ * storage, all of which belong to Android rather than to us. Silently does nothing if no activity
+ * answers, which happens on stripped-down TV builds.
+ */
+fun Context.openAppInfo(packageName: String) = runCatching {
+	startActivity(
+		Intent(
+			android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+			Uri.fromParts("package", packageName, null)
+		).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+	)
+}.onFailure { Log.w("Extensions", "No App info screen for $packageName", it) }

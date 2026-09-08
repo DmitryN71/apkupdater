@@ -461,6 +461,12 @@ fun InstallSettings(viewModel: SettingsViewModel) = LazyColumn {
 fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn {
 	item {
 		SwitchSetting(
+			{ viewModel.getCompactCards() },
+			{ viewModel.setCompactCards(it) },
+			stringResource(R.string.compact_cards),
+			R.drawable.ic_compact
+		)
+		SwitchSetting(
 			{ viewModel.getPlayTextAnimations() },
 			{ viewModel.setPlayTextAnimations(it) },
 			stringResource(R.string.play_text_animations),

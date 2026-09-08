@@ -312,6 +312,16 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 	LaunchedEffect(Unit) {
 		focusRequester.requestFocus()
 	}
+	// Adopted rather than merged: whoever asked for this search wants exactly this text, and
+	// the search itself has already been started by searchFor, so the debounce below sees
+	// value == query and stays quiet.
+	val requested by viewModel.requestedQuery.collectAsStateWithLifecycle()
+	LaunchedEffect(requested) {
+		requested?.let {
+			value = it
+			viewModel.consumeRequestedQuery()
+		}
+	}
 	LaunchedEffect(value) {
 		// Compare against the last query actually run, otherwise simply returning to the tab
 		// would re-fire the same search — nine network requests for a result we already have.

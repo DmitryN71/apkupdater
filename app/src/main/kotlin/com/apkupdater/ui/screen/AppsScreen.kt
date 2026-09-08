@@ -11,9 +11,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,43 +44,62 @@ import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvInstalledGrid
 import com.apkupdater.ui.component.TvInstalledItem
 import com.apkupdater.ui.theme.statusBarColor
+import com.apkupdater.ui.component.TvIconButton
+import com.apkupdater.data.ui.AppInstalled
+import com.apkupdater.data.ui.AppsSort
+import com.apkupdater.data.ui.orderedBy
 import com.apkupdater.util.isAndroidTv
+import com.apkupdater.util.openAppInfo
 import com.apkupdater.viewmodel.AppsViewModel
 import org.koin.androidx.compose.koinViewModel
 
 
 @Composable
 fun AppsScreen(
-	viewModel: AppsViewModel = koinViewModel()
+	viewModel: AppsViewModel = koinViewModel(),
+	onFindUpdates: (AppInstalled) -> Unit = {}
 ) {
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
 		AppsScreenLoading(viewModel, it)
 	}.onError {
 		AppsScreenError()
 	}.onSuccess {
-		AppsScreenSuccess(viewModel, it)
+		AppsScreenSuccess(viewModel, it, onFindUpdates)
 	}
 }
 
 @Composable
-fun AppsScreenSuccess(viewModel: AppsViewModel, state: AppsUiState.Success) = Column {
-	AppsTopBar()
+fun AppsScreenSuccess(
+	viewModel: AppsViewModel,
+	state: AppsUiState.Success,
+	onFindUpdates: (AppInstalled) -> Unit = {}
+) = Column {
+	AppsTopBar(viewModel)
 	AppsFilterBar(viewModel, state.excludeSystem, state.excludeAppStore, state.excludeDisabled)
 
+	val context = LocalContext.current
 	val query by viewModel.query.collectAsStateWithLifecycle()
 	val onlyIgnored by viewModel.onlyIgnored.collectAsStateWithLifecycle()
+	val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
 	// Memoised: the list can be several hundred apps and recomposes on every keystroke.
-	val apps = remember(state.apps, query, onlyIgnored) {
+	// Sorting last, and after filtering, so it runs over the short list rather than all of them.
+	val apps = remember(state.apps, query, onlyIgnored, sortOrder) {
 		val text = query.trim()
 		state.apps
 			.filter { !onlyIgnored || it.ignored }
 			.filter { text.isEmpty() || it.name.contains(text, true) || it.packageName.contains(text, true) }
+			.orderedBy(AppsSort.from(sortOrder))
 	}
 
 	Box(Modifier.weight(1f).fillMaxWidth()) {
 		TvInstalledGrid {
 			items(apps, key = { it.packageName }) {
-				TvInstalledItem(it) { app -> viewModel.ignore(app) }
+				TvInstalledItem(
+					it,
+					onIgnore = { app -> viewModel.ignore(app) },
+					onOpenInfo = { packageName -> context.openAppInfo(packageName) },
+					onFindUpdates = onFindUpdates
+				)
 			}
 		}
 	}
@@ -85,7 +107,7 @@ fun AppsScreenSuccess(viewModel: AppsViewModel, state: AppsUiState.Success) = Co
 
 @Composable
 fun AppsScreenLoading(viewModel: AppsViewModel, state: AppsUiState.Loading) = Column {
-	AppsTopBar()
+	AppsTopBar(viewModel)
 	AppsFilterBar(viewModel, state.excludeSystem, state.excludeAppStore, state.excludeDisabled)
 	Box(Modifier.weight(1f).fillMaxWidth()) { LoadingGrid() }
 }
@@ -151,15 +173,54 @@ private fun AppFilterChip(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppsTopBar() = TopAppBar(
+fun AppsTopBar(viewModel: AppsViewModel) = TopAppBar(
 	title = { Text(stringResource(R.string.tab_apps)) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	navigationIcon = {
 		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Home, null)
+			Icon(Icons.Filled.Apps, null)
+		}
+	},
+	actions = { AppsSortAction(viewModel) }
+)
+
+/**
+ * The order the list is in, as a menu rather than another chip.
+ *
+ * The filter bar below is already four chips wide and scrolls; sorting is a single choice out of
+ * three, which is what a menu is for, and it belongs with the title rather than among controls
+ * that all mean "show fewer apps".
+ */
+@Composable
+fun AppsSortAction(viewModel: AppsViewModel) {
+	var open by remember { mutableStateOf(false) }
+	val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
+	Box {
+		TvIconButton(onClick = { open = true }) {
+			Icon(Icons.AutoMirrored.Outlined.Sort, stringResource(R.string.sort_cd))
+		}
+		DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+			AppsSort.entries.forEach { sort ->
+				DropdownMenuItem(
+					text = { Text(stringResource(sort.labelRes)) },
+					onClick = {
+						viewModel.onSortOrderChange(sort.ordinal)
+						open = false
+					},
+					leadingIcon = {
+						// The tick marks the current order; an empty box of the same width keeps
+						// every label starting on the same vertical line.
+						Box(Modifier.size(24.dp), Alignment.Center) {
+							if (sort.ordinal == sortOrder) {
+								Icon(Icons.Filled.Check, null, Modifier.size(20.dp))
+							}
+						}
+					}
+				)
+			}
 		}
 	}
-)
+}
 
 @Composable
 fun AppsScreenError() = DefaultErrorScreen()

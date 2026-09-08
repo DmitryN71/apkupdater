@@ -191,4 +191,12 @@
     <string name="search_filter_cd">Filter results by source</string>
     <string name="search_filter_all">All</string>
     <string name="search_filter_none">No results from the chosen sources.</string>
+    <string name="compact_cards">Compact list</string>
+    <string name="expand_card_cd">Show details</string>
+    <string name="collapse_card_cd">Hide details</string>
+    <string name="sort_cd">Sort</string>
+    <string name="sort_by_name">By name</string>
+    <string name="sort_recently_updated">Recently updated</string>
+    <string name="sort_recently_installed">Recently installed</string>
+    <string name="find_updates_cd">Look for this app in the sources</string>
 </resources>

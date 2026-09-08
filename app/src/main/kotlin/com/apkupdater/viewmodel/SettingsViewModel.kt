@@ -83,6 +83,8 @@ class SettingsViewModel(
 	fun getLandscapeColumns() = prefs.landscapeColumns.get()
 	fun setPlayTextAnimations(b: Boolean) = prefs.playTextAnimations.put(b)
 	fun getPlayTextAnimations() = prefs.playTextAnimations.get()
+	fun setCompactCards(b: Boolean) = prefs.compactCards.put(b)
+	fun getCompactCards() = prefs.compactCards.get()
 	fun setIgnoreAlpha(b: Boolean) = prefs.ignoreAlpha.put(b)
 	fun getIgnoreAlpha() = prefs.ignoreAlpha.get()
 	fun setIgnoreBeta(b: Boolean) = prefs.ignoreBeta.put(b)
@@ -330,6 +332,7 @@ class SettingsViewModel(
 			addProperty("excludeDisabled", prefs.excludeDisabled.get())
 			addProperty("excludeStore", prefs.excludeStore.get())
 			addProperty("playTextAnimations", prefs.playTextAnimations.get())
+			addProperty("compactCards", prefs.compactCards.get())
 			addProperty("ignoreAlpha", prefs.ignoreAlpha.get())
 			addProperty("ignoreBeta", prefs.ignoreBeta.get())
 			addProperty("ignorePreRelease", prefs.ignorePreRelease.get())
@@ -379,6 +382,7 @@ class SettingsViewModel(
 		obj.get("excludeDisabled")?.asBoolean?.let { prefs.excludeDisabled.put(it) }
 		obj.get("excludeStore")?.asBoolean?.let { prefs.excludeStore.put(it) }
 		obj.get("playTextAnimations")?.asBoolean?.let { prefs.playTextAnimations.put(it) }
+		obj.get("compactCards")?.asBoolean?.let { prefs.compactCards.put(it) }
 		obj.get("ignoreAlpha")?.asBoolean?.let { prefs.ignoreAlpha.put(it) }
 		obj.get("ignoreBeta")?.asBoolean?.let { prefs.ignoreBeta.put(it) }
 		obj.get("ignorePreRelease")?.asBoolean?.let { prefs.ignorePreRelease.put(it) }

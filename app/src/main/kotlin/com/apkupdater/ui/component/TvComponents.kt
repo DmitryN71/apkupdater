@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -17,9 +18,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
@@ -46,6 +53,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -66,6 +74,7 @@ import com.apkupdater.data.ui.ReleaseType
 import com.apkupdater.data.ui.Source
 import com.apkupdater.util.getAppName
 import kotlinx.coroutines.delay
+import com.apkupdater.util.installerLabel
 import com.apkupdater.util.isAndroidTv
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
@@ -145,6 +154,34 @@ fun ReleaseTypeChip(releaseType: ReleaseType, modifier: Modifier = Modifier) {
 	)
 }
 
+/**
+ * Which store put this app on the device. Quiet on purpose — it is context, not a warning, and
+ * the eye should still go to the release-type chip when there is one.
+ */
+@Composable
+fun InstallerChip(installer: String, modifier: Modifier = Modifier) {
+	Row(
+		modifier = modifier
+			.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
+			.padding(horizontal = 8.dp, vertical = 2.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(4.dp)
+	) {
+		Icon(
+			Icons.Outlined.Inventory2,
+			contentDescription = null,
+			tint = MaterialTheme.colorScheme.onSurfaceVariant,
+			modifier = Modifier.size(13.dp)
+		)
+		Text(
+			installer,
+			color = MaterialTheme.colorScheme.onSurfaceVariant,
+			style = MaterialTheme.typography.labelSmall,
+			maxLines = 1
+		)
+	}
+}
+
 @Composable
 fun DateChip(date: String, modifier: Modifier = Modifier) {
 	if (date.isNotBlank()) {
@@ -215,6 +252,35 @@ fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Un
 	}
 }
 
+/**
+ * A horizontal-scroll modifier that walks its content to the end and back whenever the content
+ * is wider than the space it was given.
+ *
+ * The version row has behaved this way for a long time; the compact card needs the same for the
+ * app name, which is the one thing there that cannot be shortened without losing the point. The
+ * walk itself is opt-in through the text-animations setting — text that never stops moving is
+ * hard to read, and worse on a screen you glance at.
+ */
+@Composable
+private fun bounceScroll(animate: Boolean): Modifier {
+	val scrollState = rememberScrollState()
+	val overflow = scrollState.maxValue
+	if (overflow > 0 && animate) {
+		val transition = rememberInfiniteTransition(label = "bounce")
+		val fraction by transition.animateFloat(
+			initialValue = 0f, targetValue = 1f,
+			animationSpec = infiniteRepeatable(
+				animation = tween(durationMillis = 3000, delayMillis = 1500),
+				repeatMode = RepeatMode.Reverse
+			), label = "scroll"
+		)
+		androidx.compose.runtime.LaunchedEffect(fraction) {
+			scrollState.scrollTo((overflow * fraction).toInt())
+		}
+	}
+	return Modifier.horizontalScroll(scrollState)
+}
+
 @Composable
 fun TvCommonItem(
 	packageName: String,
@@ -230,11 +296,58 @@ fun TvCommonItem(
 	fileSize: Long = 0L,
 	updateDate: String = "",
 	releaseType: ReleaseType = ReleaseType.Stable,
-	chipRightFocus: FocusRequester? = null
-) = Row(Modifier.padding(12.dp)) {
+	chipRightFocus: FocusRequester? = null,
+	// Decided by the caller, not read from the setting here: a card the user has tapped open
+	// must show the full layout even though the setting still says compact. The Apps tab passes
+	// true unconditionally — it is a list you scroll looking for a name and its card has one
+	// action.
+	compact: Boolean = false,
+	// Compact drops the package name: on Updates and Search it is the least-read line on the
+	// card, and one tap brings the whole full layout back. The Apps tab has neither of those —
+	// nothing there expands, and its own search box matches on the package (AppsScreen), so
+	// hiding it would leave people searching for text they cannot see.
+	showPackageName: Boolean = false,
+	/** Already-readable name of the installing store, "" to draw nothing. See installerLabel. */
+	installer: String = "",
+) {
 	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
 	val animateText = get<Prefs>().playTextAnimations.get()
+	if (compact) {
+		CompactCommonItem(
+			packageName, name, version, oldVersion, uri, single, source, onSourceClick,
+			fileSize, releaseType, chipRightFocus, animateText, showPackageName, installer
+		)
+	} else {
+		FullCommonItem(
+			packageName, name, version, oldVersion, versionCode, oldVersionCode, uri, single,
+			source, onSourceClick, fileSize, updateDate, releaseType, chipRightFocus, animateText
+		)
+	}
+}
+
+/**
+ * The card as it has always been: a 100 dp icon with the source under it, the package name, both
+ * version codes, and room for the changelog underneath.
+ */
+@Composable
+private fun FullCommonItem(
+	packageName: String,
+	name: String,
+	version: String,
+	oldVersion: String?,
+	versionCode: Long,
+	oldVersionCode: Long?,
+	uri: Uri?,
+	single: Boolean,
+	source: Source?,
+	onSourceClick: (() -> Unit)?,
+	fileSize: Long,
+	updateDate: String,
+	releaseType: ReleaseType,
+	chipRightFocus: FocusRequester?,
+	animateText: Boolean
+) = Row(Modifier.padding(12.dp)) {
 	Column(horizontalAlignment = Alignment.CenterHorizontally) {
 		if (uri == null) {
 			LoadingImageApp(packageName, Modifier.height(100.dp))
@@ -255,30 +368,10 @@ fun TvCommonItem(
 		LargeTitle(name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName })
 		MediumText(packageName, Modifier.alpha(0.6f))
 		if (oldVersion != null && !single) {
-			val scrollState = rememberScrollState()
-			val overflow = scrollState.maxValue
-
-			// Auto-scroll only when the user has opted into text animations —
-			// constantly moving version text is hard to read, especially in a car.
-			if (overflow > 0 && animateText) {
-				val transition = rememberInfiniteTransition(label = "bounce")
-				val fraction by transition.animateFloat(
-					initialValue = 0f, targetValue = 1f,
-					animationSpec = infiniteRepeatable(
-						animation = tween(durationMillis = 3000, delayMillis = 1500),
-						repeatMode = RepeatMode.Reverse
-					), label = "scroll"
-				)
-				androidx.compose.runtime.LaunchedEffect(fraction) {
-					scrollState.scrollTo((overflow * fraction).toInt())
-				}
-			}
-
 			Row(
 				verticalAlignment = Alignment.CenterVertically,
 				horizontalArrangement = Arrangement.spacedBy(4.dp),
-				modifier = Modifier.padding(top = 4.dp)
-					.horizontalScroll(scrollState)
+				modifier = Modifier.padding(top = 4.dp).then(bounceScroll(animateText))
 			) {
 				VersionChip(oldVersion, isNew = false)
 				Icon(
@@ -305,6 +398,100 @@ fun TvCommonItem(
 			ReleaseTypeChip(releaseType)
 			SizeChip(fileSize)
 			DateChip(updateDate)
+		}
+	}
+}
+
+/**
+ * Two lines and a 48 dp icon, for people who would rather see eight apps than two.
+ *
+ * What it drops is the material that is either derivable or rarely read: both version codes
+ * (the version names say the same thing in words), the release date, and — unless the caller
+ * asks for it back — the package name. What it keeps is everything the choice to update rests
+ * on: which app, from which source, to which version, how big, and whether it is a beta.
+ *
+ * The changelog is dropped by the callers, not here: only the Updates card has one.
+ */
+@Composable
+private fun CompactCommonItem(
+	packageName: String,
+	name: String,
+	version: String,
+	oldVersion: String?,
+	uri: Uri?,
+	single: Boolean,
+	source: Source?,
+	onSourceClick: (() -> Unit)?,
+	fileSize: Long,
+	releaseType: ReleaseType,
+	chipRightFocus: FocusRequester?,
+	animateText: Boolean,
+	showPackageName: Boolean,
+	installer: String
+) = Row(
+	Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+	verticalAlignment = Alignment.CenterVertically
+) {
+	// 52 dp of box with a 2 dp inset leaves 48 dp of icon — a launcher-sized icon, and twice
+	// what the first attempt drew. The default 10 dp inset is written for the 100 dp card.
+	if (uri == null) {
+		LoadingImageApp(packageName, Modifier.size(52.dp), padding = 2.dp)
+	} else {
+		LoadingImage(uri, Modifier.size(52.dp), padding = 2.dp)
+	}
+	// weight(1f), or this column takes the whole row: a Row measures its unweighted children
+	// first, each against everything that is left, and only then divides the remainder among
+	// the weighted ones. Unweighted here, the column would leave nothing for the button beside
+	// it on the Apps tab.
+	Column(Modifier.padding(start = 10.dp).weight(1f)) {
+		// Scrolls rather than ending in an ellipsis: "1Password: Password Ma…" is the real
+		// case, and a truncated name is worse here than in the full card, where the package
+		// name underneath said which app it was. titleLarge would eat the height the smaller
+		// icon just saved.
+		Text(
+			name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName },
+			style = MaterialTheme.typography.titleMedium,
+			fontWeight = FontWeight.Bold,
+			maxLines = 1,
+			softWrap = false,
+			modifier = Modifier.fillMaxWidth().then(bounceScroll(animateText))
+		)
+		// Scrollable rather than wrapping: a second line here would undo the whole point, and
+		// a long version name is exactly what would cause one.
+		Row(
+			Modifier.padding(top = 3.dp).then(bounceScroll(animateText)),
+			horizontalArrangement = Arrangement.spacedBy(4.dp),
+			verticalAlignment = Alignment.CenterVertically
+		) {
+			if (oldVersion != null && !single) {
+				VersionChip(oldVersion, isNew = false)
+				Icon(
+					Icons.AutoMirrored.Filled.ArrowRightAlt,
+					contentDescription = null,
+					tint = MaterialTheme.colorScheme.onSurfaceVariant,
+					modifier = Modifier.size(14.dp)
+				)
+			}
+			VersionChip(version, isNew = !single)
+			ReleaseTypeChip(releaseType)
+			SizeChip(fileSize)
+			if (source != null) {
+				// Down here rather than beside the name, and for the measurement reason above:
+				// the chip is unweighted, so on the name row it was served first and a source
+				// like "F-Droid (Izzy)" ate the space the name needed. In this row nothing is
+				// weighted and the row scrolls, so it can starve nothing. D-pad RIGHT from the
+				// chip still reaches this card's action buttons.
+				val chipMod = if (chipRightFocus != null) {
+					Modifier.focusProperties { right = chipRightFocus }
+				} else {
+					Modifier
+				}
+				SourceChip(source, chipMod, onClick = onSourceClick)
+			}
+			// Both last, and inside the row that already scrolls, so they cost no height — the
+			// whole point of the compact card is that it is two lines and stays two lines.
+			if (installer.isNotEmpty()) InstallerChip(installer)
+			if (showPackageName) MediumText(packageName, Modifier.alpha(0.6f))
 		}
 	}
 }
@@ -445,28 +632,35 @@ fun TvFocusCard(
 }
 
 @Composable
-fun TvInstalledItem(app: AppInstalled, onIgnore: (String) -> Unit = {}) = TvFocusCard(
+fun TvInstalledItem(
+	app: AppInstalled,
+	onIgnore: (String) -> Unit = {},
+	onOpenInfo: (String) -> Unit = {},
+	onFindUpdates: (AppInstalled) -> Unit = {}
+) = TvFocusCard(
 	Modifier.alpha(if (app.ignored) 0.5f else 1f)
 ) {
-	Column {
-		TvCommonItem(app.packageName, app.name, app.version, null, app.versionCode, null)
-		Row(
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-			horizontalArrangement = Arrangement.End
+	// Always compact, whatever the setting says, and the button shares the row rather than
+	// claiming one of its own — that row costs about 50 dp, which on this tab is most of the
+	// card. Nothing is lost by it: this list has one action and no changelog, and the package
+	// name is asked for explicitly below, so the name, the package and the version all fit.
+	Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+		// Touch only, for the same reason as the update cards: clickable is focusable on a
+		// D-pad but not on a finger, and on a television it would add a stop with no highlight.
+		val tappable = !LocalContext.current.isAndroidTv()
+		Box(
+			Modifier
+				.weight(1f)
+				.then(if (tappable) Modifier.clickable { onOpenInfo(app.packageName) } else Modifier)
 		) {
-			val interaction = remember { MutableInteractionSource() }
-			val focused by interaction.collectIsFocusedAsState()
-			TextButton(
-				onClick = { onIgnore(app.packageName) },
-				interactionSource = interaction,
-				colors = ButtonDefaults.textButtonColors(
-					containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
-					contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-				)
-			) {
-				Text(stringResource(if (app.ignored) R.string.unignore_cd else R.string.ignore_cd))
-			}
+			TvCommonItem(
+				app.packageName, app.name, app.version, null, app.versionCode, null,
+				compact = true, showPackageName = true,
+				installer = installerLabel(app.installer)
+			)
 		}
+		FindUpdatesButton(app, onFindUpdates)
+		IgnoreAppButton(app, onIgnore, Modifier.padding(end = 4.dp))
 	}
 }
 
@@ -541,6 +735,120 @@ fun TvDownloadButton(
 	}
 }
 
+/**
+ * Opens and closes a compact card.
+ *
+ * It lives in the action row rather than beside the app name, where the first attempt put it.
+ * Up there it had to compete for width with a name that can be any length and with the source
+ * chip, and a long name simply pushed it off the card — reported straight away. Down here the
+ * row is right-aligned with nothing at its left end, so the control has a fixed home, the same
+ * shape as the download button next to it, and it can say BOTH things: chevron down to open,
+ * chevron up to close, which is what the first version could not do at all.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TvExpandButton(expanded: Boolean, onToggle: () -> Unit) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val label = stringResource(if (expanded) R.string.collapse_card_cd else R.string.expand_card_cd)
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(label) } },
+		state = rememberTooltipState()
+	) {
+		IconButton(
+			onClick = onToggle,
+			interactionSource = interaction,
+			colors = IconButtonDefaults.iconButtonColors(
+				containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+				contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+			)
+		) {
+			Icon(
+				if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+				contentDescription = label
+			)
+		}
+	}
+}
+
+/**
+ * An icon, not the labelled button this used to be, and the label lives in its tooltip.
+ *
+ * A Row measures its UNWEIGHTED children first, each against the whole remaining width, and
+ * only then divides what is left among the weighted ones. A text button is unweighted and never
+ * wraps, so it took as much as its label wanted — and in Russian that label is "Перестать
+ * игнорировать приложение". On a 360 dp phone it claimed about 270 dp of 344, leaving roughly
+ * five for the name, the version and the package: an ignored app rendered as an icon and a
+ * card-wide button with nothing else on it. English hid this; the forum is Russian.
+ *
+ * The old layout gave the button a row of its own, where its width cost nothing. The compact
+ * row cannot, so the control has to be one that is the same size in every language.
+ */
+/**
+ * Sends one app to the Search tab, already typed in.
+ *
+ * "Why does this one never update?" is the question the forum asks most, and answering it meant
+ * running a nine-source check and reading the whole list. A package name — dotted, no spaces —
+ * takes a different path through search entirely: it bypasses ranking and asks each source for
+ * that exact package, which is precisely the diagnostic wanted.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FindUpdatesButton(app: AppInstalled, onFindUpdates: (AppInstalled) -> Unit) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val label = stringResource(R.string.find_updates_cd)
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(label) } },
+		state = rememberTooltipState()
+	) {
+		IconButton(
+			onClick = { onFindUpdates(app) },
+			interactionSource = interaction,
+			colors = IconButtonDefaults.iconButtonColors(
+				containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+				contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+			)
+		) {
+			Icon(Icons.Outlined.Search, contentDescription = label)
+		}
+	}
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IgnoreAppButton(
+	app: AppInstalled,
+	onIgnore: (String) -> Unit,
+	modifier: Modifier = Modifier
+) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val label = stringResource(if (app.ignored) R.string.unignore_cd else R.string.ignore_cd)
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(label) } },
+		state = rememberTooltipState()
+	) {
+		IconButton(
+			onClick = { onIgnore(app.packageName) },
+			interactionSource = interaction,
+			modifier = modifier,
+			colors = IconButtonDefaults.iconButtonColors(
+				containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+				contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+			)
+		) {
+			Icon(
+				if (app.ignored) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+				contentDescription = label
+			)
+		}
+	}
+}
+
 @Composable
 fun TvUpdateItem(
 	app: AppUpdate,
@@ -559,8 +867,32 @@ fun TvUpdateItem(
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
 		val actionFocus = remember { FocusRequester() }
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus)
-		WhatsNew(app.whatsNew, app.source)
+		// A compact card opens on a tap anywhere that is not a button, and shows exactly what
+		// the full layout shows — which is the point: compact hides the changelog, and the
+		// changelog is often the reason to update at all.
+		//
+		// rememberSaveable, keyed by nothing of ours: the lazy grid stores each item's saveable
+		// state under the item key it was given, so a card left open is still open after
+		// scrolling away and back. The tap is on the information row only, so the buttons
+		// underneath keep their own clicks and their own D-pad focus; in the full layout there
+		// is nothing to reveal, so no click is attached at all and that path is untouched.
+		var expanded by rememberSaveable { mutableStateOf(false) }
+		val compact = get<Prefs>().compactCards.get()
+		val showFull = !compact || expanded
+		// fillMaxWidth FIRST: the full layout's Row has no weighted child, so it is only as
+		// wide as its contents, and the Box was inheriting that. On a card with a short name
+		// and a small icon the right-hand third was outside the clickable area entirely and
+		// swallowed the tap — reported as "this card collapses, that one doesn't", which is
+		// exactly the difference between a long title and a short one.
+		// Touch only. Modifier.clickable delegates a FocusableInNonTouchMode node, which is
+		// focusable on a D-pad and not on a finger — so on a television every compact card
+		// would gain a focus stop over its information area with no highlight of its own,
+		// while the chevron in the action row is already the proper, styled control there.
+		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
+		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
+			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull)
+		}
+		if (showFull) WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -570,6 +902,13 @@ fun TvUpdateItem(
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
+			// Pinned to the far left by the spacer, away from the three that act on the app.
+			// It does something different from them — it changes what you are looking at, not
+			// what happens to the app — and the gap says so.
+			if (compact) {
+				TvExpandButton(expanded) { expanded = !expanded }
+				Spacer(Modifier.weight(1f))
+			}
 			if (!app.isInstalled) {
 				TvIgnoreVersionButton(app, onIgnoreVersion)
 			} else {
@@ -597,8 +936,24 @@ fun TvSearchItem(
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
 		val actionFocus = remember { FocusRequester() }
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus)
-		WhatsNew(app.whatsNew, app.source)
+		// Tap to open, exactly as on the Updates card — see TvUpdateItem for why.
+		var expanded by rememberSaveable { mutableStateOf(false) }
+		val compact = get<Prefs>().compactCards.get()
+		val showFull = !compact || expanded
+		// fillMaxWidth FIRST: the full layout's Row has no weighted child, so it is only as
+		// wide as its contents, and the Box was inheriting that. On a card with a short name
+		// and a small icon the right-hand third was outside the clickable area entirely and
+		// swallowed the tap — reported as "this card collapses, that one doesn't", which is
+		// exactly the difference between a long title and a short one.
+		// Touch only. Modifier.clickable delegates a FocusableInNonTouchMode node, which is
+		// focusable on a D-pad and not on a finger — so on a television every compact card
+		// would gain a focus stop over its information area with no highlight of its own,
+		// while the chevron in the action row is already the proper, styled control there.
+		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
+		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
+			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull)
+		}
+		if (showFull) WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -608,6 +963,13 @@ fun TvSearchItem(
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
+			// Pinned to the far left by the spacer, away from the three that act on the app.
+			// It does something different from them — it changes what you are looking at, not
+			// what happens to the app — and the gap says so.
+			if (compact) {
+				TvExpandButton(expanded) { expanded = !expanded }
+				Spacer(Modifier.weight(1f))
+			}
 			TvDownloadButton(app, onDownload)
 			TvInstallButton(app, onInstall, onOpen, onCancel, isSearch = true)
 		}

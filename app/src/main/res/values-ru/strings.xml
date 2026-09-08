@@ -190,4 +190,12 @@
     <string name="search_filter_cd">Отбор результатов по источникам</string>
     <string name="search_filter_all">Все</string>
     <string name="search_filter_none">Среди выбранных источников ничего нет.</string>
+    <string name="compact_cards">Компактный список</string>
+    <string name="expand_card_cd">Показать подробности</string>
+    <string name="collapse_card_cd">Скрыть подробности</string>
+    <string name="sort_cd">Сортировка</string>
+    <string name="sort_by_name">По названию</string>
+    <string name="sort_recently_updated">Недавно обновлённые</string>
+    <string name="sort_recently_installed">Недавно установленные</string>
+    <string name="find_updates_cd">Искать это приложение в источниках</string>
 </resources>

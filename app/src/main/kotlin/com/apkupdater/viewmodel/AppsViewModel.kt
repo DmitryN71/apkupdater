@@ -31,6 +31,17 @@ class AppsViewModel(
 	private val _onlyIgnored = MutableStateFlow(false)
 	val onlyIgnored: StateFlow<Boolean> = _onlyIgnored
 
+	// Unlike the two above, this one IS persisted — see Prefs.appsSortOrder. Applied on the
+	// loaded list in AppsScreen rather than in the repository, so changing it re-sorts what is
+	// already in memory instead of asking the package manager for a thousand apps again.
+	private val _sortOrder = MutableStateFlow(prefs.appsSortOrder.get())
+	val sortOrder: StateFlow<Int> = _sortOrder
+
+	fun onSortOrderChange(order: Int) {
+		prefs.appsSortOrder.put(order)
+		_sortOrder.value = order
+	}
+
 	fun state(): StateFlow<AppsUiState> = state
 
 	fun onQueryChange(text: String) {

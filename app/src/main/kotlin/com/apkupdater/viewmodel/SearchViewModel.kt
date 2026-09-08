@@ -99,6 +99,26 @@ class SearchViewModel(
     private val _sourceFilter = MutableStateFlow<Set<String>>(emptySet())
     val sourceFilter: StateFlow<Set<String>> = _sourceFilter
 
+    /**
+     * A search asked for from somewhere else — today the Apps tab's "look for this app".
+     *
+     * It cannot simply call [search]: the text field is rememberSaveable and belongs to the
+     * navigation destination, so a Search tab that has been opened before restores its own old
+     * text over whatever the view model holds. The field watches this instead and adopts it,
+     * then calls [consumeRequestedQuery] so returning to the tab later does not re-fire it.
+     */
+    private val _requestedQuery = MutableStateFlow<String?>(null)
+    val requestedQuery: StateFlow<String?> = _requestedQuery
+
+    fun searchFor(text: String) {
+        _requestedQuery.value = text
+        search(text)
+    }
+
+    fun consumeRequestedQuery() {
+        _requestedQuery.value = null
+    }
+
     fun toggleSourceFilter(name: String) = _sourceFilter.update {
         if (it.contains(name)) it - name else it + name
     }

@@ -417,7 +417,15 @@ fun NavHost(
 	startDestination = Screen.Updates.route,
 	modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
 ) {
-	composable(Screen.Apps.route) { AppsScreen(appsViewModel) }
+	composable(Screen.Apps.route) {
+		AppsScreen(appsViewModel) { app ->
+			// A package name is dotted and has no spaces, which SearchRepository routes
+			// straight to a by-package lookup instead of through search ranking — the exact
+			// question being asked here, "what do the sources have for THIS app".
+			searchViewModel.searchFor(app.packageName)
+			mainViewModel.navigateTo(navController, Screen.Search.route)
+		}
+	}
 	composable(Screen.Search.route) { SearchScreen(searchViewModel) }
 	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, onRefresh) }
 	composable(Screen.Settings.route) { SettingsScreen(settingsViewModel) }
