@@ -185,4 +185,10 @@
         <item quantity="other">Found %1$d updates.</item>
     </plurals>
 
+    <string name="release_type_alpha">Alpha</string>
+    <string name="release_type_beta">Beta</string>
+    <string name="release_type_pre_release">Pre-release</string>
+    <string name="search_filter_cd">Filter results by source</string>
+    <string name="search_filter_all">All</string>
+    <string name="search_filter_none">No results from the chosen sources.</string>
 </resources>

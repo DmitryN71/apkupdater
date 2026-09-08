@@ -86,12 +86,30 @@ class SearchViewModel(
      * clearSearch landing mid-body would be overwritten a moment later by the very results it cleared —
      * leaving a stale list under an emptied field, which is the bug this is here to prevent.
      */
+    /**
+     * Which sources the user wants to see, by name. EMPTY MEANS ALL — a positive selection
+     * rather than a list of exclusions, so a source that starts answering mid-search cannot
+     * appear pre-hidden, and so the row reads as "nothing chosen, everything shown" instead of
+     * every chip lit up at once.
+     *
+     * Lives here rather than in the composable for the same reason the query does: the back
+     * gesture pops the Search destination and takes its saved state with it, and a filter that
+     * silently reset itself while the results stayed put would be the same class of confusion.
+     */
+    private val _sourceFilter = MutableStateFlow<Set<String>>(emptySet())
+    val sourceFilter: StateFlow<Set<String>> = _sourceFilter
+
+    fun toggleSourceFilter(name: String) = _sourceFilter.update {
+        if (it.contains(name)) it - name else it + name
+    }
+
     fun clearSearch() {
         generation.incrementAndGet()
         job?.cancel()
         job = null
         _query.value = ""
         _searching.value = false
+        _sourceFilter.value = emptySet()
         state.value = SearchUiState.Success(emptyList())
         badger.changeSearchBadge("")
     }
@@ -101,6 +119,9 @@ class SearchViewModel(
         // has already passed its finally and cannot clear the flag we are about to set.
         val mine = generation.incrementAndGet()
         _query.value = text
+        // Dropped for every new query. A filter set while looking for one app would otherwise
+        // still be hiding sources for the next one, with nothing on screen to explain it.
+        _sourceFilter.value = emptySet()
         _searching.value = true
         state.value = SearchUiState.Loading
         badger.changeSearchBadge("")
@@ -168,7 +189,7 @@ class SearchViewModel(
             state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
             installMutex.withLock {
                 val link = resolveLink(update)
-                downloadAndRootInstall(update.id, update.name, link)
+                downloadAndRootInstall(update.id, update.name, update.packageName, link)
             }
         } finally {
             background.end(update.id)
@@ -181,7 +202,7 @@ class SearchViewModel(
             state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
             installMutex.withLock {
                 val link = resolveLink(update)
-                downloadAndShizukuInstall(update.id, update.name, link)
+                downloadAndShizukuInstall(update.id, update.name, update.packageName, link)
             }
         } finally {
             background.end(update.id)

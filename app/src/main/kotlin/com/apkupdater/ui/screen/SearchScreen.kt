@@ -2,12 +2,22 @@ package com.apkupdater.ui.screen
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -36,10 +46,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -47,7 +59,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.items
 import com.apkupdater.R
+import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
+import com.apkupdater.data.ui.Source
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvInstalledGrid
@@ -69,11 +83,19 @@ fun SearchScreen(
 	// shimmer grid only ever showed while the list was still completely empty.
 	val searching by viewModel.searching.collectAsStateWithLifecycle()
 	if (searching) LinearProgressIndicator(Modifier.fillMaxWidth())
+	val state = viewModel.state().collectAsStateWithLifecycle().value
+	val selectedSources by viewModel.sourceFilter.collectAsStateWithLifecycle()
+	// Above the results rather than inside them, so it keeps its own height and the grid keeps
+	// the weighted remainder. The row is built from EVERY result, never from the filtered ones
+	// — deselecting the last source would otherwise take the chips away with it.
+	state.onSuccess {
+		SourceFilterRow(it.updates, selectedSources) { name -> viewModel.toggleSourceFilter(name) }
+	}
 	Box(Modifier.weight(1f).fillMaxWidth()) {
-		viewModel.state().collectAsStateWithLifecycle().value.onError {
+		state.onError {
 			DefaultErrorScreen()
 		}.onSuccess {
-			SearchScreenSuccess(it, viewModel)
+			SearchScreenSuccess(it, viewModel, selectedSources)
 		}.onLoading {
 			LoadingGrid()
 		}
@@ -83,7 +105,8 @@ fun SearchScreen(
 @Composable
 fun SearchScreenSuccess(
 	state: SearchUiState.Success,
-	viewModel: SearchViewModel
+	viewModel: SearchViewModel,
+	selectedSources: Set<String> = emptySet()
 ) {
 	val uriHandler = LocalUriHandler.current
 	val context = LocalContext.current
@@ -92,6 +115,12 @@ fun SearchScreenSuccess(
 	val notificationPermission = rememberLauncherForActivityResult(
 		ActivityResultContracts.RequestPermission()
 	) {}
+
+	// Nothing selected means no filter at all — see SearchViewModel.sourceFilter.
+	val shown = remember(state.updates, selectedSources) {
+		if (selectedSources.isEmpty()) state.updates
+		else state.updates.filter { selectedSources.contains(it.source.name) }
+	}
 
 	if (state.updates.isEmpty()) {
 		// Three different situations used to show the same "type something to search" hint:
@@ -114,8 +143,21 @@ fun SearchScreenSuccess(
 		return
 	}
 
+	if (shown.isEmpty()) {
+		Box(Modifier.fillMaxSize(), Alignment.Center) {
+			Text(
+				stringResource(R.string.search_filter_none),
+				style = MaterialTheme.typography.bodyMedium,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				textAlign = TextAlign.Center,
+				modifier = Modifier.padding(horizontal = 32.dp)
+			)
+		}
+		return
+	}
+
 	TvInstalledGrid {
-		items(state.updates, key = { it.id }) { update ->
+		items(shown, key = { it.id }) { update ->
 			TvSearchItem(
 				update,
 				onInstall = { viewModel.install(update, uriHandler, notificationPermission) },
@@ -129,6 +171,80 @@ fun SearchScreenSuccess(
 				onCancel = { viewModel.userCancelInstall(it) }
 			)
 		}
+	}
+}
+
+/**
+ * Lets the user narrow a result list that mixes sources. Shown only when there is something to
+ * narrow: one source means one chip, which would be a control that does nothing.
+ *
+ * Nothing selected means everything is shown, and no chip is lit — see
+ * SearchViewModel.sourceFilter for why that way round.
+ */
+@Composable
+fun SourceFilterRow(
+	updates: List<AppUpdate>,
+	selected: Set<String>,
+	onToggle: (String) -> Unit
+) {
+	// Order follows the results, so the source that answered first sits first and the row does
+	// not reshuffle itself as more arrive.
+	val sources = remember(updates) { updates.map { it.source }.distinctBy { it.name } }
+	if (sources.size < 2) return
+	Row(
+		Modifier
+			.fillMaxWidth()
+			.horizontalScroll(rememberScrollState())
+			.padding(horizontal = 12.dp, vertical = 6.dp),
+		horizontalArrangement = Arrangement.spacedBy(6.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		sources.forEach { source ->
+			SourceFilterChip(source, selected.contains(source.name)) { onToggle(source.name) }
+		}
+	}
+}
+
+@Composable
+fun SourceFilterChip(source: Source, isSelected: Boolean, onClick: () -> Unit) {
+	// Same focus treatment as every other chip in the app since 112: a solid inverseSurface
+	// fill, because Material's own state layer is too faint to find from across a room. See
+	// the cache chip in UpdatesTopBar.
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	// Named apart from the background/content modifiers on purpose — a local val called
+	// `background` next to Modifier.background reads as a shadowing bug even when it is not.
+	val chipBackground = when {
+		focused -> MaterialTheme.colorScheme.inverseSurface
+		isSelected -> MaterialTheme.colorScheme.primaryContainer
+		else -> MaterialTheme.colorScheme.surfaceVariant
+	}
+	val chipContent = when {
+		focused -> MaterialTheme.colorScheme.inverseOnSurface
+		isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
+		else -> MaterialTheme.colorScheme.onSurfaceVariant
+	}
+	Row(
+		Modifier
+			.clip(RoundedCornerShape(50))
+			.background(chipBackground)
+			.clickable(interactionSource = interaction, indication = null) { onClick() }
+			.padding(horizontal = 12.dp, vertical = 6.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		Icon(
+			painterResource(source.resourceId),
+			contentDescription = null,
+			modifier = Modifier.size(16.dp),
+			tint = chipContent
+		)
+		Spacer(Modifier.width(6.dp))
+		Text(
+			source.name,
+			style = MaterialTheme.typography.labelMedium,
+			color = chipContent,
+			maxLines = 1
+		)
 	}
 }
 
@@ -153,7 +269,16 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 	// destination's state, so the text survives a trip to another tab — which was the actual
 	// complaint — while typing stays synchronous. Round-tripping every keystroke through a
 	// StateFlow re-enters composition a frame later and is a known way to drop characters.
-	var value by rememberSaveable { mutableStateOf("") }
+	//
+	// Seeded from the view model rather than from "". That saved state belongs to the
+	// navigation destination, and it survives a TAB SWITCH (which navigates with
+	// saveState/restoreState) but NOT the BACK gesture, which pops Search off the stack and
+	// discards it. The view model outlives both — it is created up in MainScreen, so the
+	// activity owns it — so after a back-out the field came back empty while the results, and
+	// the tab badge counting them, were still there. With the field empty there is no clear
+	// button and nothing to erase, so that count could not be got rid of at all. Falling back
+	// to the last query run puts field, list and badge back into agreement.
+	var value by rememberSaveable { mutableStateOf(viewModel.query.value) }
 	TextField(
 		value = value,
 		onValueChange = {

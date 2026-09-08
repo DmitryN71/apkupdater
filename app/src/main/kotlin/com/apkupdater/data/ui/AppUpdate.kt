@@ -19,8 +19,21 @@ data class AppUpdate(
 	val progress: Long = 0L,
 	val sourceUrl: String = "",
 	val updateDate: String = "",
+	/**
+	 * The source said this is a pre-release, whatever the version string looks like. Only
+	 * GitHub can tell us — its releases carry the flag — and it is worth having, because a
+	 * project can perfectly well publish "2.0.0" with the flag set and nothing in the name.
+	 */
+	val isPreRelease: Boolean = false,
 	val id: Int = "${source.name}.$packageName.$versionCode.$version".hashCode()
-)
+) {
+	/**
+	 * Derived rather than stored, so no source transform has to be taught about it and no
+	 * existing call site changes. Cheap: two or three regex scans of a short string, and only
+	 * for the cards actually on screen.
+	 */
+	val releaseType: ReleaseType get() = ReleaseType.from(version, isPreRelease)
+}
 
 fun List<AppUpdate>.indexOf(id: Int) = indexOfFirst { it.id == id }
 

@@ -191,7 +191,31 @@ abstract class InstallViewModel(
         block(it)
     }.launchIn(viewModelScope)
 
-    protected fun downloadAndRootInstall(id: Int, name: String, link: Link) = runCatching {
+    /**
+     * Stops an install whose downloaded APK turns out to belong to a different app, and says so.
+     *
+     * Returns true when the caller must give up. The check itself is [SessionInstaller
+     * .verifyPackage] and it is old; what is new is that all three installers reach it. The
+     * default installer has checked since build 129, and the Updates tab checks on its own root
+     * and Shizuku paths — but the same install started from SEARCH went through the base helpers
+     * below, which were never given a package name to compare against and so skipped it
+     * silently. Anyone on root or Shizuku, which is most people who chose them, had no check on
+     * half the app.
+     */
+    private fun rejectWrongPackage(file: File, packageName: String, id: Int): Boolean {
+        val wrongPackage = installer.verifyPackage(file, packageName) ?: return false
+        file.delete()
+        // Shown directly rather than through the status channel, whose snack lookup uses a
+        // stale list — the user always sees why.
+        snackBar.snackBar(viewModelScope, TextSnack(
+            stringer.get(R.string.install_error_wrong_package, wrongPackage),
+            type = SnackType.ERROR))
+        installLog.emitProgress(AppInstallProgress(id, 0L))
+        cancelInstall(id)
+        return true
+    }
+
+    protected fun downloadAndRootInstall(id: Int, name: String, packageName: String, link: Link) = runCatching {
         val fake = prefs.fakePlayStore.get()
         when (link) {
             is Link.Url -> {
@@ -199,6 +223,7 @@ abstract class InstallViewModel(
                 // reach it — which now matters much more, since a failing download retries.
                 val file = downloader.downloadFile(link.link, id)
                 downloader.beginInstall(id)
+                if (rejectWrongPackage(file, packageName, id)) return@runCatching
                 val error = installer.rootInstall(file, fake)
                 if (error == null) {
                     if (notifyOnInstall()) snackBar.snackBar(viewModelScope, TextSnack(
@@ -221,7 +246,7 @@ abstract class InstallViewModel(
         cancelInstall(id)
     }
 
-    protected fun downloadAndShizukuInstall(id: Int, name: String, link: Link) = runCatching {
+    protected fun downloadAndShizukuInstall(id: Int, name: String, packageName: String, link: Link) = runCatching {
         val fake = prefs.fakePlayStore.get()
         // Shizuku methods return null on success, or error message on failure
         val error: String? = when (link) {
@@ -230,6 +255,7 @@ abstract class InstallViewModel(
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
                 downloader.beginInstall(id)
+                if (rejectWrongPackage(file, packageName, id)) return@runCatching
                 installer.shizukuInstall(file, fake)
             }
             is Link.Play -> {
@@ -338,18 +364,7 @@ abstract class InstallViewModel(
                 // would leave the flag raised to mute the install's own failure. The root path
                 // marks it at the same point.
                 downloader.beginInstall(id)
-                val wrongPackage = installer.verifyPackage(file, packageName)
-                if (wrongPackage != null) {
-                    file.delete()
-                    // Show the message directly (not via the status channel, whose
-                    // snack lookup uses a stale list) so the user always sees why.
-                    snackBar.snackBar(viewModelScope, TextSnack(
-                        stringer.get(R.string.install_error_wrong_package, wrongPackage),
-                        type = SnackType.ERROR))
-                    installLog.emitProgress(AppInstallProgress(id, 0L))
-                    cancelInstall(id)
-                    return@runCatching
-                }
+                if (rejectWrongPackage(file, packageName, id)) return@runCatching
                 // Progress already shown during download — install without re-tracking.
                 file.inputStream().use { installer.install(id, packageName, it, trackProgress = false) }
                 file.delete()

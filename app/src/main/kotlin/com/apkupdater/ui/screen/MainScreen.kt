@@ -24,10 +24,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +45,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.apkupdater.R
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
 import androidx.compose.runtime.Composable
@@ -146,12 +149,20 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 }
 
 /**
- * The app's snackbars, with swipe-to-dismiss.
+ * The app's snackbars, with a dismiss cross and swipe-to-dismiss.
  *
  * A snackbar you cannot get rid of is worse than no snackbar — during a batch update they pile
  * up over the buttons, which is what was reported. Material3's Compose snackbar has no swipe
  * built in (the old View one did), so it is wrapped here. `key(data)` matters: without it the
  * swipe state survives into the next snackbar, which would then arrive already dismissed.
+ *
+ * The cross is passed explicitly. TextSnack has carried `withDismissAction = true` since the
+ * fork began, but that flag is only read by the `Snackbar(snackbarData)` overload, which builds
+ * its own row; this is the content-slot overload, which colours and ices the thing to taste and
+ * takes the dismiss button as a slot. So from build 134 — when this custom host replaced the
+ * plain SnackbarHost to add colour and swipe — the flag was set and silently ignored, and the
+ * cross users had before quietly disappeared. Swipe alone is not a replacement: nothing on
+ * screen suggests it exists.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,11 +199,28 @@ fun AppSnackbarHost(hostState: SnackbarHostState) = SnackbarHost(hostState) { da
 			backgroundContent = {},
 			modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
 		) {
+			// Spelled out with its type rather than written inline, so the composable lambda
+			// cannot be inferred as a plain one.
+			val dismissAction: (@Composable () -> Unit)? =
+				if (data.visuals.withDismissAction) {
+					{
+						IconButton(onClick = { data.dismiss() }) {
+							Icon(
+								Icons.Outlined.Close,
+								stringResource(R.string.dismiss_cd),
+								Modifier.size(20.dp)
+							)
+						}
+					}
+				} else {
+					null
+				}
 			Snackbar(
 				shape = RoundedCornerShape(16.dp),
 				containerColor = containerColor,
 				contentColor = contentColor,
-				dismissActionContentColor = contentColor
+				dismissActionContentColor = contentColor,
+				dismissAction = dismissAction
 			) {
 				Row(verticalAlignment = Alignment.CenterVertically) {
 					if (icon != null) {

@@ -184,4 +184,10 @@
         <item quantity="other">Найдено %1$d обновлений.</item>
     </plurals>
 
+    <string name="release_type_alpha">Альфа</string>
+    <string name="release_type_beta">Бета</string>
+    <string name="release_type_pre_release">Предрелиз</string>
+    <string name="search_filter_cd">Отбор результатов по источникам</string>
+    <string name="search_filter_all">Все</string>
+    <string name="search_filter_none">Среди выбранных источников ничего нет.</string>
 </resources>

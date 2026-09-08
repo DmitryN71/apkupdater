@@ -17,7 +17,10 @@ class MainViewModel(
 	private val prefs: Prefs
 ) : ViewModel() {
 
-	val screens = listOf(Screen.Apps, Screen.Search, Screen.Updates, Screen.Settings)
+	// Updates first, because it is the start destination: back from any other tab lands here,
+	// and a bar whose "home" sat third made that jump look like a glitch. Also what the app is
+	// for — an updater opens on updates.
+	val screens = listOf(Screen.Updates, Screen.Apps, Screen.Search, Screen.Settings)
 
 	private var didStartupRefresh = false
 

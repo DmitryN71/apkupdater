@@ -62,6 +62,7 @@ import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.Link
+import com.apkupdater.data.ui.ReleaseType
 import com.apkupdater.data.ui.Source
 import com.apkupdater.util.getAppName
 import kotlinx.coroutines.delay
@@ -123,6 +124,25 @@ fun SizeChip(sizeBytes: Long, modifier: Modifier = Modifier) {
 				.padding(horizontal = 8.dp, vertical = 2.dp)
 		)
 	}
+}
+
+/**
+ * Warns that this version is not a finished release. Deliberately the only coloured chip in the
+ * row — size and date are neutral surfaceVariant, so the eye goes to this one and only when
+ * there is something to say. Stable draws nothing at all.
+ */
+@Composable
+fun ReleaseTypeChip(releaseType: ReleaseType, modifier: Modifier = Modifier) {
+	val label = releaseType.labelRes ?: return
+	Text(
+		stringResource(label),
+		color = MaterialTheme.colorScheme.onTertiaryContainer,
+		style = MaterialTheme.typography.labelSmall,
+		maxLines = 1,
+		modifier = modifier
+			.background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(12.dp))
+			.padding(horizontal = 8.dp, vertical = 2.dp)
+	)
 }
 
 @Composable
@@ -209,6 +229,7 @@ fun TvCommonItem(
 	onSourceClick: (() -> Unit)? = null,
 	fileSize: Long = 0L,
 	updateDate: String = "",
+	releaseType: ReleaseType = ReleaseType.Stable,
 	chipRightFocus: FocusRequester? = null
 ) = Row(Modifier.padding(12.dp)) {
 	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
@@ -281,6 +302,7 @@ fun TvCommonItem(
 			horizontalArrangement = Arrangement.spacedBy(6.dp),
 			verticalAlignment = Alignment.CenterVertically
 		) {
+			ReleaseTypeChip(releaseType)
 			SizeChip(fileSize)
 			DateChip(updateDate)
 		}
@@ -537,7 +559,7 @@ fun TvUpdateItem(
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
 		val actionFocus = remember { FocusRequester() }
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, chipRightFocus = actionFocus)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
@@ -575,7 +597,7 @@ fun TvSearchItem(
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
 		val actionFocus = remember { FocusRequester() }
-		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, chipRightFocus = actionFocus)
+		TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus)
 		WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),

@@ -173,7 +173,10 @@ class GitHubRepository(
                 whatsNew = releases[0].body.orEmpty(),
                 iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
                 sourceUrl = "https://github.com/$user/$repo/releases/tag/${releases[0].tag_name}",
-                updateDate = formatIsoDate(releases[0].published_at ?: "")
+                updateDate = formatIsoDate(releases[0].published_at ?: ""),
+                // The one source that can say so outright. Reaching the list at all means the
+                // user turned ignorePreRelease off, so the card says what they let through.
+                isPreRelease = releases[0].prerelease
             )))
         } else {
             emit(emptyList())
