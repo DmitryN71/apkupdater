@@ -155,6 +155,33 @@ fun ReleaseTypeChip(releaseType: ReleaseType, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Where the user last installed this app from, through this app. Says "installed from here" on
+ * the card whose source matches — the one to pick again when the same app is listed from several
+ * — and "last time: X" on the others. Draws nothing when there is no record. Informs, decides
+ * nothing: no card is hidden or reordered by it.
+ */
+@Composable
+fun ProvenanceChip(installedFrom: String, source: Source?, modifier: Modifier = Modifier) {
+	if (installedFrom.isEmpty()) return
+	val fromHere = source != null && source.name == installedFrom
+	val text = if (fromHere) stringResource(R.string.installed_from_here)
+		else stringResource(R.string.installed_last_from, installedFrom)
+	val background = if (fromHere) MaterialTheme.colorScheme.secondaryContainer
+		else MaterialTheme.colorScheme.surfaceVariant
+	val content = if (fromHere) MaterialTheme.colorScheme.onSecondaryContainer
+		else MaterialTheme.colorScheme.onSurfaceVariant
+	Text(
+		text,
+		color = content,
+		style = MaterialTheme.typography.labelSmall,
+		maxLines = 1,
+		modifier = modifier
+			.background(background, RoundedCornerShape(12.dp))
+			.padding(horizontal = 8.dp, vertical = 2.dp)
+	)
+}
+
+/**
  * Which store put this app on the device. Quiet on purpose — it is context, not a warning, and
  * the eye should still go to the release-type chip when there is one.
  */
@@ -309,6 +336,8 @@ fun TvCommonItem(
 	showPackageName: Boolean = false,
 	/** Already-readable name of the installing store, "" to draw nothing. See installerLabel. */
 	installer: String = "",
+	/** Source.name this app was last installed from by us, "" if never — see ProvenanceChip. */
+	installedFrom: String = "",
 ) {
 	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
@@ -316,12 +345,14 @@ fun TvCommonItem(
 	if (compact) {
 		CompactCommonItem(
 			packageName, name, version, oldVersion, uri, single, source, onSourceClick,
-			fileSize, releaseType, chipRightFocus, animateText, showPackageName, installer
+			fileSize, releaseType, chipRightFocus, animateText, showPackageName, installer,
+			installedFrom
 		)
 	} else {
 		FullCommonItem(
 			packageName, name, version, oldVersion, versionCode, oldVersionCode, uri, single,
-			source, onSourceClick, fileSize, updateDate, releaseType, chipRightFocus, animateText
+			source, onSourceClick, fileSize, updateDate, releaseType, chipRightFocus, animateText,
+			installedFrom
 		)
 	}
 }
@@ -346,7 +377,8 @@ private fun FullCommonItem(
 	updateDate: String,
 	releaseType: ReleaseType,
 	chipRightFocus: FocusRequester?,
-	animateText: Boolean
+	animateText: Boolean,
+	installedFrom: String
 ) = Row(Modifier.padding(12.dp)) {
 	Column(horizontalAlignment = Alignment.CenterHorizontally) {
 		if (uri == null) {
@@ -398,6 +430,7 @@ private fun FullCommonItem(
 			ReleaseTypeChip(releaseType)
 			SizeChip(fileSize)
 			DateChip(updateDate)
+			ProvenanceChip(installedFrom, source)
 		}
 	}
 }
@@ -427,7 +460,8 @@ private fun CompactCommonItem(
 	chipRightFocus: FocusRequester?,
 	animateText: Boolean,
 	showPackageName: Boolean,
-	installer: String
+	installer: String,
+	installedFrom: String
 ) = Row(
 	Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
 	verticalAlignment = Alignment.CenterVertically
@@ -490,6 +524,7 @@ private fun CompactCommonItem(
 			}
 			// Both last, and inside the row that already scrolls, so they cost no height — the
 			// whole point of the compact card is that it is two lines and stays two lines.
+			ProvenanceChip(installedFrom, source)
 			if (installer.isNotEmpty()) InstallerChip(installer)
 			if (showPackageName) MediumText(packageName, Modifier.alpha(0.6f))
 		}
@@ -656,7 +691,9 @@ fun TvInstalledItem(
 			TvCommonItem(
 				app.packageName, app.name, app.version, null, app.versionCode, null,
 				compact = true, showPackageName = true,
-				installer = installerLabel(app.installer)
+				// Our own record outranks the system's installer field: for anything this app
+				// installed, that field says only "APKUpdater".
+				installer = app.installedFrom.ifEmpty { installerLabel(app.installer) }
 			)
 		}
 		FindUpdatesButton(app, onFindUpdates)
@@ -890,7 +927,7 @@ fun TvUpdateItem(
 		// while the chevron in the action row is already the proper, styled control there.
 		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
 		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
-			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull)
+			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull, installedFrom = app.installedFrom)
 		}
 		if (showFull) WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(
@@ -951,7 +988,7 @@ fun TvSearchItem(
 		// while the chevron in the action row is already the proper, styled control there.
 		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
 		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
-			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull)
+			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull, installedFrom = app.installedFrom)
 		}
 		if (showFull) WhatsNew(app.whatsNew, app.source)
 		HorizontalDivider(

@@ -198,4 +198,6 @@
     <string name="sort_recently_updated">Недавно обновлённые</string>
     <string name="sort_recently_installed">Недавно установленные</string>
     <string name="find_updates_cd">Искать это приложение в источниках</string>
+    <string name="installed_from_here">Ставили отсюда</string>
+    <string name="installed_last_from">В прошлый раз: %1$s</string>
 </resources>

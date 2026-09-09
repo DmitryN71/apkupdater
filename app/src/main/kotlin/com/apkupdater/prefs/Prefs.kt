@@ -1,6 +1,7 @@
 package com.apkupdater.prefs
 
 import com.apkupdater.data.github.CustomGitRepo
+import com.apkupdater.data.ui.InstallRecord
 import com.apkupdater.data.ui.Screen
 import com.kryptoprefs.context.KryptoContext
 import com.kryptoprefs.gson.json
@@ -65,5 +66,7 @@ class Prefs(
 	val playProfileVersion = int("playProfileVersion", 0, true)
 	val ruStore404Packages = json("ruStore404Packages", emptyList<RuStore404Entry>(), true)
 	val customGitRepos = json("customGitRepos", emptyList<CustomGitRepo>(), true)
+	/** Where this app installed each package from. See util/InstallRecords.kt. */
+	val installRecords = json("installRecords", emptyList<InstallRecord>(), true)
 	val githubToken = string("githubToken", defValue = "", backed = true)
 }

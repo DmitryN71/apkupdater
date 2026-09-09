@@ -17,7 +17,9 @@ data class AppInstalled(
 	val lastUpdateTime: Long = 0L,
 	val firstInstallTime: Long = 0L,
 	/** Package that installed it, "" when nothing claims it — i.e. sideloaded. */
-	val installer: String = ""
+	val installer: String = "",
+	/** Source.name this app installed it from, "" if it never did. Outranks [installer]. */
+	val installedFrom: String = ""
 )
 
 fun List<AppInstalled>.getApp(packageName: String) = find { packageName == it.packageName }

@@ -25,6 +25,8 @@ data class AppUpdate(
 	 * project can perfectly well publish "2.0.0" with the flag set and nothing in the name.
 	 */
 	val isPreRelease: Boolean = false,
+	/** Source.name this app was last installed from BY US, "" if never. See util/InstallRecords.kt. */
+	val installedFrom: String = "",
 	val id: Int = "${source.name}.$packageName.$versionCode.$version".hashCode()
 ) {
 	/**
@@ -36,6 +38,15 @@ data class AppUpdate(
 }
 
 fun List<AppUpdate>.indexOf(id: Int) = indexOfFirst { it.id == id }
+
+/**
+ * After [done] was installed, every card of the same package — this source's and the others' —
+ * learns where the app now comes from, so the caption is right immediately and not only after
+ * the next refresh.
+ */
+fun List<AppUpdate>.markInstalledFrom(done: AppUpdate?): List<AppUpdate> =
+	if (done == null) this
+	else map { if (it.packageName == done.packageName) it.copy(installedFrom = done.source.name) else it }
 
 fun MutableList<AppUpdate>.setIsInstalling(id: Int, b: Boolean): List<AppUpdate> {
 	val index = this.indexOf(id)

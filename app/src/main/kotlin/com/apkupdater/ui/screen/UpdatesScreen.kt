@@ -237,10 +237,20 @@ fun ColumnScope.UpdatesScreenSuccess(
 	// tapping. Pulling keeps working and the indicator still follows the finger; what shows
 	// that a check is RUNNING is the button in the corner, and only that.
 	val pullState = rememberPullRefreshState(refreshing = false, onRefresh = onRefresh)
+	// Off on a television, where there is no finger to pull. Left on, the D-pad pulled it: a
+	// focus move that has to bring a card into view scrolls the grid, foundation dispatches
+	// that scroll as NestedScrollSource.UserInput — the same value the deprecated Drag names,
+	// and the only one our nested-scroll connection lets through — and once the grid can go no
+	// further the unconsumed remainder lands in onPull. Nothing ever releases it, because a
+	// programmatic scroll has no fling and onRelease only runs from onPreFling, so the
+	// indicator stayed parked between the cards and twitched with every focus move. Reported
+	// by Dmitry from his own TV, in compact mode, where the whole list fits and so EVERY
+	// focus move is such a remainder.
+	val pullEnabled = !isTv
 	if (updates.isEmpty()) {
-		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
+		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
 			EmptyGrid()
-			PullRefreshIndicator(
+			if (pullEnabled) PullRefreshIndicator(
 				false, pullState,
 				Modifier.align(Alignment.TopCenter),
 				contentColor = MaterialTheme.colorScheme.primary
@@ -255,7 +265,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 		val gridPadding = if (showFab) PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 80.dp)
 			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
-		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState)) {
+		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
 			TvInstalledGrid(contentPadding = gridPadding) {
 				items(updates, key = { it.id }) { update ->
 					TvUpdateItem(
@@ -298,7 +308,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 					}
 				}
 			}
-			PullRefreshIndicator(
+			if (pullEnabled) PullRefreshIndicator(
 				false, pullState,
 				Modifier.align(Alignment.TopCenter),
 				contentColor = MaterialTheme.colorScheme.primary

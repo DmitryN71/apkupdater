@@ -7,6 +7,7 @@ import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.data.ui.removeId
+import com.apkupdater.data.ui.markInstalledFrom
 import com.apkupdater.data.ui.setIsInstalled
 import com.apkupdater.data.ui.setIsInstalling
 import com.apkupdater.data.ui.setProgress
@@ -25,7 +26,9 @@ import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
+import com.apkupdater.util.installedFromMap
 import com.apkupdater.util.launchWithMutex
+import com.apkupdater.util.recordInstall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -279,7 +282,14 @@ class UpdatesViewModel(
 			// still gathers the handled ones at the top; it just stops moving under the user
 			// mid-session. A finished card is already obvious in place: it turns tertiary and
 			// its button becomes Open.
-			val updated = state.updateAndGet { it.withUpdates(it.mutableUpdates().setIsInstalled(id)) }
+			// The one moment the origin is certain — see util/InstallRecords.kt. Looked up before
+			// the list changes, then stamped onto every card of the same package so the caption
+			// is right at once and not only after the next check.
+			val done = state.value.updates().find { it.id == id }
+			if (done != null) prefs.recordInstall(done)
+			val updated = state.updateAndGet {
+				it.withUpdates(it.mutableUpdates().setIsInstalled(id).markInstalledFrom(done))
+			}
 			badger.changeUpdatesBadge(updated.updates().count { !it.isInstalled }.toString())
 		}
 	}
@@ -517,6 +527,7 @@ class UpdatesViewModel(
 		// Read the ignore list once, outside: the block below can be re-run under contention
 		// and must stay free of side effects.
 		val ignored = prefs.ignoredVersions.get()
+		val installedFrom = prefs.installedFromMap()
 		// A refresh rebuilds the list from scratch, but downloads/installs keep running in
 		// BackgroundInstaller's process-wide scope. Carry their state over, otherwise a refresh
 		// would reset a running download's card back to "Update" while it is still downloading.
@@ -529,6 +540,7 @@ class UpdatesViewModel(
 				.associateBy { it.id }
 			UpdatesUiState.Success(
 				updates
+					.map { it.copy(installedFrom = installedFrom[it.packageName].orEmpty()) }
 					.filterIgnoredVersions(ignored)
 					.distinctBy { it.id }
 					.map { fresh ->

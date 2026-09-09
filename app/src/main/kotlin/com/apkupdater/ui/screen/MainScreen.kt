@@ -49,6 +49,14 @@ import com.apkupdater.R
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.rememberCoroutineScope
+import android.content.IntentFilter
+import android.content.Context
+import android.content.BroadcastReceiver
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -110,6 +118,10 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	LaunchedEffect(Unit) {
 		mainViewModel.refreshOnStart(appsViewModel, updatesViewModel)
 	}
+	// A composable, so it lives in the composition itself, not inside the effect above — the
+	// receiver it registers must be unregistered when this screen leaves, which is what its
+	// DisposableEffect does.
+	RefreshAppsOnPackageChanges(appsViewModel)
 
 	// Used to launch the install intent and get dismissal result
 	val installLog = get<InstallLog>()
@@ -298,25 +310,31 @@ fun checkNotificationIntent(
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun BottomBar(mainViewModel: MainViewModel, navController: NavController) {
-	// ATTEMPTED AND IT DOES NOT WORK — verified on a real TV, left in place because it is inert.
+	// D-pad DOWN out of a screen should land on the tab you are ON, not on whichever tab is
+	// nearest the centre of the screen — from the full-width settings rows that was Search.
 	//
-	// Pressing DOWN out of a screen lands on whichever tab sits nearest the centre of the screen:
-	// from the full-width settings rows that is Search, not the tab you are actually on. The idea
-	// here was that `focusProperties { enter }` intercepts focus arriving at the bar from any
-	// direction and redirects it to the SELECTED tab. It does not: DOWN still lands on the
-	// geometrically nearest item, so 2D directional search evidently does not consult `enter` the
-	// way one-dimensional traversal does.
+	// `focusProperties { enter }` is the right tool, and the earlier attempt with it "did not
+	// work on a real TV" for one reason: it was written AFTER `focusGroup()` in the chain.
+	// focusGroup() is `focusProperties { canFocus = false }.focusTarget()`, and a focus target
+	// reads its properties from the modifiers BEFORE it in the chain (fetchFocusProperties
+	// walks ancestors and stops at the next target). Placed after, the `enter` never reached
+	// the group's own target; it was inherited by the four items instead, where nothing ever
+	// consults it. Verified against Compose UI 1.7.8 bytecode: FocusOwnerImpl.moveFocus hands
+	// the candidate the 2D search found to requestFocus(direction), whose first act is
+	// performCustomRequestFocus; for an Inactive item that asks the PARENT target — this
+	// group — via performCustomEnter, which reads fetchFocusProperties().enter and follows
+	// the requester it returns. So 2D search does honour `enter`; it just has to be on the
+	// node that is being entered.
 	//
-	// If this is picked up again, do NOT reach for `focusProperties { down = … }` on the screen
-	// content: focus properties are inherited by every child, so that would hijack DOWN inside
-	// the list as well and make the list unnavigable. The remaining lever is probably an explicit
-	// `down` on the LAST item of each list only, which means every screen has to know which of
-	// its items is last. Judged not worth it — Dmitry chose to live with it.
+	// Still true and still important: do NOT reach for `focusProperties { down = … }` on the
+	// screen content. Properties are inherited by every child, so that hijacks DOWN inside the
+	// list too. LEFT/RIGHT between the tabs is unaffected by any of this: once focus is inside
+	// the group, the custom-enter fallback is not on the path.
 	val selectedTabFocus = remember { FocusRequester() }
 	BottomAppBar(
 		modifier = Modifier
-			.focusGroup()
 			.focusProperties { enter = { selectedTabFocus } }
+			.focusGroup()
 	) {
 		val badges = get<Badger>().flow().collectAsStateWithLifecycle().value
 		mainViewModel.screens.forEach { screen ->
@@ -429,4 +447,52 @@ fun NavHost(
 	composable(Screen.Search.route) { SearchScreen(searchViewModel) }
 	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, onRefresh) }
 	composable(Screen.Settings.route) { SettingsScreen(settingsViewModel) }
+}
+
+/**
+ * Reloads the installed-app list whenever a package is added, replaced or removed — by us, by a
+ * store, or by the user in Settings.
+ *
+ * Until now that list was read once at start-up and again only when the Refresh button on the
+ * Updates tab was pressed, so after any install it showed the old version, the old name and the
+ * old installer until the app was restarted. That had always been so; the provenance chip is what
+ * made it visible — an app just reinstalled from RuStore through this very app went on saying
+ * "Google Play", because the row on screen predated the reinstall.
+ *
+ * Only the Apps list is reloaded: that is a local package-manager read. The Updates list is a
+ * nine-source network check and is not something to fire on every broadcast.
+ *
+ * Package broadcasts need a data scheme on the filter or nothing arrives. Registered EXPORTED:
+ * ACTION_PACKAGE_* are protected broadcasts that only the system may send, so exporting lets in
+ * nobody else, and on Android 14 it is the flag that guarantees delivery. Coalesced with a short
+ * delay, because one update produces REMOVED + ADDED + REPLACED and "Update all" produces that
+ * for every app in the batch — a thousand-package read per broadcast would be careless.
+ */
+@Composable
+fun RefreshAppsOnPackageChanges(appsViewModel: AppsViewModel) {
+	val context = LocalContext.current
+	val scope = rememberCoroutineScope()
+	DisposableEffect(Unit) {
+		var pending: Job? = null
+		val receiver = object : BroadcastReceiver() {
+			override fun onReceive(ctx: Context?, intent: Intent?) {
+				pending?.cancel()
+				pending = scope.launch {
+					delay(800)
+					appsViewModel.refresh(false)
+				}
+			}
+		}
+		val filter = IntentFilter().apply {
+			addAction(Intent.ACTION_PACKAGE_ADDED)
+			addAction(Intent.ACTION_PACKAGE_REPLACED)
+			addAction(Intent.ACTION_PACKAGE_REMOVED)
+			addDataScheme("package")
+		}
+		ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+		onDispose {
+			pending?.cancel()
+			runCatching { context.unregisterReceiver(receiver) }
+		}
+	}
 }

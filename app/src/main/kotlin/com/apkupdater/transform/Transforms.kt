@@ -14,7 +14,8 @@ import com.apkupdater.util.name
 fun PackageInfo.toAppInstalled(
 	context: Context,
 	ignored: List<String>,
-	installer: String = ""
+	installer: String = "",
+	installedFrom: String = ""
 ) = AppInstalled(
 	name(context),
 	packageName,
@@ -26,7 +27,8 @@ fun PackageInfo.toAppInstalled(
 	getSignatureSha256(),
 	lastUpdateTime,
 	firstInstallTime,
-	installer
+	installer,
+	installedFrom
 )
 
 fun iconUri(packageName: String, id: Int): Uri = Uri.parse("android.resource://$packageName/$id")

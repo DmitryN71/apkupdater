@@ -1,5 +1,8 @@
 package com.apkupdater.viewmodel
 
+import com.apkupdater.BuildConfig
+import com.apkupdater.util.installRecordsReport
+
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -287,7 +290,13 @@ class SettingsViewModel(
 	fun copyAppLogs() = viewModelScope.launch(Dispatchers.IO) {
 		val process = Runtime.getRuntime().exec("logcat -d")
 		val data = process.inputStream.readBytes()
-		clipboard.copy(data.decodeToString(), "App Logs")
+		// Our own record of where each app was installed from leads the dump, because "where
+		// did you install it from?" is the question every forum report starts with and the
+		// reporter usually cannot answer. Ahead of the log, which is long.
+		val records = prefs.installRecordsReport().ifEmpty { "(none)" }
+		val header = "APKUpdater ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n" +
+			"Installed by APKUpdater, newest first:\n$records\n\n"
+		clipboard.copy(header + data.decodeToString(), "App Logs")
 	}
 
 	// Crash report captured by CrashHandler on the previous run (see util/CrashHandler.kt).

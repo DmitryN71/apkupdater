@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.removeId
+import com.apkupdater.data.ui.markInstalledFrom
 import com.apkupdater.data.ui.setIsInstalled
 import com.apkupdater.data.ui.setIsInstalling
 import com.apkupdater.data.ui.setProgress
@@ -19,7 +20,9 @@ import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
+import com.apkupdater.util.installedFromMap
 import com.apkupdater.util.launchWithMutex
+import com.apkupdater.util.recordInstall
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +40,7 @@ class SearchViewModel(
     private val installer: SessionInstaller,
     private val badger: Badger,
     downloader: Downloader,
-    prefs: Prefs,
+    private val prefs: Prefs,
     snackBar: SnackBar,
     stringer: Stringer,
     installLog: InstallLog,
@@ -150,9 +153,12 @@ class SearchViewModel(
                 // Superseded by a clear() or a newer query — see the note on clearSearch().
                 if (generation.get() != mine) return@collect
                 it.onSuccess { apps ->
+                    val installedFrom = prefs.installedFromMap()
                     val enriched = apps.map { app ->
                         val installed = getInstalledVersionCode(app.packageName)
-                        if (installed > 0L) app.copy(oldVersionCode = installed) else app
+                        val origin = installedFrom[app.packageName].orEmpty()
+                        if (installed > 0L) app.copy(oldVersionCode = installed, installedFrom = origin)
+                        else app.copy(installedFrom = origin)
                     }
                     // Results arrive one source at a time and each emission replaces the whole
                     // list. Carry over anything already downloading or installed, or tapping
@@ -196,7 +202,12 @@ class SearchViewModel(
     override fun finishInstall(id: Int): Job {
         installer.finish(id)
         return viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
-            val updated = state.updateAndGet { it.withUpdates(it.mutableUpdates().setIsInstalled(id)) }
+            // Same as UpdatesViewModel.finishInstall: record the origin, stamp the cards.
+            val done = state.value.updates().find { it.id == id }
+            if (done != null) prefs.recordInstall(done)
+            val updated = state.updateAndGet {
+                it.withUpdates(it.mutableUpdates().setIsInstalled(id).markInstalledFrom(done))
+            }
             badger.changeSearchBadge(updated.updates().count { !it.isInstalled }.toString())
         }
     }

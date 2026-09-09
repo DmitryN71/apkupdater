@@ -199,4 +199,6 @@
     <string name="sort_recently_updated">Recently updated</string>
     <string name="sort_recently_installed">Recently installed</string>
     <string name="find_updates_cd">Look for this app in the sources</string>
+    <string name="installed_from_here">Installed from here</string>
+    <string name="installed_last_from">Last time: %1$s</string>
 </resources>

@@ -242,7 +242,10 @@ fun isVersionDowngrade(oldVersion: String, newVersion: String): Boolean {
  */
 fun installerLabel(installer: String): String = when {
 	installer.isEmpty() -> ""
-	installer.startsWith("com.android.vending") -> "Google Play"
+	// "Play", not "Google Play": it is what the source chip on every card has said since the
+	// beginning, and this label now sits beside chips drawn from our own install records,
+	// which carry that source name. One store, one word — two on one screen was reported.
+	installer.startsWith("com.android.vending") -> "Play"
 	installer.startsWith("ru.vk.store") -> "RuStore"
 	installer.startsWith("org.fdroid") -> "F-Droid"
 	installer.startsWith("com.aurora.store") -> "Aurora Store"

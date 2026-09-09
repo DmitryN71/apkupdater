@@ -7,7 +7,9 @@ import android.os.Build
 import android.util.Log
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.transform.toAppInstalled
+import com.apkupdater.util.installedFromMap
 import com.apkupdater.util.orFalse
+import com.apkupdater.util.pruneInstallRecords
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 
@@ -18,8 +20,13 @@ class AppsRepository(
 ) {
 
 	suspend fun getApps() = flow {
-		val apps = context.packageManager
-			.getInstalledPackages(PackageManager.MATCH_ALL + getSignatureFlag())
+		val all = context.packageManager.getInstalledPackages(PackageManager.MATCH_ALL + getSignatureFlag())
+		// Our own install records are pruned HERE, against the complete list and before any of
+		// the filters below — prune against the filtered one and a system app hidden by the
+		// "System" chip would lose its record on every visit to the tab.
+		prefs.pruneInstallRecords(all.mapTo(HashSet()) { it.packageName })
+		val installedFrom = prefs.installedFromMap()
+		val apps = all
 			.asSequence()
 			.filter { !excludeSystem() || it.applicationInfo?.flags?.and(ApplicationInfo.FLAG_SYSTEM) == 0 }
 			.filter { !excludeSystem() || it.applicationInfo?.flags?.and(ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0 }
@@ -29,7 +36,9 @@ class AppsRepository(
 			// thousand-app device would be careless.
 			.map { it to getInstallerPackageName(it.packageName) }
 			.filter { (_, installer) -> !excludeStore() || !isAppStore(installer) }
-			.map { (info, installer) -> info.toAppInstalled(context, ignoredApps(), installer) }
+			.map { (info, installer) ->
+				info.toAppInstalled(context, ignoredApps(), installer, installedFrom[info.packageName].orEmpty())
+			}
 			// Alphabetical is the baseline the screen re-sorts on demand; see AppsScreen.
 			.sortedBy { it.name }
 			// Ignored apps used to be pushed to the very bottom, which buried exactly what you
