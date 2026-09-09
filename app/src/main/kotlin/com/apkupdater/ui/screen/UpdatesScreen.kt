@@ -287,7 +287,13 @@ fun ColumnScope.UpdatesScreenSuccess(
 							containerColor = MaterialTheme.colorScheme.primaryContainer,
 							contentColor = MaterialTheme.colorScheme.onPrimaryContainer
 						) {
-							Icon(painterResource(R.drawable.ic_update_all), contentDescription = stringResource(R.string.install_all))
+							// ic_install (a phone taking an arrow), not ic_update_all. Those two
+							// drawables were the SAME glyph — an arrow into a tray, Material's
+							// download mark — written as two different paths, so "Update all"
+							// wore the icon the Download button on every card already wears.
+							// Reported on 4PDA by kuwahara, who read the button as a second
+							// Download and could not find the update-all action at all.
+							Icon(painterResource(R.drawable.ic_install), contentDescription = stringResource(R.string.install_all))
 						}
 					}
 				}

@@ -20,6 +20,7 @@ interface ApkPureService {
     @POST("v3/get_app_update")
     suspend fun getAppUpdate(
         @Header("ual-access-projecta") header: String,
+        @Header("Accept-Language") language: String,
         @Body request: GetAppUpdate
     ): GetAppUpdateResponse
 
@@ -29,6 +30,7 @@ interface ApkPureService {
     @GET("v3/search_query_new")
     suspend fun search(
         @Header("ual-access-projecta") header: String,
+        @Header("Accept-Language") language: String,
         @Query("key") key: String
     ): SearchResponse
 
