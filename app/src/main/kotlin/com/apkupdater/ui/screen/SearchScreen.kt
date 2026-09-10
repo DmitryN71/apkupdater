@@ -57,14 +57,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.grid.items
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.Source
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
-import com.apkupdater.ui.component.TvInstalledGrid
+import com.apkupdater.ui.component.TvEqualRows
 import com.apkupdater.ui.component.TvSearchItem
 import com.apkupdater.ui.component.TvIconButton
 import com.apkupdater.ui.theme.statusBarColor
@@ -156,10 +155,10 @@ fun SearchScreenSuccess(
 		return
 	}
 
-	TvInstalledGrid {
-		items(shown, key = { it.id }) { update ->
+	TvEqualRows(shown, itemKey = { it.id }) { update, cardModifier ->
 			TvSearchItem(
 				update,
+				modifier = cardModifier,
 				onInstall = { viewModel.install(update, uriHandler, notificationPermission) },
 				onOpen = { packageName ->
 					context.packageManager.getLaunchIntentForPackage(packageName)?.let {
@@ -170,7 +169,6 @@ fun SearchScreenSuccess(
 				onDownload = { viewModel.downloadToFolder(it) },
 				onCancel = { viewModel.userCancelInstall(it) }
 			)
-		}
 	}
 }
 

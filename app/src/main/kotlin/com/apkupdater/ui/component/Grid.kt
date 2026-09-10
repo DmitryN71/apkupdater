@@ -1,5 +1,19 @@
 package com.apkupdater.ui.component
 
+import androidx.tv.foundation.lazy.grid.items
+
+import androidx.compose.runtime.remember
+
+import androidx.compose.runtime.key
+
+import androidx.compose.foundation.layout.fillMaxWidth
+
+import androidx.compose.foundation.layout.fillMaxHeight
+
+import androidx.compose.foundation.layout.Row
+
+import androidx.compose.foundation.layout.IntrinsicSize
+
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,4 +97,55 @@ fun getTvNumColumns(): Int {
         1
     else
         2
+}
+
+/**
+ * The update and search lists: cards in rows, every card in a row as tall as the tallest.
+ *
+ * A lazy grid measures each item on its own and places it at the top of its line, so when one
+ * card of a landscape or TV pair is opened, its neighbour keeps its old height. That is ugly,
+ * and on a D-pad it is worse than ugly: directional focus search is geometric, and with the two
+ * action rows at different heights DOWN from one card's Update lands somewhere unexpected.
+ * Reported by Dmitry from his TV.
+ *
+ * So the grid has ONE column and each item is a whole row: a Row measured at its max intrinsic
+ * height, with every card told to fill it. The card puts its action row at the bottom (see the
+ * Spacer before the divider in TvUpdateItem), so Skip / Update line up across the row and
+ * LEFT / RIGHT / DOWN go where the eye expects. The container is still TvLazyVerticalGrid,
+ * for its pivot scrolling and the edge-focus behaviour that took builds 105–137 to tame — it
+ * simply holds rows now instead of cards. In portrait a row is one card, and nothing changes.
+ *
+ * Each card sits in its own key() so a row that re-chunks after a Skip does not hand one card's
+ * saved state to whichever card slid into its slot.
+ */
+@Composable
+fun <T> TvEqualRows(
+    items: List<T>,
+    itemKey: (T) -> Any,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+    card: @Composable (item: T, modifier: Modifier) -> Unit
+) {
+    val columns = getTvNumColumns()
+    val rows = remember(items, columns) { items.chunked(columns) }
+    TvLazyVerticalGrid(
+        columns = TvGridCells.Fixed(1),
+        contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(rows, key = { row -> itemKey(row.first()) }) { row ->
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { item ->
+                    key(itemKey(item)) {
+                        card(item, Modifier.weight(1f).fillMaxHeight())
+                    }
+                }
+                // A short last row keeps its column width rather than stretching one card wide.
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
 }

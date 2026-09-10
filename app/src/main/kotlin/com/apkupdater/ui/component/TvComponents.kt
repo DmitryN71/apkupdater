@@ -889,6 +889,7 @@ private fun IgnoreAppButton(
 @Composable
 fun TvUpdateItem(
 	app: AppUpdate,
+	modifier: Modifier = Modifier,
 	onInstall: (String) -> Unit = {},
 	onIgnoreVersion: (Int) -> Unit,
 	onOpen: (String) -> Unit = {},
@@ -899,7 +900,7 @@ fun TvUpdateItem(
 	// Set on the FIRST card only, so the screen can put D-pad focus there instead of leaving
 	// it on the bottom navigation bar — see UpdatesScreenSuccess.
 	firstItemFocus: FocusRequester? = null
-) = TvFocusCard {
+) = TvFocusCard(modifier) {
 	Column {
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
@@ -930,6 +931,10 @@ fun TvUpdateItem(
 			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull, installedFrom = app.installedFrom)
 		}
 		if (showFull) WhatsNew(app.whatsNew, app.source)
+		// Takes up whatever height the card was given beyond its content — which happens only
+		// when a neighbour in the same row is taller (TvEqualRows) — so the action row sits at
+		// the bottom and lines up with the neighbour's. Zero in portrait, where a row is one card.
+		Spacer(Modifier.weight(1f))
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
@@ -963,12 +968,13 @@ fun TvUpdateItem(
 @Composable
 fun TvSearchItem(
 	app: AppUpdate,
+	modifier: Modifier = Modifier,
 	onInstall: (String) -> Unit = {},
 	onOpen: (String) -> Unit = {},
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
 	onCancel: (Int) -> Unit = {}
-) = TvFocusCard {
+) = TvFocusCard(modifier) {
 	Column {
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
@@ -991,6 +997,10 @@ fun TvSearchItem(
 			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull, installedFrom = app.installedFrom)
 		}
 		if (showFull) WhatsNew(app.whatsNew, app.source)
+		// Takes up whatever height the card was given beyond its content — which happens only
+		// when a neighbour in the same row is taller (TvEqualRows) — so the action row sits at
+		// the bottom and lines up with the neighbour's. Zero in portrait, where a row is one card.
+		Spacer(Modifier.weight(1f))
 		HorizontalDivider(
 			Modifier.padding(horizontal = 12.dp),
 			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)

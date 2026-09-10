@@ -51,7 +51,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.grid.items
 import com.apkupdater.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -64,7 +63,7 @@ import com.apkupdater.ui.component.EmptyGrid
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.RefreshIcon
 import com.apkupdater.ui.component.StopCheckingIcon
-import com.apkupdater.ui.component.TvInstalledGrid
+import com.apkupdater.ui.component.TvEqualRows
 import com.apkupdater.ui.component.TvUpdateItem
 import com.apkupdater.ui.component.TvIconButton
 import com.apkupdater.ui.theme.statusBarColor
@@ -266,10 +265,10 @@ fun ColumnScope.UpdatesScreenSuccess(
 			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
 		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
-			TvInstalledGrid(contentPadding = gridPadding) {
-				items(updates, key = { it.id }) { update ->
+			TvEqualRows(updates, itemKey = { it.id }, contentPadding = gridPadding) { update, cardModifier ->
 					TvUpdateItem(
 						update,
+						modifier = cardModifier,
 						{ viewModel.install(update, handler, notificationPermission) },
 						{ viewModel.ignoreVersion(update.id) },
 						onOpen = { packageName ->
@@ -283,7 +282,6 @@ fun ColumnScope.UpdatesScreenSuccess(
 						onCancel = { viewModel.userCancelInstall(it) },
 						firstItemFocus = if (isTv && update.id == firstId) firstItemFocus else null
 					)
-				}
 			}
 			if (showFab) {
 				Box(Modifier.align(Alignment.BottomEnd).padding(16.dp)) {

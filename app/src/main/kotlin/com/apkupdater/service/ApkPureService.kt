@@ -21,6 +21,7 @@ interface ApkPureService {
     suspend fun getAppUpdate(
         @Header("ual-access-projecta") header: String,
         @Header("Accept-Language") language: String,
+        @Query("hl") hl: String,
         @Body request: GetAppUpdate
     ): GetAppUpdateResponse
 
@@ -31,6 +32,7 @@ interface ApkPureService {
     suspend fun search(
         @Header("ual-access-projecta") header: String,
         @Header("Accept-Language") language: String,
+        @Query("hl") hl: String,
         @Query("key") key: String
     ): SearchResponse
 

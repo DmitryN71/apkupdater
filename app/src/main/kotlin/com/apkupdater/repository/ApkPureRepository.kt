@@ -46,9 +46,20 @@ class ApkPureRepository(
         if (language.isBlank()) "en" else "${locale.toLanguageTag()},$language;q=0.9,en;q=0.8"
     }
 
+    /**
+     * The parameter this API actually reads. Found the day after the header above shipped, in
+     * three independent clients of the same endpoints: Obtainium sends `hl=en` to
+     * tapi.pureapk.com with our very headers, and both apkeep (EFF) and a widely copied gist
+     * send `hl=en-US` to api.pureapk.com. All three hard-code English; we send the device's
+     * language, region form included, since the region form is what two of them use.
+     */
+    private val hl = Locale.getDefault().let { locale ->
+        if (locale.language.isBlank()) "en" else locale.toLanguageTag()
+    }
+
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val info = apps.map { AppInfoForUpdate(it.packageName, it.versionCode) }
-        val r = service.getAppUpdate(header, acceptLanguage, GetAppUpdate(info))
+        val r = service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info))
         val updates = r.app_update_response
             .filter { filterSignature(it.sign, apps.getSignature(it.package_name)) }
             .filter { filterAlpha(it) }
@@ -61,13 +72,13 @@ class ApkPureRepository(
     }
 
     suspend fun search(text: String) = flow {
-        val response = service.search(header, acceptLanguage, text)
+        val response = service.search(header, acceptLanguage, hl, text)
         val info = response.data.data.mapNotNull { d ->
             d.data.firstOrNull()?.takeIf { !it.ad }?.app_info?.let {
                 AppInfoForUpdate(it.package_name, 0L, false)
             }
         }
-        val r = service.getAppUpdate(header, acceptLanguage, GetAppUpdate(info))
+        val r = service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info))
         val updates = r.app_update_response
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
