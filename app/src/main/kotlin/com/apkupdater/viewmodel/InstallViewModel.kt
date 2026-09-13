@@ -204,6 +204,17 @@ abstract class InstallViewModel(
      */
     private fun rejectWrongPackage(file: File, packageName: String, id: Int): Boolean {
         val wrongPackage = installer.verifyPackage(file, packageName) ?: return false
+        // A mismatch is only a danger when the app we EXPECTED is on the device: installing the
+        // other package would then put a second copy beside it (the Brave Nightly-over-Beta
+        // case). When the expected package is not installed at all, the APK's own package name
+        // is the truth and the card's was a guess — which is what the GitHub catalogue's
+        // package names are. SmartTube renamed itself to org.smarttube.stable; our catalogue
+        // still said com.teamsmart.videomanager.tv, so a search install of the real release was
+        // refused as "a different app". Reported by InternetUser from a TV.
+        if (getInstalledVersionCode(packageName) <= 0L) {
+            Log.w("InstallViewModel", "APK is $wrongPackage, card said $packageName; the latter is not installed, so installing")
+            return false
+        }
         file.delete()
         // Shown directly rather than through the status channel, whose snack lookup uses a
         // stale list — the user always sees why.

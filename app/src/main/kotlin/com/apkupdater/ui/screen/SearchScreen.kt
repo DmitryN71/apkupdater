@@ -29,8 +29,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -259,6 +263,7 @@ fun SearchTopBar(viewModel: SearchViewModel) = TopAppBar(
 	}
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchText(viewModel: SearchViewModel) = Box {
 	val keyboardController = LocalSoftwareKeyboardController.current
@@ -277,7 +282,19 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 	// button and nothing to erase, so that count could not be got rid of at all. Falling back
 	// to the last query run puts field, list and badge back into agreement.
 	var value by rememberSaveable { mutableStateOf(viewModel.query.value) }
-	TextField(
+	// BasicTextField with Material's own decoration, rather than TextField, for one reason:
+	// TextField has no contentPadding parameter and enforces a 56 dp minimum height. Inside a
+	// 64 dp top bar that leaves 4 dp above and below — far tighter than the gap at the sides,
+	// which is what looked wrong. The decoration, the shape and the colours are Material's;
+	// only the padding and the height are ours. Asked for by Dmitry, 2026-09-13.
+	val interactionSource = remember { MutableInteractionSource() }
+	// Explicit so D-pad RIGHT out of the field reaches the clear button, which sits INSIDE the
+	// field's own bounds where the geometric focus search does not look. focusProperties is
+	// consulted before that search, so this is deterministic — the same lever the source chip
+	// on a card uses. Only while the button exists: an unattached FocusRequester throws.
+	val clearFocus = remember { FocusRequester() }
+	val clearVisible = value.isNotEmpty()
+	BasicTextField(
 		value = value,
 		onValueChange = {
 			value = it
@@ -286,26 +303,53 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 			// leave them sitting under an empty field.
 			if (it.length < 3) viewModel.clearSearch()
 		},
-		trailingIcon = {
-			if (value.isNotEmpty()) {
-				TvIconButton(onClick = { value = ""; viewModel.clearSearch() }) {
-					Icon(Icons.Filled.Close, stringResource(R.string.clear_search_cd))
-				}
-			}
-		},
-		modifier = Modifier.fillMaxWidth().padding(end = 8.dp).focusRequester(focusRequester),
-		placeholder = { Text(stringResource(R.string.tab_search)) },
+		modifier = Modifier
+			.fillMaxWidth()
+			.padding(end = 8.dp)
+			.height(48.dp)
+			.then(if (clearVisible) Modifier.focusProperties { right = clearFocus } else Modifier)
+			.focusRequester(focusRequester),
+		textStyle = MaterialTheme.typography.bodyLarge.copy(
+			color = MaterialTheme.colorScheme.onSurface
+		),
+		cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
 		keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
 		keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
-		colors = TextFieldDefaults.colors(
-			focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-			unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-			focusedIndicatorColor = Color.Transparent,
-			unfocusedIndicatorColor = Color.Transparent
-		),
-		shape = RoundedCornerShape(28.dp),
-		maxLines = 1,
-		singleLine = true
+		singleLine = true,
+		interactionSource = interactionSource,
+		decorationBox = { innerTextField ->
+			TextFieldDefaults.DecorationBox(
+				value = value,
+				innerTextField = innerTextField,
+				enabled = true,
+				singleLine = true,
+				visualTransformation = VisualTransformation.None,
+				interactionSource = interactionSource,
+				placeholder = { Text(stringResource(R.string.tab_search)) },
+				trailingIcon = {
+					if (clearVisible) {
+						TvIconButton(
+							onClick = { value = ""; viewModel.clearSearch() },
+							modifier = Modifier.focusRequester(clearFocus)
+						) {
+							Icon(Icons.Filled.Close, stringResource(R.string.clear_search_cd))
+						}
+					}
+				},
+				shape = RoundedCornerShape(28.dp),
+				colors = TextFieldDefaults.colors(
+					focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+					unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+					focusedIndicatorColor = Color.Transparent,
+					unfocusedIndicatorColor = Color.Transparent
+				),
+				// 12 dp instead of Material's 16, which is what buys the height back.
+				contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
+					top = 12.dp,
+					bottom = 12.dp
+				)
+			)
+		}
 	)
 	LaunchedEffect(Unit) {
 		focusRequester.requestFocus()

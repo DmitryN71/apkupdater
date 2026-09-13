@@ -25,6 +25,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.CardDefaults
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -57,7 +60,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.OutlinedTextField
+import com.apkupdater.ui.component.TvTextField
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.runtime.LaunchedEffect
 import com.apkupdater.data.github.GitProvider
@@ -159,13 +162,31 @@ fun AboutItem(
 	link: String,
 	icon: @Composable RowScope.() -> Unit,
 	handler: UriHandler = LocalUriHandler.current
-) = OutlinedCard(
-	Modifier.fillMaxWidth().padding(bottom = 8.dp).clickable { handler.openUri(link) }) {
-	Row(Modifier.padding(8.dp)) {
-		icon()
-		Column(Modifier.padding(start = 16.dp)) {
-			MediumTitle(title)
-			MediumText(body, maxLines = 2)
+) {
+	// OutlinedCard(onClick), not clickable() on the card's outer modifier. Put there, the
+	// indication drew in the modifier's own bounds — a rectangle — behind a rounded card, so
+	// its corners showed past the curve whenever the row held D-pad focus; reported from a TV,
+	// "углы возле кота". And the row now takes the same solid fill every other focusable row
+	// in Settings has carried since 112, instead of Material's faint state layer.
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	OutlinedCard(
+		onClick = { handler.openUri(link) },
+		modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+		interactionSource = interaction,
+		colors = CardDefaults.outlinedCardColors(
+			containerColor = if (focused) MaterialTheme.colorScheme.inverseSurface
+				else MaterialTheme.colorScheme.surface,
+			contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface
+				else MaterialTheme.colorScheme.onSurface
+		)
+	) {
+		Row(Modifier.padding(8.dp)) {
+			icon()
+			Column(Modifier.padding(start = 16.dp)) {
+				MediumTitle(title)
+				MediumText(body, maxLines = 2)
+			}
 		}
 	}
 }
@@ -246,18 +267,13 @@ fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_github
 		)
 		var githubToken by remember { mutableStateOf(viewModel.getGitHubToken()) }
-		val isTv = LocalContext.current.isAndroidTv()
-		var githubTokenEditing by remember { mutableStateOf(false) }
-		OutlinedTextField(
+		TvTextField(
 			value = githubToken,
 			onValueChange = { githubToken = it; viewModel.setGitHubToken(it) },
 			label = { Text(stringResource(R.string.github_token)) },
 			placeholder = { Text(stringResource(R.string.github_token_hint)) },
 			supportingText = { Text(stringResource(R.string.github_token_help)) },
-			singleLine = true,
-			readOnly = isTv && !githubTokenEditing,
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-				.then(if (isTv) Modifier.clickable { githubTokenEditing = true } else Modifier)
 		)
 		SwitchSetting(
 			{ viewModel.getUseGitLab() },
@@ -584,24 +600,19 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 		LaunchedEffect(Unit) { viewModel.loadInstalledApps() }
 		val allApps = viewModel.installedApps.collectAsStateWithLifecycle().value
 
-		var repoUrlEditing by remember { mutableStateOf(false) }
 		val isTvRepo = LocalContext.current.isAndroidTv()
-		OutlinedTextField(
+		TvTextField(
 			value = repoUrl,
 			onValueChange = { repoUrl = it; errorMsg = null },
 			label = { Text(stringResource(R.string.custom_repo_hint)) },
 			isError = errorMsg != null,
 			supportingText = errorMsg?.let { msg -> { Text(msg) } },
-			singleLine = true,
-			readOnly = isTvRepo && !repoUrlEditing,
 			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-				.then(if (isTvRepo) Modifier.clickable { repoUrlEditing = true } else Modifier)
 		)
 
 		// Installed app picker
-		var appQueryEditing by remember { mutableStateOf(false) }
 		Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-			OutlinedTextField(
+			TvTextField(
 				value = appQuery,
 				onValueChange = {
 					appQuery = it
@@ -609,10 +620,7 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 					appDropdownExpanded = it.length >= 2
 				},
 				label = { Text(stringResource(R.string.link_installed_app)) },
-				singleLine = true,
-				readOnly = isTvRepo && !appQueryEditing,
 				modifier = Modifier.fillMaxWidth()
-					.then(if (isTvRepo) Modifier.clickable { appQueryEditing = true } else Modifier)
 			)
 			val filtered = if (appQuery.length >= 2) {
 				allApps.filter { it.name.contains(appQuery, ignoreCase = true) }.take(8)
@@ -621,7 +629,10 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 				expanded = appDropdownExpanded && filtered.isNotEmpty(),
 				onDismissRequest = { appDropdownExpanded = false },
 				modifier = Modifier.heightIn(max = 250.dp),
-				properties = PopupProperties(focusable = false)
+				// Focusable on a television and only there: without it the popup can never take
+				// the D-pad, so the suggestions were visible and unreachable. On a phone a
+				// focusable popup would close the keyboard the moment it appeared.
+				properties = PopupProperties(focusable = isTvRepo)
 			) {
 				filtered.forEach { app ->
 					DropdownMenuItem(

@@ -326,6 +326,13 @@ val GitHubApps = listOf(
     GitHubApp("com.buzbuz.smartautoclicker", "Nain57", "Smart-AutoClicker"),
     GitHubApp("it.rignanese.leo.slimfacebook", "rignaneseleo", "SlimSocial-for-Facebook"),
     GitHubApp("com.cookiegames.smartcookie", "CookieJarApps", "SmartCookieWeb"),
+    // SmartTube renamed its packages: smarttubetv/build.gradle now declares the flavours
+    // org.smarttube.stable, org.smarttube.beta and app.smarttube.fdroid (the last one is
+    // F-Droid's, not GitHub's). The three older ids stay for anyone still on them; the two
+    // new ones are what the current releases actually contain — checked 2026-09-10 after a TV
+    // user's install of a real SmartTube release was refused as "a different app".
+    GitHubApp("org.smarttube.stable", "yuliskov", "SmartTube", notContains("_beta")),
+    GitHubApp("org.smarttube.beta", "yuliskov", "SmartTube", contains("_beta")),
     GitHubApp("com.liskovsoft.smarttubetv", "yuliskov", "SmartTube", notContains("_beta")),
     GitHubApp("com.liskovsoft.smarttubetv.beta", "yuliskov", "SmartTube", contains("_beta")),
     GitHubApp("com.teamsmart.videomanager.tv", "yuliskov", "SmartTube"),

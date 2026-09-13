@@ -1,6 +1,5 @@
 package com.apkupdater.ui.screen
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,7 +19,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -42,13 +40,13 @@ import com.apkupdater.data.ui.AppsUiState
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvInstalledGrid
+import com.apkupdater.ui.component.TvTextField
 import com.apkupdater.ui.component.TvInstalledItem
 import com.apkupdater.ui.theme.statusBarColor
 import com.apkupdater.ui.component.TvIconButton
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppsSort
 import com.apkupdater.data.ui.orderedBy
-import com.apkupdater.util.isAndroidTv
 import com.apkupdater.util.openAppInfo
 import com.apkupdater.viewmodel.AppsViewModel
 import org.koin.androidx.compose.koinViewModel
@@ -129,8 +127,6 @@ fun AppsFilterBar(
 ) {
 	val query by viewModel.query.collectAsStateWithLifecycle()
 	val onlyIgnored by viewModel.onlyIgnored.collectAsStateWithLifecycle()
-	val isTv = LocalContext.current.isAndroidTv()
-	var editing by remember { mutableStateOf(false) }
 
 	Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
 		Row(
@@ -142,16 +138,11 @@ fun AppsFilterBar(
 			AppFilterChip(!excludeDisabled, stringResource(R.string.filter_disabled)) { viewModel.onDisabledClick() }
 			AppFilterChip(onlyIgnored, stringResource(R.string.filter_only_ignored)) { viewModel.onOnlyIgnoredClick() }
 		}
-		OutlinedTextField(
+		TvTextField(
 			value = query,
 			onValueChange = { viewModel.onQueryChange(it) },
 			placeholder = { Text(stringResource(R.string.filter_search_hint)) },
-			singleLine = true,
-			// On TV a focused text field would swallow the D-pad, so it stays read-only until
-			// it is explicitly clicked — same pattern as the token fields in Settings.
-			readOnly = isTv && !editing,
 			modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-				.then(if (isTv) Modifier.clickable { editing = true } else Modifier)
 		)
 	}
 }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -360,45 +359,45 @@ fun RowScope.BottomBarItem(
     // Set on the selected tab only, so BottomBar can route incoming focus here.
     tabFocus: FocusRequester? = null
 ) {
-	// Material's own focus indication on a navigation item is a faint state layer. Reported from
-	// 4PDA: "на них при переходе пультом фокус теряется из виду, блеклый цвет с расстояния плохо
-	// видно", and worse on a light background. Google's TV focus guide lists four indications —
-	// scale, outline, glow, colour — and colour is the one that fits here: scale would push the
-	// item past the bar's edge and an outline traces the invisible touch target, both already
-	// tried and rejected in earlier builds. So the focused item fills solid primary and its icon
-	// and label invert, exactly like the card action buttons and the settings rows.
+	// Focus is shown by colouring the SAME pill Material already draws behind the icon of the
+	// current tab, rather than by filling the whole item.
+	//
+	// Builds 112–152 filled the item solid, which answered a 4PDA report that Material's own
+	// indication — a faint state layer — was "блеклый цвет, с расстояния плохо видно". Solid
+	// colour was the right answer; the whole surface was more of it than the job needed, and a
+	// bar where one tab is a filled block reads as a different control from the one beside it.
+	// The pill keeps the contrast (a solid inverseSurface fill, not a translucent wash) and
+	// costs only area. Asked for by Dmitry, 2026-09-13.
+	//
+	// Done through NavigationBarItem's own indicator rather than a background of our own: the
+	// component already positions, sizes and animates that pill, and a hand-drawn one inside
+	// the icon slot would have to guess its 64×32 geometry and would sit on top of the real one
+	// whenever the tab was both selected and focused.
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
-	// The inset is TV-only on purpose. It keeps the filled block off the bar's edges, but it
-	// also takes 12dp of height away from the item, and on a phone — where touch never focuses
-	// anything, so the fill would never be seen anyway — that could squeeze the label for no
-	// benefit at all. Phones keep exactly the layout they had.
+	// No TV inset any more: it existed to keep the filled block off the bar's edges, and there
+	// is no block. Removing it hands the item back the 12 dp of height it was giving up.
 	val isTv = LocalContext.current.isAndroidTv()
-	val inset = (if (isTv) Modifier.padding(horizontal = 4.dp, vertical = 6.dp) else Modifier)
-		.then(if (tabFocus != null) Modifier.focusRequester(tabFocus) else Modifier)
-	// inverseSurface rather than the brand colour: dark on a light theme, light on a dark one.
-	// Neutral and system-like, and the same language the settings rows have spoken since 112 —
-	// asked for on 4PDA, and it stops the interface answering in two different voices.
-	// Suppressing the ripple is the other half of that request: Material draws its own focus
-	// state layer as a paler pill around the icon, which showed through the fill in the
-	// reporter's screenshots. Only on TV — on a phone the ripple IS the press feedback.
+	val inset = if (tabFocus != null) Modifier.focusRequester(tabFocus) else Modifier
+	// Suppressing the ripple on TV stays: Material's focus state layer is itself a paler pill
+	// around the icon, and it would sit inside ours. On a phone the ripple IS the press feedback.
 	CompositionLocalProvider(
 		LocalRippleConfiguration provides if (isTv) null else LocalRippleConfiguration.current
 	) {
 	NavigationBarItem(
-	modifier = inset.background(
-		if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent,
-		RoundedCornerShape(16.dp)
-	),
+	modifier = inset,
 	interactionSource = interaction,
-	colors = if (focused) NavigationBarItemDefaults.colors(
-		selectedIconColor = MaterialTheme.colorScheme.inverseOnSurface,
-		selectedTextColor = MaterialTheme.colorScheme.inverseOnSurface,
-		unselectedIconColor = MaterialTheme.colorScheme.inverseOnSurface,
-		unselectedTextColor = MaterialTheme.colorScheme.inverseOnSurface,
-		// Otherwise the selected item's own pill sits inside the filled block.
-		indicatorColor = Color.Transparent
-	) else NavigationBarItemDefaults.colors(),
+	colors = NavigationBarItemDefaults.colors(
+		indicatorColor = if (focused) MaterialTheme.colorScheme.inverseSurface
+			else MaterialTheme.colorScheme.secondaryContainer,
+		selectedIconColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface
+			else MaterialTheme.colorScheme.onSecondaryContainer,
+		// The label sits BELOW the pill, on the bar's own background, so it must not take the
+		// pill's contrast colour. And a tab that merely holds focus has to keep looking
+		// unselected, or two tabs would claim to be the current one at once.
+		selectedTextColor = if (selected) MaterialTheme.colorScheme.onSurface
+			else MaterialTheme.colorScheme.onSurfaceVariant
+	),
 	icon = {
 		BadgedBox({ BadgeText(badge) }) {
 			Icon(if (selected) screen.iconSelected else screen.icon, contentDescription = null)
@@ -411,7 +410,10 @@ fun RowScope.BottomBarItem(
 			overflow = TextOverflow.Ellipsis
 		)
 	},
-	selected = selected,
+	// The pill is Material's "selected" indicator, so a focused tab has to claim selection to
+	// get one drawn. Only the pill and the icon follow this; which glyph is used and how the
+	// label looks both still read the REAL selection above.
+	selected = selected || focused,
 	onClick = { mainViewModel.navigateTo(navController, screen.route) }
 	)
 	}
