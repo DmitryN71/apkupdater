@@ -25,6 +25,7 @@ import com.apkupdater.util.filterVersionTag
 import com.apkupdater.util.formatIsoDate
 import retrofit2.HttpException
 import io.github.g00fy2.versioncompare.Version
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -38,6 +39,12 @@ class GitHubRepository(
     private val snackBar: SnackBar,
     private val stringer: Stringer
 ) {
+
+    companion object {
+        /** Where this app's own releases live; the service's defaults say the same. */
+        private const val SELF_USER = "DmitryN71"
+        private const val SELF_REPO = "apkupdater"
+    }
 
     // Prevents spamming the same GitHub error snackbar within a single refresh.
     // Reset at the start of every updates()/search() so a fresh refresh warns again.
@@ -114,12 +121,25 @@ class GitHubRepository(
     }
 
     private fun selfCheck() = flow {
-        val releases = service.getReleases().filter { filterPreRelease(it) }
-        if (releases.isEmpty()) {
+        // The same two hazards as any other repository — see releaseCandidates — and the stakes
+        // are higher here than anywhere else: a release the list happens to omit means nobody
+        // hears about this app's own updates, and nobody could report that to us either. One
+        // extra call per check, out of the sixty an hour an unauthenticated address gets, is
+        // cheap insurance for that.
+        val listed = service.getReleases().filter { filterPreRelease(it) }
+        val latest = latestRelease(SELF_USER, SELF_REPO)
+        val releases = (listed + listOfNotNull(latest))
+            .distinctBy { it.tag_name }
+            // assets[0] below would throw on a release published before its APK was uploaded.
+            .filter { it.assets.isNotEmpty() }
+        // Keyed on the build number inside the release title — "3.8.0 (154)" — which is the
+        // very number the comparison below makes, rather than on the order GitHub returned.
+        val newest = releases.maxByOrNull { getVersions(it.name).second }
+        if (newest == null) {
             emit(emptyList())
             return@flow
         }
-        val versions = getVersions(releases[0].name)
+        val versions = getVersions(newest.name)
 
         if (versions.second > BuildConfig.VERSION_CODE.toLong()) {
             emit(listOf(AppUpdate(
@@ -130,9 +150,11 @@ class GitHubRepository(
                 versionCode = versions.second,
                 oldVersionCode = BuildConfig.VERSION_CODE.toLong(),
                 source = GitHubSource,
-                link = Link.Url(releases[0].assets[0].browser_download_url, releases[0].assets[0].size),
-                whatsNew = releases[0].body.orEmpty(),
-                sourceUrl = "https://github.com/rumboalla/apkupdater/releases/tag/${releases[0].tag_name}"
+                link = Link.Url(newest.assets[0].browser_download_url, newest.assets[0].size),
+                whatsNew = newest.body.orEmpty(),
+                // This fork's own releases, not the parent project's — the link pointed at
+                // rumboalla, where the tag being named does not exist.
+                sourceUrl = "https://github.com/$SELF_USER/$SELF_REPO/releases/tag/${newest.tag_name}"
             )))
         } else {
             // We need to emit empty so it can be combined later
@@ -151,32 +173,41 @@ class GitHubRepository(
         currentVersion: String,
         extra: Regex?
     ) = flow {
-        val r = service.getReleases(user, repo)
-        val releases = if (packageName == "com.apkupdater.ci") {
-            // TODO: Find a better way to do this
-            r.filter { it.name.contains("CI-Release-3.x")}
-        } else {
-            r.filter { filterPreRelease(it) }.filter { findApkAsset(it.assets).isNotEmpty() }
-        }
+        val releases = releaseCandidates(user, repo, packageName)
+        // The HIGHEST version among the candidates, never the first one GitHub happened to
+        // return. The list endpoint is ordered by created_at, and GitHub's own documentation
+        // says that is "the date of the commit used for the release, and not the date when the
+        // release was drafted or published" — so a release cut from an older commit, or drafted
+        // weeks before it was published, sorts into the middle of the list. Taking [0] was
+        // trusting an order that was never promised.
+        val newest = releases.maxByOrNull { Version(filterVersionTag(it.tag_name)) }
 
-        if (releases.isNotEmpty() && Version(filterVersionTag(releases[0].tag_name)) > Version(currentVersion)) {
+        // One line per repository, so that `Copy App Logs` answers "why does it still show the
+        // old version?" outright. Without it, 154 could only be diagnosed by reading the source.
+        Log.i(
+            "GitHubRepository",
+            "$user/$repo: ${releases.size} candidate(s), newest=${newest?.tag_name ?: "none"}, " +
+                "installed=$currentVersion, preReleases=${!prefs.ignorePreRelease.get()}"
+        )
+
+        if (newest != null && Version(filterVersionTag(newest.tag_name)) > Version(currentVersion)) {
             val app = apps?.getApp(packageName)
             emit(listOf(AppUpdate(
                 name = repo,
                 packageName = packageName,
-                version = releases[0].tag_name,
+                version = newest.tag_name,
                 oldVersion = app?.version ?: "?",
                 versionCode = 0L,
                 oldVersionCode = app?.versionCode ?: 0L,
                 source = GitHubSource,
-                link = findApkAssetArch(releases[0].assets, extra).let { Link.Url(it.browser_download_url, it.size) },
-                whatsNew = releases[0].body.orEmpty(),
-                iconUri = if (app == null) Uri.parse(releases[0].author.avatar_url) else Uri.EMPTY,
-                sourceUrl = "https://github.com/$user/$repo/releases/tag/${releases[0].tag_name}",
-                updateDate = formatIsoDate(releases[0].published_at ?: ""),
+                link = findApkAssetArch(newest.assets, extra).let { Link.Url(it.browser_download_url, it.size) },
+                whatsNew = newest.body.orEmpty(),
+                iconUri = if (app == null) Uri.parse(newest.author.avatar_url) else Uri.EMPTY,
+                sourceUrl = "https://github.com/$user/$repo/releases/tag/${newest.tag_name}",
+                updateDate = formatIsoDate(newest.published_at ?: ""),
                 // The one source that can say so outright. Reaching the list at all means the
                 // user turned ignorePreRelease off, so the card says what they let through.
-                isPreRelease = releases[0].prerelease
+                isPreRelease = newest.prerelease
             )))
         } else {
             emit(emptyList())
@@ -193,6 +224,75 @@ class GitHubRepository(
         val versionCode = scanner.next().trim('(', ')').toLong()
         Pair(version, versionCode)
     }.getOrDefault(Pair(name, 0L))
+
+    /**
+     * The releases worth considering for one repository. Two endpoints, because neither one is
+     * complete on its own:
+     *
+     * - `/releases` can OMIT a published release. `anilbeesetti/nextplayer` v0.18.0 was published
+     *   on 2026-09-14 with five APKs and was still absent from all 43 entries that list returned
+     *   a day later, while `/releases/latest` answered v0.18.0 at once. Verified against the live
+     *   API on 2026-09-15.
+     * - `/releases/latest` is defined as the newest non-draft, non-prerelease release, so it can
+     *   never show a pre-release and it answers 404 for a repository that has nothing else.
+     *
+     * Cost matters here: an address without a personal token gets 60 GitHub requests an hour,
+     * and this runs once per catalogued app the user has installed.
+     *
+     * - Pre-releases ignored (the default): ONE call, `/releases/latest`, which is exactly the
+     *   question being asked. The list is fetched only in the rare case where that release
+     *   carries no APK, e.g. the author published the notes before uploading the files.
+     * - Pre-releases wanted: TWO calls, merged. This is precisely what build 154 got wrong — the
+     *   whole `/releases/latest` lookup sat behind `if (ignorePreRelease)`, so anyone who had
+     *   turned pre-releases ON stayed on the old list-only path and went on missing v0.18.0.
+     *   Such a user needs both: the list is the only place pre-releases appear, and
+     *   `/releases/latest` is the only place a stable release the list omits appears. A token in
+     *   Settings raises the budget to 5 000 an hour for anyone who feels the extra call.
+     */
+    private suspend fun releaseCandidates(
+        user: String,
+        repo: String,
+        packageName: String
+    ): List<GitHubRelease> {
+        if (packageName == "com.apkupdater.ci") {
+            // TODO: Find a better way to do this
+            return service.getReleases(user, repo).filter { it.name.contains("CI-Release-3.x") }
+        }
+
+        val latest = latestRelease(user, repo)
+        if (prefs.ignorePreRelease.get() && latest != null && findApkAsset(latest.assets).isNotEmpty()) {
+            return listOf(latest)
+        }
+
+        // `latest` is by definition never a pre-release, so filterPreRelease keeps it either way.
+        return (service.getReleases(user, repo) + listOfNotNull(latest))
+            .distinctBy { it.tag_name }
+            .filter { filterPreRelease(it) }
+            .filter { findApkAsset(it.assets).isNotEmpty() }
+    }
+
+    /**
+     * `/releases/latest`, with its failures told apart instead of swallowed alike.
+     *
+     * 404 is an ordinary answer — this repository has no release that qualifies — and must not
+     * raise the snackbar that a 401 or a rate limit does. Everything else is logged, so that
+     * `Copy App Logs` can settle the next "it does not see the new version" report instead of
+     * leaving us to guess the way build 154 did.
+     */
+    private suspend fun latestRelease(user: String, repo: String): GitHubRelease? = try {
+        service.getLatestRelease(user, repo)
+    } catch (c: CancellationException) {
+        // Never swallow this one: it is how the stop-check button ends a running refresh.
+        throw c
+    } catch (t: Throwable) {
+        if (t is HttpException && t.code() == 404) {
+            Log.i("GitHubRepository", "No published release for $user/$repo.")
+        } else {
+            Log.w("GitHubRepository", "Latest-release lookup failed for $user/$repo.", t)
+            handleGitHubError(t)
+        }
+        null
+    }
 
     private fun filterPreRelease(release: GitHubRelease) = when {
         prefs.ignorePreRelease.get() && release.prerelease -> false
