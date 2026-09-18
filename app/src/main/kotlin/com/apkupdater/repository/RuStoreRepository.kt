@@ -71,9 +71,13 @@ class RuStoreRepository(
 		// this costs one extra request in total. Remember which kind found each app: the detail
 		// and download calls below have to ask the same way or they answer 404.
 		val appsWithUpdates = LinkedHashMap<String, Pair<RuStoreBatchApp, String>>()
+		val batchFailures = FailureTally()
 		RuStoreSession.DEVICE_TYPES.forEach { deviceType ->
 			runCatching { service.getBatchUpdates(batchRequest, deviceType).body.content }
-				.onFailure { Log.e("RuStoreRepository", "Batch check failed for $deviceType", it) }
+				.onFailure {
+					Log.e("RuStoreRepository", "Batch check failed for $deviceType", it)
+					batchFailures.record(it)
+				}
 				.getOrDefault(emptyList())
 				.forEach { app ->
 					if (!appsWithUpdates.containsKey(app.packageName)) {
@@ -81,6 +85,10 @@ class RuStoreRepository(
 					}
 				}
 		}
+
+		// Neither kind answered: RuStore was not reached at all, which is not the same as "no
+		// updates". One kind failing alone still leaves the other's answer worth showing.
+		batchFailures.throwIfAllFailed(RuStoreSession.DEVICE_TYPES.size, "RuStore")
 
 		if (appsWithUpdates.isEmpty()) {
 			emit(emptyList())
@@ -126,8 +134,11 @@ class RuStoreRepository(
 
 		emit(updates)
 	}.catch {
-		emit(emptyList())
 		Log.e("RuStoreRepository", "Error looking for updates.", it)
+		// Rethrown, not swallowed into an empty list: UpdatesRepository then counts this source as
+		// failed and keeps its earlier cards. An empty answer here read as "no updates" — with
+		// no network at all, a check of this one source said so on the screen.
+		throw it
 	}
 
 	suspend fun search(text: String) = flow {

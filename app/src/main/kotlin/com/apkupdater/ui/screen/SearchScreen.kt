@@ -65,6 +65,7 @@ import com.apkupdater.R
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.Source
+import com.apkupdater.util.launchIntentFor
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvEqualRows
@@ -165,7 +166,7 @@ fun SearchScreenSuccess(
 				modifier = cardModifier,
 				onInstall = { viewModel.install(update, uriHandler, notificationPermission) },
 				onOpen = { packageName ->
-					context.packageManager.getLaunchIntentForPackage(packageName)?.let {
+					context.launchIntentFor(packageName)?.let {
 						context.startActivity(it)
 					}
 				},

@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.apkupdater.R
 import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.Link
+import com.apkupdater.data.ui.Source
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.data.ui.removeId
 import com.apkupdater.data.ui.markInstalledFrom
@@ -12,6 +14,8 @@ import com.apkupdater.data.ui.setIsInstalled
 import com.apkupdater.data.ui.setIsInstalling
 import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
+import com.apkupdater.repository.PlayAccountSwitch
+import com.apkupdater.repository.PlayRepository
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.AppVisibility
@@ -53,12 +57,21 @@ class UpdatesViewModel(
 	ruStoreService: RuStoreService,
 	context: Context,
 	background: BackgroundInstaller,
-	notification: UpdatesNotification
+	notification: UpdatesNotification,
+	private val playRepository: PlayRepository
 ) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification) {
 
 	private val mutex = Mutex()
 	private val installMutex = Mutex()
-	private val state = MutableStateFlow<UpdatesUiState>(UpdatesUiState.Loading())
+	/**
+	 * Starts as a check when the app checks at launch, and as Idle — a prompt to check — when it
+	 * does not. MainViewModel.refreshOnStart reads the same switch, so the two always agree. The
+	 * launch check's Loading is marked as starting from nothing, so stopping it before any source
+	 * answers goes back to the prompt rather than to a false "All up to date".
+	 */
+	private val state = MutableStateFlow<UpdatesUiState>(
+		if (prefs.checkOnLaunch.get()) UpdatesUiState.Loading(wasIdle = true) else UpdatesUiState.Idle
+	)
 	private val _refreshProgress = MutableStateFlow<String?>(null)
 	val refreshProgress: StateFlow<String?> = _refreshProgress
 
@@ -84,6 +97,15 @@ class UpdatesViewModel(
 	private val _checkProgress = MutableStateFlow<Float?>(null)
 	val checkProgress: StateFlow<Float?> = _checkProgress
 	private var refreshJob: Job? = null
+	/** The one source the running check covers, or null for a full check. */
+	@Volatile
+	private var runningOnly: Source? = null
+	/**
+	 * The sources that have answered the running check. Only their cards are replaced when it is
+	 * published; the cards of a source that failed, timed out or was never reached stay.
+	 */
+	private val answered: MutableSet<Source> =
+		java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap())
 	/** Bumped by every new check and by every cancel, so a superseded one keeps its hands off. */
 	private val refreshGeneration = AtomicInteger(0)
 
@@ -108,7 +130,11 @@ class UpdatesViewModel(
 	 * does nothing". The finally checks the generation and does not undo any of this.
 	 */
 	fun cancelRefresh() {
-		val job = refreshJob ?: return
+		// isActive, not just non-null: refreshJob is never cleared when a check completes, and a
+		// tap landing in the frame between the check finishing and the button redrawing as
+		// Refresh used to republish that finished check's raw results over whatever the user had
+		// hidden since.
+		val job = refreshJob?.takeIf { it.isActive } ?: return
 		refreshJob = null
 		refreshGeneration.incrementAndGet()
 		job.cancel()
@@ -121,12 +147,10 @@ class UpdatesViewModel(
 		// could see them. Falling back to the list Loading is carrying covers the other case:
 		// stopped before anything answered at all, so put back what was on screen before.
 		if (partialResults.isNotEmpty()) {
-			setSuccess(partialResults)
+			setSuccess(partialResults, answered = answered.toSet(), only = runningOnly)
 		} else {
-			state.update {
-				if (it is UpdatesUiState.Loading) UpdatesUiState.Success(it.updates) else it
-			}
-			badger.changeUpdatesBadge(state.value.updates().size.toString())
+			state.update { if (it is UpdatesUiState.Loading) it.restored() else it }
+			badger.changeUpdatesBadge(state.value.updates().badgeCount())
 		}
 	}
 
@@ -159,19 +183,27 @@ class UpdatesViewModel(
 
 	fun state(): StateFlow<UpdatesUiState> = state
 
-	fun refresh(load: Boolean = true): Job {
+	/**
+	 * @param only check this one source alone, from the ⋮ menu. The cards the other sources found
+	 * earlier stay on screen — see [setSuccess]. Null checks everything.
+	 */
+	fun refresh(load: Boolean = true, only: Source? = null): Job {
 		// One check at a time. A second call would only queue behind the mutex, and refreshJob
 		// would then point at the QUEUED job — so Stop would cancel something that had not
 		// started while the real check ran on, with the button spinning and the button dead.
 		// Returning the running job also keeps MainViewModel's invokeOnCompletion honest.
 		// Safe without locking: every caller reaches this on the main thread.
 		refreshJob?.takeIf { it.isActive }?.let { return it }
+		runningOnly = only
+		// Here, on the main thread, rather than inside the job: a Stop tapped before the job got
+		// as far as clearing them would have republished the previous check's results.
+		partialResults = emptyList()
+		answered.clear()
 		val mine = refreshGeneration.incrementAndGet()
 		val job = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 			_isChecking.value = true
 			_checkProgress.value = null
 			var emitted = false
-			partialResults = emptyList()
 			try {
 				// The WHOLE list is carried into Loading, not just the in-flight cards.
 				//
@@ -181,8 +213,25 @@ class UpdatesViewModel(
 				// fails before ANY source answers never reaches setSuccess, and then this is all
 				// the finally block has to put back on screen. setSuccess re-filters to in-flight
 				// inside its own update block, so carrying everything costs nothing normally.
-				if (load) state.update { current ->
-					UpdatesUiState.Loading(updates = current.updates())
+				//
+				// Also when there is no list on screen, whatever the caller asked for: pull-to-refresh
+				// and the launch check pass load = false to keep the list they are refreshing on
+				// screen, but an Idle or empty screen has no list — it has the big Check button,
+				// which would sit there for the whole check doing nothing when pressed.
+				val nothingShown = state.value.let {
+					it is UpdatesUiState.Idle || (it is UpdatesUiState.Success && it.updates.isEmpty())
+				}
+				if (load || nothingShown) state.update { current ->
+					UpdatesUiState.Loading(
+						updates = current.updates(),
+						wasIdle = current is UpdatesUiState.Idle ||
+							(current is UpdatesUiState.Loading && current.wasIdle),
+						wasOnly = when (current) {
+							is UpdatesUiState.Success -> current.only
+							is UpdatesUiState.Loading -> current.wasOnly
+							else -> null
+						}
+					)
 				}
 				_refreshProgress.value = stringer.get(R.string.checking_updates)
 				badger.changeUpdatesBadge("")
@@ -214,16 +263,37 @@ class UpdatesViewModel(
 								else it
 							}
 						}
-					}
+					},
+					onSourceAnswered = { if (refreshGeneration.get() == mine) answered.add(it) },
+					only = only
 				).collect {
 					// One emission per source now, each carrying everything found so far.
 					// Recorded rather than published — see partialResults for why — and the
 					// banner is left to onSourceComplete, which clears it when nothing is
 					// left. The last emission is the complete answer, published below.
 					emitted = true
-					partialResults = it
+					if (refreshGeneration.get() == mine) partialResults = it
 				}
-				if (emitted) setSuccess(partialResults)
+				val done = answered.toSet()
+				// Nothing is published when nobody answered — every source failed or timed out, or
+				// the one source asked did. Publishing would wipe the cards those sources found
+				// before and, on an empty screen, claim "All up to date"; the failure snackbar has
+				// already said what happened, and the finally below puts the previous screen back.
+				if (emitted && done.isNotEmpty() && (only == null || only in done)) {
+					setSuccess(partialResults, answered = done, only = only)
+					// A check of one source that found nothing changes nothing on a list the other
+					// sources have filled, which reads as "did it even run?". An empty list says it
+					// on the screen itself; a full one needs saying here.
+					if (only != null) {
+						val shown = state.value.updates()
+						if (shown.isNotEmpty() && shown.none { it.source == only }) {
+							snackBar.snackBar(
+								viewModelScope,
+								TextSnack(stringer.get(R.string.source_no_updates, only.name))
+							)
+						}
+					}
+				}
 				refreshCacheSize()
 			} finally {
 				// Only if this is still the current check. A stopped one can take a while to
@@ -238,10 +308,8 @@ class UpdatesViewModel(
 					// replaced rather than leaving the shimmer up for good. A finished check
 					// has already published Success, and a stopped one was handled by
 					// cancelRefresh, so in both of those this is a no-op.
-					state.update {
-						if (it is UpdatesUiState.Loading) UpdatesUiState.Success(it.updates) else it
-					}
-					badger.changeUpdatesBadge(state.value.updates().size.toString())
+					state.update { if (it is UpdatesUiState.Loading) it.restored() else it }
+					badger.changeUpdatesBadge(state.value.updates().badgeCount())
 				}
 			}
 		}
@@ -251,14 +319,14 @@ class UpdatesViewModel(
 
 	fun hideUpdate(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 		val updated = state.updateAndGet { it.withUpdates(it.mutableUpdates().removeId(id)) }
-		badger.changeUpdatesBadge(updated.updates().size.toString())
+		badger.changeUpdatesBadge(updated.updates().badgeCount())
 	}
 
 	fun ignoreVersion(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 		val ignored = prefs.ignoredVersions.get().toMutableList()
 		if (ignored.contains(id)) ignored.remove(id) else ignored.add(id)
 		prefs.ignoredVersions.put(ignored)
-		setSuccess(state.value.mutableUpdates())
+		setSuccess(state.value.mutableUpdates(), keepLabel = true)
 	}
 
 	override fun cancelInstall(id: Int): Job {
@@ -290,7 +358,7 @@ class UpdatesViewModel(
 			val updated = state.updateAndGet {
 				it.withUpdates(it.mutableUpdates().setIsInstalled(id).markInstalledFrom(done))
 			}
-			badger.changeUpdatesBadge(updated.updates().count { !it.isInstalled }.toString())
+			badger.changeUpdatesBadge(updated.updates().badgeCount())
 		}
 	}
 
@@ -492,9 +560,20 @@ class UpdatesViewModel(
 		// ApkMirror has no direct download — install() opens its page in the browser — so
 		// "Update all" used to open one browser tab per ApkMirror update on top of the real
 		// installs. Those stay a manual tap.
-		val updates = state.value.updates().filter {
-			!it.isInstalling && !it.isInstalled && it.source != com.apkupdater.data.ui.ApkMirrorSource
-		}
+		val updates = state.value.updates()
+			.filter {
+				!it.isInstalling && !it.isInstalled && it.source != com.apkupdater.data.ui.ApkMirrorSource
+			}
+			// Nor anything without a direct APK: install() opens the release page for those, so
+			// each such GitLab or GitHub card became one more browser tab.
+			.filterNot { (it.link as? Link.Url)?.link?.isBlank() == true }
+			// One install per app. The list shows every source's offer on purpose, so a single
+			// tap can choose; "all" used to install each of them in turn, and the second download
+			// of the same app either reinstalled it or failed on a signature mismatch. Prefer the
+			// source it was last installed from — it already carries that source's signature —
+			// and otherwise the first card.
+			.groupBy { it.packageName }
+			.map { (_, cards) -> cards.firstOrNull { it.installedFrom == it.source.name } ?: cards.first() }
 		// Only the first carries the launcher: Android allows one permission request at a
 		// time and answers the rest with an immediate cancel, filling the log with warnings.
 		updates.forEachIndexed { index, update ->
@@ -523,11 +602,58 @@ class UpdatesViewModel(
 		compareByDescending<AppUpdate> { it.isInstalled }.thenBy { it.name.lowercase() }
 	)
 
-	private fun setSuccess(updates: List<AppUpdate>) {
+	/** The badge counts what still needs doing: a card already installed is done. */
+	private fun List<AppUpdate>.badgeCount() = count { !it.isInstalled }.toString()
+
+	/**
+	 * Publishes the result of a check.
+	 *
+	 * @param answered the sources that answered it. Their cards are replaced by [updates]; every
+	 * other card on screen is kept — the cards of a source that failed or timed out, and all but
+	 * the chosen source's after a check of one source — minus any that no longer apply (see the
+	 * filter). Null replaces the whole list, for callers republishing the list already on screen.
+	 * @param only the one source a check was limited to, remembered so an empty screen can say
+	 * "GitHub: no updates" instead of claiming every source is up to date.
+	 * @param keepLabel set when republishing the list already on screen after the ignore list
+	 * changed: nothing was checked, so the screen goes on saying what it said.
+	 */
+	private fun setSuccess(
+		updates: List<AppUpdate>,
+		answered: Set<Source>? = null,
+		only: Source? = null,
+		keepLabel: Boolean = false
+	) {
 		// Read the ignore list once, outside: the block below can be re-run under contention
 		// and must stay free of side effects.
 		val ignored = prefs.ignoredVersions.get()
 		val installedFrom = prefs.installedFromMap()
+		// Also outside, for the same reason: what a kept card is checked against.
+		//
+		// A source switched off in Settings, or an app ignored in the Apps tab, would be left out
+		// of a full check — so their cards must not survive a partial one either.
+		//
+		// And the version each kept card's app is at NOW. Every source records the version that
+		// was installed when it was checked (the card's oldVersionCode); once the app has moved
+		// on — updated from somewhere else, or removed — the card describes something that no
+		// longer exists and may offer an update already installed. A full check drops those by
+		// not finding them again; a merge has to drop them itself. Zero means the source did not
+		// know the version, so there is nothing to compare and the card stays.
+		val enabled: Set<Source>
+		val ignoredApps: Set<String>
+		val installedNow: Map<String, Long>
+		if (answered == null) {
+			enabled = emptySet()
+			ignoredApps = emptySet()
+			installedNow = emptyMap()
+		} else {
+			enabled = updatesRepository.enabledSources().toSet()
+			ignoredApps = prefs.ignoredApps.get().toSet()
+			installedNow = state.value.updates()
+				.filter { it.source !in answered }
+				.map { it.packageName }
+				.distinct()
+				.associateWith { getInstalledVersionCode(it) }
+		}
 		// A refresh rebuilds the list from scratch, but downloads/installs keep running in
 		// BackgroundInstaller's process-wide scope. Carry their state over, otherwise a refresh
 		// would reset a running download's card back to "Update" while it is still downloading.
@@ -538,25 +664,77 @@ class UpdatesViewModel(
 			val inFlight = current.updates()
 				.filter { it.isInstalling || it.isInstalled }
 				.associateBy { it.id }
+			val kept = if (answered == null) emptyList() else current.updates().filter { card ->
+				card.source !in answered &&
+					card.source in enabled &&
+					card.packageName !in ignoredApps &&
+					(card.isInstalling ||
+						card.oldVersionCode <= 0L ||
+						(installedNow[card.packageName] ?: card.oldVersionCode) == card.oldVersionCode)
+			}
+			// Fresh cards first: should one ever share an id with a kept card, the fresh one is
+			// what distinctBy keeps.
+			val fresh = updates + kept
+			val freshIds = fresh.mapTo(HashSet()) { it.id }
+			// A card whose download or install is still running stays, even when the check did not
+			// bring it back — its source failed, or has since published a newer version under a new
+			// id. Dropping it took the Cancel button away mid-download, and when the install then
+			// finished there was no card to record it against or to offer Open.
+			val running = current.updates().filter { it.isInstalling && it.id !in freshIds }
 			UpdatesUiState.Success(
-				updates
+				(fresh + running)
 					.map { it.copy(installedFrom = installedFrom[it.packageName].orEmpty()) }
 					.filterIgnoredVersions(ignored)
 					.distinctBy { it.id }
-					.map { fresh ->
-						inFlight[fresh.id]?.let {
-							fresh.copy(
+					.map { card ->
+						inFlight[card.id]?.let {
+							card.copy(
 								isInstalling = it.isInstalling,
 								isInstalled = it.isInstalled,
 								progress = it.progress,
 								total = it.total
 							)
-						} ?: fresh
+						} ?: card
 					}
-					.sortFinishedFirst()
+					.sortFinishedFirst(),
+				only = if (keepLabel) (current as? UpdatesUiState.Success)?.only else only
 			)
 		}
-		badger.changeUpdatesBadge(merged.updates().size.toString())
+		badger.changeUpdatesBadge(merged.updates().badgeCount())
 	}
 
+	/** What the "check only" menu offers: the sources switched on in Settings. */
+	fun enabledSources(): List<Source> = updatesRepository.enabledSources()
+
+	private val _switchingPlayAccount = MutableStateFlow(false)
+	/** True while a manual switch of the Play account is under way; its menu item waits. */
+	val switchingPlayAccount: StateFlow<Boolean> = _switchingPlayAccount
+
+	/**
+	 * Asks for a fresh anonymous Play account. See PlayRepository.switchAccount for why this
+	 * exists next to the automatic switch, and for the once-a-minute limit the two share.
+	 */
+	fun switchPlayAccount() {
+		if (!_switchingPlayAccount.compareAndSet(false, true)) return
+		// In the banner the checks use: the menu has closed by the time this runs, and a sign-in
+		// is four requests and several seconds — long enough to wonder whether the tap took. Put
+		// up only if no check owns the banner, and taken down only if it is still ours, so the
+		// two never erase each other's text.
+		val progress = stringer.get(R.string.play_switching_account)
+		_refreshProgress.compareAndSet(null, progress)
+		viewModelScope.launch(Dispatchers.IO) {
+			val message = try {
+				when (val result = playRepository.switchAccount()) {
+					PlayAccountSwitch.Done -> stringer.get(R.string.play_account_switched)
+					PlayAccountSwitch.TooSoon -> stringer.get(R.string.play_account_switch_too_soon)
+					is PlayAccountSwitch.Failed ->
+						stringer.get(R.string.play_account_switch_failed, result.reason)
+				}
+			} finally {
+				_refreshProgress.compareAndSet(progress, null)
+				_switchingPlayAccount.value = false
+			}
+			snackBar.snackBar(viewModelScope, TextSnack(message))
+		}
+	}
 }

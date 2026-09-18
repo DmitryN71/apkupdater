@@ -201,4 +201,16 @@
     <string name="find_updates_cd">Look for this app in the sources</string>
     <string name="installed_from_here">Installed from here</string>
     <string name="installed_last_from">Last time: %1$s</string>
+    <string name="more_options_cd">More options</string>
+    <string name="check_only">Check only</string>
+    <string name="check_on_launch">Check on Launch</string>
+    <string name="check_prompt">Press to check for updates</string>
+    <string name="check_prompt_hint">or pick a single source from the ⋮ menu</string>
+    <string name="check_all_prompt">Press to check every source</string>
+    <string name="source_no_updates">%1$s: no updates</string>
+    <string name="play_switch_account">Switch Google Play account</string>
+    <string name="play_switching_account">Switching the Google Play account…</string>
+    <string name="play_account_switched">Google Play account switched. You can check or install again.</string>
+    <string name="play_account_switch_failed">Could not switch the Google Play account: %1$s</string>
+    <string name="play_account_switch_too_soon">Once a minute at most — try again shortly.</string>
 </resources>

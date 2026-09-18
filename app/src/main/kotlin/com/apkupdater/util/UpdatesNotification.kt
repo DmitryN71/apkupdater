@@ -97,7 +97,7 @@ class UpdatesNotification(private val context: Context) {
         createSuccessChannel()
         // Route Open through OpenInstalledActivity so tapping it (the button OR the body) also
         // cancels this notification — a plain notification action button never auto-dismisses.
-        val hasLauncher = context.packageManager.getLaunchIntentForPackage(packageName) != null
+        val hasLauncher = context.launchIntentFor(packageName) != null
         val openPending = if (hasLauncher) {
             PendingIntent.getActivity(
                 context, id,

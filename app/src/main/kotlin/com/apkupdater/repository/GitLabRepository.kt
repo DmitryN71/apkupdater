@@ -41,10 +41,11 @@ class GitLabRepository(
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
+        val tally = FailureTally()
         loadAllApps().forEach { app ->
             val installedApp = apps.find { it.packageName == app.packageName }
             if (installedApp != null) {
-                checks.add(checkApp(apps, app.user, app.repo, app.packageName, installedApp.version, null))
+                checks.add(checkApp(apps, app.user, app.repo, app.packageName, installedApp.version, null, tally))
             } else if (app.packageName.contains("/")) {
                 // Custom repo — try fuzzy name match against installed apps
                 val fuzzyMatch = apps.find { installed ->
@@ -54,7 +55,7 @@ class GitLabRepository(
                     installed.name.contains(app.repo, ignoreCase = true)
                 }
                 if (fuzzyMatch != null) {
-                    checks.add(checkApp(apps, app.user, app.repo, fuzzyMatch.packageName, fuzzyMatch.version, null))
+                    checks.add(checkApp(apps, app.user, app.repo, fuzzyMatch.packageName, fuzzyMatch.version, null, tally))
                 }
                 // If no match found, skip — user needs to link the repo to an installed app in Settings
             }
@@ -63,6 +64,7 @@ class GitLabRepository(
             emit(emptyList())
         } else {
             checks.combine { all -> emit(all.flatMap { it }) }.collect()
+            tally.throwIfAllFailed(checks.size, "GitLab")
         }
     }
 
@@ -72,10 +74,12 @@ class GitLabRepository(
         repo: String,
         packageName: String,
         currentVersion: String,
-        extra: Regex?
+        extra: Regex?,
+        tally: FailureTally? = null
     ) = flow {
+        // The installed side through filterVersionTag too — see GitHubRepository.checkApp.
         val releases = service.getReleases(user, repo)
-            .filter { Version(filterVersionTag(it.tag_name)) > Version(currentVersion) }
+            .filter { Version(filterVersionTag(it.tag_name)) > Version(filterVersionTag(currentVersion)) }
 
         if (releases.isNotEmpty()) {
             val app = apps?.getApp(packageName)
@@ -98,6 +102,8 @@ class GitLabRepository(
             emit(emptyList())
         }
     }.catch {
+        // A 404 is GitLab answering that this project is gone — an answer, not a failure to reach it.
+        if ((it as? retrofit2.HttpException)?.code() != 404) tally?.record(it)
         emit(emptyList())
         Log.e("GitLabRepository", "Error fetching releases for $packageName.", it)
     }

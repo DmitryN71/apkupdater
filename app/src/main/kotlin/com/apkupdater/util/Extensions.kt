@@ -121,6 +121,19 @@ fun PackageManager.isAndroidTv() = hasSystemFeature(PackageManager.FEATURE_LEANB
 
 fun Context.isAndroidTv() = packageManager.isAndroidTv()
 
+/**
+ * The intent that opens [packageName], or null if it has no launcher entry at all.
+ *
+ * getLaunchIntentForPackage looks only for a CATEGORY_LAUNCHER activity, and an app made for
+ * television often declares only CATEGORY_LEANBACK_LAUNCHER — so on a TV its Open button did
+ * nothing at all and its "installed" notification offered no Open action. The leanback entry is
+ * the fallback, never the first choice: an app that has both should open the way the phone
+ * launcher would open it.
+ */
+fun Context.launchIntentFor(packageName: String): android.content.Intent? =
+	packageManager.getLaunchIntentForPackage(packageName)
+		?: packageManager.getLeanbackLaunchIntentForPackage(packageName)
+
 /** Locale-aware medium date, e.g. "18 Jul 2026" / "18 июл. 2026". */
 fun formatDate(millis: Long): String =
 	java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(millis))

@@ -16,13 +16,47 @@ sealed class UpdatesUiState {
 	data class Loading(
 		val completed: Int = 0,
 		val total: Int = 0,
-		val updates: List<AppUpdate> = emptyList()
-	): UpdatesUiState()
+		val updates: List<AppUpdate> = emptyList(),
+		/** The screen was [Idle] when this check started. See [restored]. */
+		val wasIdle: Boolean = false,
+		/** The [Success.only] of the screen this check replaced. See [restored]. */
+		val wasOnly: Source? = null
+	): UpdatesUiState() {
+		/**
+		 * What goes back on screen when a check ends without publishing anything — stopped, or
+		 * failed before any source answered.
+		 *
+		 * This used to be a bare Success of whatever the check was carrying, so a check stopped
+		 * before anything answered claimed "All up to date" on an empty list — never true, since
+		 * nothing had been checked. With checking at launch now optional that would be the very
+		 * first thing many users saw, so a check that started from nothing goes back to nothing.
+		 */
+		fun restored(): UpdatesUiState =
+			if (wasIdle && updates.isEmpty()) Idle else Success(updates, wasOnly)
+	}
+
+	/**
+	 * Nothing has been checked yet: the app was opened with checking at launch turned off.
+	 *
+	 * Deliberately not an empty [Success], which the screen draws as "All up to date" — a claim
+	 * with nothing behind it. This one asks for a check instead.
+	 */
+	data object Idle : UpdatesUiState()
 	data object Error : UpdatesUiState()
-	data class Success(val updates: List<AppUpdate>): UpdatesUiState()
+
+	/**
+	 * @property only set when the check behind this list covered that one source alone, so an
+	 * empty list can say "GitHub: no updates" instead of claiming every source is up to date.
+	 */
+	data class Success(val updates: List<AppUpdate>, val only: Source? = null): UpdatesUiState()
 
 	inline fun onLoading(block: (Loading) -> Unit): UpdatesUiState {
 		if (this is Loading) block(this)
+		return this
+	}
+
+	inline fun onIdle(block: () -> Unit): UpdatesUiState {
+		if (this is Idle) block()
 		return this
 	}
 
@@ -56,9 +90,9 @@ sealed class UpdatesUiState {
 	 */
 	fun withUpdates(updates: List<AppUpdate>): UpdatesUiState = when (this) {
 		is Loading -> copy(updates = updates)
-		is Success -> Success(updates)
-		// Error has no list to change, and turning it into an empty Success would quietly
-		// replace a failed check with "all up to date".
+		is Success -> copy(updates = updates)
+		// Error and Idle have no list to change, and turning either into an empty Success
+		// would quietly replace it with "all up to date".
 		else -> this
 	}
 

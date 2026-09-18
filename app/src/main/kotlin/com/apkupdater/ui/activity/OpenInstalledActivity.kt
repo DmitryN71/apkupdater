@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import androidx.core.app.NotificationManagerCompat
+import com.apkupdater.util.launchIntentFor
 
 /**
  * Invisible trampoline for the "installed — Open" notification. Cancels that notification and
@@ -30,7 +31,7 @@ class OpenInstalledActivity : Activity() {
 		val packageName = intent.getStringExtra(EXTRA_PACKAGE)
 		if (!packageName.isNullOrBlank()) {
 			runCatching {
-				packageManager.getLaunchIntentForPackage(packageName)
+				launchIntentFor(packageName)
 					?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
 					?.let { startActivity(it) }
 			}

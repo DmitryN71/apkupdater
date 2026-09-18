@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import java.util.Scanner
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 class GitHubRepository(
@@ -48,7 +49,10 @@ class GitHubRepository(
 
     // Prevents spamming the same GitHub error snackbar within a single refresh.
     // Reset at the start of every updates()/search() so a fresh refresh warns again.
-    private var errorWarned = false
+    // Atomic: the per-repository checks run in parallel on IO threads, and with a plain field
+    // several of them passed the test before any one of them set it — so running out of the
+    // hourly limit queued a row of identical snackbars.
+    private val errorWarned = AtomicBoolean(false)
 
     private fun loadAllApps(): List<GitHubApp> {
         val custom = prefs.customGitRepos.get()
@@ -61,25 +65,34 @@ class GitHubRepository(
     }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
-        errorWarned = false
-        val checks = mutableListOf(selfCheck())
+        errorWarned.set(false)
+        val tally = FailureTally()
+        val checks = mutableListOf(selfCheck(tally))
         val allApps = loadAllApps()
 
         allApps.forEach { app ->
             if (app.packageName != BuildConfig.APPLICATION_ID) {
                 val installedApp = apps.find { it.packageName == app.packageName }
                 if (installedApp != null) {
-                    checks.add(checkApp(apps, app.user, app.repo, app.packageName, installedApp.version, app.extra))
+                    checks.add(checkApp(apps, app.user, app.repo, app.packageName, installedApp.version, app.extra, tally))
                 } else if (app.packageName.contains("/")) {
                     // Custom repo — try fuzzy name match against installed apps
+                    // The substring tests need a name of some length: every string contains "",
+                    // so an app with an empty label matched every unlinked repository, and a
+                    // two-letter one matched far too many.
                     val fuzzyMatch = apps.find { installed ->
-                        installed.name.equals(app.repo, ignoreCase = true) ||
-                        installed.name.replace(" ", "").equals(app.repo, ignoreCase = true) ||
-                        app.repo.contains(installed.name, ignoreCase = true) ||
-                        installed.name.contains(app.repo, ignoreCase = true)
+                        val name = installed.name.trim()
+                        name.isNotEmpty() && (
+                            name.equals(app.repo, ignoreCase = true) ||
+                            name.replace(" ", "").equals(app.repo, ignoreCase = true) ||
+                            (name.length >= 3 && (
+                                app.repo.contains(name, ignoreCase = true) ||
+                                name.contains(app.repo, ignoreCase = true)
+                            ))
+                        )
                     }
                     if (fuzzyMatch != null) {
-                        checks.add(checkApp(apps, app.user, app.repo, fuzzyMatch.packageName, fuzzyMatch.version, null))
+                        checks.add(checkApp(apps, app.user, app.repo, fuzzyMatch.packageName, fuzzyMatch.version, null, tally))
                     }
                     // If no match found, skip — user needs to link the repo to an installed app in Settings
                 }
@@ -89,14 +102,18 @@ class GitHubRepository(
         checks.combine { all ->
             emit(all.flatMap { it })
         }.collect()
+        tally.throwIfAllFailed(checks.size, "GitHub")
     }.catch {
         handleGitHubError(it)
-        emit(emptyList())
         Log.e("GitHubRepository", "Error fetching releases.", it)
+        // Rethrown, not swallowed into an empty list: UpdatesRepository then counts this source as
+        // failed and keeps its earlier cards. An empty answer here read as "no updates" — with
+        // no network at all, a check of this one source said so on the screen.
+        throw it
     }
 
     suspend fun search(text: String) = flow {
-        errorWarned = false
+        errorWarned.set(false)
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
         val allApps = loadAllApps()
 
@@ -120,7 +137,7 @@ class GitHubRepository(
         Log.e("GitHubRepository", "Error searching.", it)
     }
 
-    private fun selfCheck() = flow {
+    private fun selfCheck(tally: FailureTally? = null) = flow {
         // The same two hazards as any other repository — see releaseCandidates — and the stakes
         // are higher here than anywhere else: a release the list happens to omit means nobody
         // hears about this app's own updates, and nobody could report that to us either. One
@@ -161,6 +178,7 @@ class GitHubRepository(
             emit(listOf())
         }
     }.catch {
+        tally?.record(it)
         emit(emptyList())
         Log.e("GitHubRepository", "Error checking self-update.", it)
     }
@@ -171,9 +189,10 @@ class GitHubRepository(
         repo: String,
         packageName: String,
         currentVersion: String,
-        extra: Regex?
+        extra: Regex?,
+        tally: FailureTally? = null
     ) = flow {
-        val releases = releaseCandidates(user, repo, packageName)
+        val releases = releaseCandidates(user, repo, packageName, extra)
         // The HIGHEST version among the candidates, never the first one GitHub happened to
         // return. The list endpoint is ordered by created_at, and GitHub's own documentation
         // says that is "the date of the commit used for the release, and not the date when the
@@ -190,7 +209,13 @@ class GitHubRepository(
                 "installed=$currentVersion, preReleases=${!prefs.ignorePreRelease.get()}"
         )
 
-        if (newest != null && Version(filterVersionTag(newest.tag_name)) > Version(currentVersion)) {
+        // Both sides through filterVersionTag. The installed versionName went in raw, and the
+        // version library reads a string that does not start with a digit as no version at all,
+        // so an app whose versionName is "v1.4.2" lost to the tag "v1.4.2" and was offered its
+        // own version for ever.
+        if (newest != null &&
+            Version(filterVersionTag(newest.tag_name)) > Version(filterVersionTag(currentVersion))
+        ) {
             val app = apps?.getApp(packageName)
             emit(listOf(AppUpdate(
                 name = repo,
@@ -214,6 +239,9 @@ class GitHubRepository(
         }
     }.catch {
         handleGitHubError(it)
+        // A 404 is GitHub answering that this repository is gone — an answer, not a failure to
+        // reach GitHub. Anything else counts towards "GitHub could not be reached at all".
+        if (!(it is HttpException && it.code() == 404)) tally?.record(it)
         emit(emptyList())
         Log.e("GitHubRepository", "Error fetching releases for $packageName.", it)
     }
@@ -252,7 +280,8 @@ class GitHubRepository(
     private suspend fun releaseCandidates(
         user: String,
         repo: String,
-        packageName: String
+        packageName: String,
+        extra: Regex?
     ): List<GitHubRelease> {
         if (packageName == "com.apkupdater.ci") {
             // TODO: Find a better way to do this
@@ -260,7 +289,7 @@ class GitHubRepository(
         }
 
         val latest = latestRelease(user, repo)
-        if (prefs.ignorePreRelease.get() && latest != null && findApkAsset(latest.assets).isNotEmpty()) {
+        if (prefs.ignorePreRelease.get() && latest != null && hasApkFor(latest.assets, extra)) {
             return listOf(latest)
         }
 
@@ -268,7 +297,7 @@ class GitHubRepository(
         return (service.getReleases(user, repo) + listOfNotNull(latest))
             .distinctBy { it.tag_name }
             .filter { filterPreRelease(it) }
-            .filter { findApkAsset(it.assets).isNotEmpty() }
+            .filter { hasApkFor(it.assets, extra) }
     }
 
     /**
@@ -299,11 +328,15 @@ class GitHubRepository(
         else -> true
     }
 
-    private fun findApkAsset(assets: List<GitHubReleaseAsset>) = assets
-        .filter { it.browser_download_url.endsWith(".apk", true) }
-        .maxByOrNull { it.size }
-        ?.browser_download_url
-        .orEmpty()
+    /**
+     * Whether this release has the APK [findApkAssetArch] would hand out — the same test, not a
+     * looser one. It used to accept any .apk while the card then picked only among those matching
+     * the catalogue's [extra] pattern, so a newest release without the wanted variant (say, no
+     * "freenet" build) became a card with an empty download link, and an older release that did
+     * have it was never considered.
+     */
+    private fun hasApkFor(assets: List<GitHubReleaseAsset>, extra: Regex?) =
+        findApkAssetArch(assets, extra).browser_download_url.isNotEmpty()
 
     private fun findApkAssetArch(
         assets: List<GitHubReleaseAsset>,
@@ -369,7 +402,7 @@ class GitHubRepository(
     }
 
     private fun handleGitHubError(t: Throwable) {
-        if (errorWarned || t !is HttpException) return
+        if (t !is HttpException) return
         val message = when (t.code()) {
             // Expired/revoked/invalid Personal Access Token → "Bad credentials"
             401 -> stringer.get(R.string.github_token_invalid)
@@ -377,7 +410,7 @@ class GitHubRepository(
             403, 429 -> stringer.get(R.string.github_rate_limit)
             else -> return
         }
-        errorWarned = true
+        if (!errorWarned.compareAndSet(false, true)) return
         snackBar.snackBar(message = TextSnack(message))
     }
 

@@ -338,6 +338,13 @@ fun UpdatesSettings(viewModel: SettingsViewModel) = LazyColumn {
 		val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
 		var alarmEnabled by remember { mutableStateOf(viewModel.getEnableAlarm()) }
 		SectionHeader(stringResource(R.string.settings_alarm))
+		// First, because it is the check most people will meet first: the one when the app opens.
+		SwitchSetting(
+			{ viewModel.getCheckOnLaunch() },
+			{ viewModel.setCheckOnLaunch(it) },
+			stringResource(R.string.check_on_launch),
+			R.drawable.ic_refresh
+		)
 		SwitchSetting(
 			getValue = { alarmEnabled },
 			setValue = { viewModel.setEnableAlarm(it, launcher); alarmEnabled = it },

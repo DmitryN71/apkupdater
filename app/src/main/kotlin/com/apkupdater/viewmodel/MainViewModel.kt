@@ -38,7 +38,11 @@ class MainViewModel(
 	) {
 		if (didStartupRefresh) return
 		didStartupRefresh = true
-		refresh(appsViewModel, updatesViewModel)
+		// The installed-apps list loads either way; only the update check is optional. Skipping
+		// this whole call would have left the Apps tab empty as well. UpdatesViewModel reads the
+		// same switch to decide whether it starts as a check or as the Check button.
+		if (prefs.checkOnLaunch.get()) refresh(appsViewModel, updatesViewModel)
+		else appsViewModel.refresh(false)
 	}
 
 	fun refresh(

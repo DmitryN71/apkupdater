@@ -49,8 +49,11 @@ class AptoideRepository(
             .filter { Version(it.file.vername) > Version(apps.getVersion(it.packageName)) }
         emit(r.map { it.toAppUpdate(apps.getApp(it.packageName)) })
     }.catch {
-        emit(emptyList())
         Log.e("AptoideRepository", "Error looking for updates.", it)
+        // Rethrown, not swallowed into an empty list: UpdatesRepository then counts this source as
+        // failed and keeps its earlier cards. An empty answer here read as "no updates" — with
+        // no network at all, a check of this one source said so on the screen.
+        throw it
     }
 
     suspend fun search(text: String) = flow {

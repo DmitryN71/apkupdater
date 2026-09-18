@@ -200,4 +200,16 @@
     <string name="find_updates_cd">Искать это приложение в источниках</string>
     <string name="installed_from_here">Ставили отсюда</string>
     <string name="installed_last_from">В прошлый раз: %1$s</string>
+    <string name="more_options_cd">Ещё</string>
+    <string name="check_only">Проверить только</string>
+    <string name="check_on_launch">Проверять при запуске</string>
+    <string name="check_prompt">Нажмите, чтобы проверить обновления</string>
+    <string name="check_prompt_hint">или выберите один источник в меню ⋮</string>
+    <string name="check_all_prompt">Нажмите, чтобы проверить все источники</string>
+    <string name="source_no_updates">%1$s: обновлений нет</string>
+    <string name="play_switch_account">Сменить аккаунт Google Play</string>
+    <string name="play_switching_account">Меняю аккаунт Google Play…</string>
+    <string name="play_account_switched">Аккаунт Google Play сменён. Можно проверить или установить заново.</string>
+    <string name="play_account_switch_failed">Не удалось сменить аккаунт Google Play: %1$s</string>
+    <string name="play_account_switch_too_soon">Не чаще раза в минуту — попробуйте чуть позже.</string>
 </resources>

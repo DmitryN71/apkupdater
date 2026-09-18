@@ -45,10 +45,13 @@ class ApkMirrorRepository(
     private val api = Build.VERSION.SDK_INT
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
-        apps.chunked(100)
-            .map { appExists(it.getPackageNames()) }
+        val tally = FailureTally()
+        val chunks = apps.chunked(100)
+        chunks
+            .map { appExists(it.getPackageNames(), tally) }
             .combine { all -> emit(parseUpdates(all.flatMap { it }, apps)) }
             .collect()
+        tally.throwIfAllFailed(chunks.size, "APKMirror")
     }
 
     suspend fun search(text: String) = flow {
@@ -89,9 +92,10 @@ class ApkMirrorRepository(
         Log.e("ApkMirrorRepository", "Error searching.", it)
     }
 
-    private fun appExists(apps: List<String>) = flow {
+    private fun appExists(apps: List<String>, tally: FailureTally? = null) = flow {
         emit(service.appExists(AppExistsRequest(apps, buildIgnoreList())).data)
     }.catch {
+        tally?.record(it)
         emit(emptyList())
         Log.e("ApkMirrorRepository", "Error getting updates.", it)
     }

@@ -38,6 +38,11 @@ class Prefs(
 	val useApkPure = boolean("useApkPure", defValue = true, backed = true)
 	val usePlay = boolean("usePlay", defValue = true, backed = true)
 	val useRuStore = boolean("useRuStore", defValue = false, backed = true)
+	// Off by default since build 156. A launch used to start a full check of every source even
+	// when the app was opened for Search or the Apps tab — spending the GitHub hourly quota and
+	// Play's patience on nothing. The Updates tab now opens on a big Check button instead, and
+	// whoever wants the old behaviour turns this on.
+	val checkOnLaunch = boolean("checkOnLaunch", defValue = false, backed = true)
 	val enableAlarm = boolean("enableAlarm", defValue = false, backed = true)
 	val alarmHour = int("alarmHour", defValue = 12, backed = true)
 	val alarmFrequency = int("alarmFrequency", 0, backed = true)

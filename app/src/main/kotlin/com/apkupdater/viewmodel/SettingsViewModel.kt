@@ -92,6 +92,8 @@ class SettingsViewModel(
 	fun getIgnoreAlpha() = prefs.ignoreAlpha.get()
 	fun setIgnoreBeta(b: Boolean) = prefs.ignoreBeta.put(b)
 	fun getIgnoreBeta() = prefs.ignoreBeta.get()
+	fun setCheckOnLaunch(b: Boolean) = prefs.checkOnLaunch.put(b)
+	fun getCheckOnLaunch() = prefs.checkOnLaunch.get()
 	fun setIgnorePreRelease(b: Boolean) = prefs.ignorePreRelease.put(b)
 	fun getIgnorePreRelease() = prefs.ignorePreRelease.get()
 	fun getUseSafeStores() = prefs.useSafeStores.get()
@@ -355,6 +357,7 @@ class SettingsViewModel(
 			addProperty("useApkPure", prefs.useApkPure.get())
 			addProperty("usePlay", prefs.usePlay.get())
 			addProperty("useRuStore", prefs.useRuStore.get())
+			addProperty("checkOnLaunch", prefs.checkOnLaunch.get())
 			addProperty("enableAlarm", prefs.enableAlarm.get())
 			addProperty("alarmHour", prefs.alarmHour.get())
 			addProperty("alarmFrequency", prefs.alarmFrequency.get())
@@ -405,6 +408,7 @@ class SettingsViewModel(
 		obj.get("useApkPure")?.asBoolean?.let { prefs.useApkPure.put(it) }
 		obj.get("usePlay")?.asBoolean?.let { prefs.usePlay.put(it) }
 		obj.get("useRuStore")?.asBoolean?.let { prefs.useRuStore.put(it) }
+		obj.get("checkOnLaunch")?.asBoolean?.let { prefs.checkOnLaunch.put(it) }
 		obj.get("enableAlarm")?.asBoolean?.let { prefs.enableAlarm.put(it) }
 		obj.get("alarmHour")?.asInt?.let { prefs.alarmHour.put(it) }
 		obj.get("alarmFrequency")?.asInt?.let { prefs.alarmFrequency.put(it) }

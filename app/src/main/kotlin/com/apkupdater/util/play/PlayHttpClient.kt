@@ -174,9 +174,27 @@ class PlayHttpClient(
         return bytes
     }
 
+    /**
+     * The status and Retry-After of the last request made on THE CALLING THREAD.
+     *
+     * [responseCode] is the status of the last request made on ANY thread, and "Update all"
+     * downloads in parallel — so the throttle check in PlayRepository.getInstallFiles, reading it
+     * in one app's catch block, was reading whichever app's request had finished last. It could
+     * miss a real 429 (another app's 200 had overwritten it) or see one that belonged to another
+     * app. OkHttp's execute() runs on the caller's thread, and getInstallFiles is plain blocking
+     * code, so a thread-local is exactly "the requests this attempt made".
+     */
+    private val threadStatus = ThreadLocal<Int>()
+    private val threadRetryAfter = ThreadLocal<Long>()
+
+    fun statusOnThisThread(): Int = threadStatus.get() ?: 0
+    fun retryAfterOnThisThread(): Long = threadRetryAfter.get() ?: 0L
+
     private fun processRequest(request: Request): PlayResponse {
         // Reset response code as flow doesn't sends the same value twice
         _responseCode.value = 0
+        threadStatus.set(0)
+        threadRetryAfter.set(0L)
 
         val call = okHttpClient.newCall(request)
         return buildPlayResponse(call.execute())
@@ -210,12 +228,14 @@ class PlayHttpClient(
         val bytes = response.body.bytes()
         if (response.code == 429) {
             lastRetryAfterSeconds = response.header("Retry-After")?.toLongOrNull() ?: 0L
+            threadRetryAfter.set(lastRetryAfterSeconds)
             Log.w(
                 "PlayHttpClient",
                 "Play throttled us: HTTP 429, Retry-After=${response.header("Retry-After") ?: "absent"} ${response.request.url}"
             )
         }
         _responseCode.value = response.code
+        threadStatus.set(response.code)
         if (response.isSuccessful && response.request.url.encodedPath.endsWith("/fdfe/search")) {
             searchBytes = bytes
         }

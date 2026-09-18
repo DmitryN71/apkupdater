@@ -1,7 +1,17 @@
 package com.apkupdater.repository
 
 import android.util.Log
+import com.apkupdater.data.ui.ApkMirrorSource
+import com.apkupdater.data.ui.ApkPureSource
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.AptoideSource
+import com.apkupdater.data.ui.FdroidSource
+import com.apkupdater.data.ui.GitHubSource
+import com.apkupdater.data.ui.GitLabSource
+import com.apkupdater.data.ui.IzzySource
+import com.apkupdater.data.ui.PlaySource
+import com.apkupdater.data.ui.RuStoreSource
+import com.apkupdater.data.ui.Source
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.util.isVersionDowngrade
 import kotlinx.coroutines.flow.Flow
@@ -29,24 +39,55 @@ class UpdatesRepository(
     private val prefs: Prefs
 ) {
 
+    /** Every source, in the order a check has always started them. */
+    private val allSources = listOf(
+        ApkMirrorSource, GitHubSource, FdroidSource, IzzySource, AptoideSource,
+        ApkPureSource, GitLabSource, PlaySource, RuStoreSource
+    )
+
+    private fun isEnabled(source: Source) = when (source) {
+        ApkMirrorSource -> prefs.useApkMirror.get()
+        GitHubSource -> prefs.useGitHub.get()
+        FdroidSource -> prefs.useFdroid.get()
+        IzzySource -> prefs.useIzzy.get()
+        AptoideSource -> prefs.useAptoide.get()
+        ApkPureSource -> prefs.useApkPure.get()
+        GitLabSource -> prefs.useGitLab.get()
+        PlaySource -> prefs.usePlay.get()
+        RuStoreSource -> prefs.useRuStore.get()
+        else -> false
+    }
+
+    /** The sources switched on in Settings — what the "check only" menu offers. */
+    fun enabledSources(): List<Source> = allSources.filter { isEnabled(it) }
+
+    /**
+     * @param only check this one source and no other. Null checks every enabled source. A
+     * source switched off in Settings stays off even when named here: it is off for a reason,
+     * and the menu that passes this only offers the enabled ones anyway.
+     */
     fun updates(
         onSourceError: ((Int, Int) -> Unit)? = null,
-        onSourceComplete: ((Int, Int, List<String>) -> Unit)? = null
+        onSourceComplete: ((Int, Int, List<String>) -> Unit)? = null,
+        onSourceAnswered: ((Source) -> Unit)? = null,
+        only: Source? = null
     ) = flow<List<AppUpdate>> {
+        fun include(source: Source) = isEnabled(source) && (only == null || only == source)
         appsRepository.getApps().collect { result ->
             result.onSuccess { apps ->
                 val filtered = apps.filter { !it.ignored }
                 val sourceNames = mutableListOf<String>()
                 val sourceFlows = mutableListOf<Flow<List<AppUpdate>>>()
-                if (prefs.useApkMirror.get()) { sourceNames.add("ApkMirror"); sourceFlows.add(apkMirrorRepository.updates(filtered)) }
-                if (prefs.useGitHub.get()) { sourceNames.add("GitHub"); sourceFlows.add(gitHubRepository.updates(filtered)) }
-                if (prefs.useFdroid.get()) { sourceNames.add("F-Droid"); sourceFlows.add(fdroidRepository.updates(filtered)) }
-                if (prefs.useIzzy.get()) { sourceNames.add("Izzy"); sourceFlows.add(izzyRepository.updates(filtered)) }
-                if (prefs.useAptoide.get()) { sourceNames.add("Aptoide"); sourceFlows.add(aptoideRepository.updates(filtered)) }
-                if (prefs.useApkPure.get()) { sourceNames.add("APKPure"); sourceFlows.add(apkPureRepository.updates(filtered)) }
-                if (prefs.useGitLab.get()) { sourceNames.add("GitLab"); sourceFlows.add(gitLabRepository.updates(filtered)) }
-                if (prefs.usePlay.get()) { sourceNames.add("Play"); sourceFlows.add(playRepository.updates(filtered)) }
-                if (prefs.useRuStore.get()) { sourceNames.add("RuStore"); sourceFlows.add(ruStoreRepository.updates(filtered)) }
+                val sourceObjs = mutableListOf<Source>()
+                if (include(ApkMirrorSource)) { sourceNames.add("ApkMirror"); sourceObjs.add(ApkMirrorSource); sourceFlows.add(apkMirrorRepository.updates(filtered)) }
+                if (include(GitHubSource)) { sourceNames.add("GitHub"); sourceObjs.add(GitHubSource); sourceFlows.add(gitHubRepository.updates(filtered)) }
+                if (include(FdroidSource)) { sourceNames.add("F-Droid"); sourceObjs.add(FdroidSource); sourceFlows.add(fdroidRepository.updates(filtered)) }
+                if (include(IzzySource)) { sourceNames.add("Izzy"); sourceObjs.add(IzzySource); sourceFlows.add(izzyRepository.updates(filtered)) }
+                if (include(AptoideSource)) { sourceNames.add("Aptoide"); sourceObjs.add(AptoideSource); sourceFlows.add(aptoideRepository.updates(filtered)) }
+                if (include(ApkPureSource)) { sourceNames.add("APKPure"); sourceObjs.add(ApkPureSource); sourceFlows.add(apkPureRepository.updates(filtered)) }
+                if (include(GitLabSource)) { sourceNames.add("GitLab"); sourceObjs.add(GitLabSource); sourceFlows.add(gitLabRepository.updates(filtered)) }
+                if (include(PlaySource)) { sourceNames.add("Play"); sourceObjs.add(PlaySource); sourceFlows.add(playRepository.updates(filtered)) }
+                if (include(RuStoreSource)) { sourceNames.add("RuStore"); sourceObjs.add(RuStoreSource); sourceFlows.add(ruStoreRepository.updates(filtered)) }
 
                 val totalSources = sourceFlows.size
                 if (totalSources > 0) {
@@ -63,6 +104,10 @@ class UpdatesRepository(
                                 items
                             }
                             if (result != null) {
+                                // Before the emit, so the caller knows this source answered by the
+                                // time its cards reach it. A source that failed or timed out is
+                                // never announced: its earlier cards are then kept, not wiped.
+                                onSourceAnswered?.invoke(sourceObjs[index])
                                 emit(result)
                             } else {
                                 Log.w("UpdatesRepository", "${sourceNames[index]} timed out after ${SOURCE_TIMEOUT_MS / 1000}s")

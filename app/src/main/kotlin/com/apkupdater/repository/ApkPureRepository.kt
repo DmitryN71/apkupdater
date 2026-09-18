@@ -68,7 +68,10 @@ class ApkPureRepository(
         emit(updates)
     }.catch {
         Log.e("ApkPureRepository", it.message, it)
-        emit(emptyList())
+        // Rethrown, not swallowed into an empty list: UpdatesRepository then counts this source as
+        // failed and keeps its earlier cards. An empty answer here read as "no updates" — with
+        // no network at all, a check of this one source said so on the screen.
+        throw it
     }
 
     suspend fun search(text: String) = flow {
