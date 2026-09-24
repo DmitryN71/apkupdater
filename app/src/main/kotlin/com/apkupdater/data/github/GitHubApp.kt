@@ -135,6 +135,7 @@ val GitHubApps = listOf(
     GitHubApp("com.jhelum.gyawun", "jhelumcorp", "gyawun"),
     GitHubApp("com.pavlenko.Habo", "xpavle00", "Habo"),
     GitHubApp("com.aistra.hail", "aistra0528", "Hail"),
+    GitHubApp("su.happ.proxyutility", "Happ-proxy", "happ-android", notContains("_beta")),
     GitHubApp("com.anandnet.harmonymusic", "anandnet", "Harmony-Music"),
     GitHubApp("helium314.keyboard", "Helium314", "HeliBoard"),
     GitHubApp("com.abrenoch.hyperiongrabber", "abrenoch", "hyperion-android-grabber"),
