@@ -15,6 +15,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.IntrinsicSize
 
 import android.content.res.Configuration
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewResponder
+import androidx.compose.foundation.relocation.bringIntoViewResponder
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -118,6 +127,7 @@ fun getTvNumColumns(): Int {
  * Each card sits in its own key() so a row that re-chunks after a Skip does not hand one card's
  * saved state to whichever card slid into its slot.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun <T> TvEqualRows(
     items: List<T>,
@@ -127,15 +137,21 @@ fun <T> TvEqualRows(
 ) {
     val columns = getTvNumColumns()
     val rows = remember(items, columns) { items.chunked(columns) }
+    var viewportHeight by remember { mutableIntStateOf(0) }
     TvLazyVerticalGrid(
         columns = TvGridCells.Fixed(1),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize().onSizeChanged { viewportHeight = it.height }
     ) {
         items(rows, key = { row -> itemKey(row.first()) }) { row ->
+            val wholeRow = remember { WholeRowInView { viewportHeight } }
             Row(
-                Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Max)
+                    .onSizeChanged { wholeRow.size = it }
+                    .bringIntoViewResponder(wholeRow),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 row.forEach { item ->
@@ -148,4 +164,34 @@ fun <T> TvEqualRows(
             }
         }
     }
+}
+
+/**
+ * Makes a focus move inside a row scroll the grid to the ROW, not to the button that took focus.
+ *
+ * TvLazyVerticalGrid pivots: whatever asks to be brought into view has its top edge put 30% of
+ * the way down the viewport, even when it is already on screen. A card's buttons sit at its
+ * bottom, so focusing one dragged the card up under the top bar by most of its height — right
+ * after a check, the first row came up cut in half with the list already scrolled. Reported by
+ * Dmitry from his TV, with the Open button exactly 30% down the list (238 of 792 px).
+ *
+ * With the whole row as the target, the same pivot does the right thing: the grid cannot scroll
+ * above its start, so the first row stays put; a row further down lands at the pivot, or is
+ * bottom-aligned when it is too tall for that; and moving between the chip and the buttons of
+ * one card no longer shifts the list at all. A row taller than the viewport cannot be shown
+ * whole, so there the focused element alone is asked for, as before, and it stays in sight.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private class WholeRowInView(private val viewportHeight: () -> Int) : BringIntoViewResponder {
+
+    var size = IntSize.Zero
+
+    override fun calculateRectForParent(localRect: Rect): Rect {
+        val fits = size.height > 0 && size.height <= viewportHeight()
+        return if (fits) Rect(0f, 0f, size.width.toFloat(), size.height.toFloat()) else localRect
+    }
+
+    // The row does not scroll by itself; the grid above it does the scrolling.
+    override suspend fun bringChildIntoView(localRect: () -> Rect?) = Unit
+
 }
