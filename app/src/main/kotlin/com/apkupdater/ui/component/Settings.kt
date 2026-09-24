@@ -134,18 +134,16 @@ fun SwitchSetting(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    // Android-TV-style D-pad focus: the whole row fills with the inverse surface color and
-    // the label/icon invert. A border ring around the Switch was tried and rejected — it
-    // hugs the invisible 48dp touch target, not the visible pill, so it looked lopsided;
-    // and the switch's own thumb halo is internal to Material and can't be amplified.
-    // A full-width row fill can't look crooked and is clearly visible from a couch.
-    val rowColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent
-    val contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
+    // D-pad focus marks the whole row (TvFocus), not the Switch: a ring around the Switch was
+    // tried and rejected — it hugs the invisible 48dp touch target, not the visible pill, so it
+    // looked lopsided; and the switch's own thumb halo is internal to Material and can't be
+    // amplified. A full-width row can't look crooked and is clearly visible from a couch.
+    val contentColor = LocalContentColor.current
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .background(rowColor, RoundedCornerShape(16.dp))
+            .tvFocusFrame(focused, RoundedCornerShape(16.dp))
             .heightIn(min = 60.dp)
             .padding(horizontal = 8.dp),
         verticalAlignment = CenterVertically
@@ -333,13 +331,12 @@ fun SettingsCategory(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val rowColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent
-    val contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
+    val contentColor = LocalContentColor.current
     Row(
         modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
-            .background(rowColor, RoundedCornerShape(16.dp))
+            .tvFocusFrame(focused, RoundedCornerShape(16.dp))
             .heightIn(min = 64.dp)
             .clickable(interactionSource = interaction, indication = null) { onClick() }
             .padding(horizontal = 8.dp),
@@ -357,7 +354,7 @@ fun SettingsCategory(
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (focused) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

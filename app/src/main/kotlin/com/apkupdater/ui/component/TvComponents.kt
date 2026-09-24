@@ -1,5 +1,9 @@
 package com.apkupdater.ui.component
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.ui.graphics.Shape
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -1094,7 +1098,10 @@ private fun inlineMd(text: String): String = text
  * Google's TV focus guide offers four indications — scale, outline, glow, colour — and colour is
  * the one that suits a 40dp icon: scale on a button was rejected in build 107 for drawing beyond
  * its bounds, and an outline hugs the invisible 48dp touch target rather than the visible shape.
- * This is the same treatment the card action buttons have used since build 106.
+ *
+ * Since build 157 it wears [TvFocus] like every other focusable outside the cards. The frame is
+ * drawn by OutlinedIconButton's own border, which follows the visible 40dp circle — not the
+ * 48dp touch target that made a hand-drawn ring look lopsided in 107.
  */
 @Composable
 fun TvIconButton(
@@ -1104,20 +1111,45 @@ fun TvIconButton(
 ) {
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
-	IconButton(
+	OutlinedIconButton(
 		onClick = onClick,
 		modifier = modifier,
 		interactionSource = interaction,
-		// inverseSurface, not primary: the settings rows have highlighted this way since 112 and
-		// it reads as neutral and system-like rather than branded — dark on a light theme, light on
-		// a dark one. Asked for on 4PDA, and it makes the whole interface answer in one voice.
-		colors = IconButtonDefaults.iconButtonColors(
-			containerColor = if (focused) MaterialTheme.colorScheme.inverseSurface else Color.Transparent,
-			contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface else LocalContentColor.current
+		colors = IconButtonDefaults.outlinedIconButtonColors(
+			containerColor = if (focused) TvFocus.fill else Color.Transparent,
+			contentColor = LocalContentColor.current
 		),
+		border = if (focused) TvFocus.stroke else null,
 		content = content
 	)
 }
+
+/**
+ * How D-pad focus looks everywhere outside the update cards: a slightly lighter fill with a thin
+ * frame in the text colour, the text itself left alone.
+ *
+ * Builds 112–156 inverted the whole control instead — a solid inverseSurface block with dark text
+ * on a dark theme. It was chosen because Material's own indication, a faint state layer, could
+ * not be found from the sofa, and it did solve that; but on a settings screen a full-width white
+ * row was the loudest thing on the TV. Dmitry picked this from four mockups, 2026-09-24. The
+ * frame carries the visibility the white block had, and a frame in onSurface still inverts with
+ * the theme: light on dark, dark on light.
+ *
+ * The update cards keep their own language — the glow, and primary fills on the buttons inside
+ * them — and so does the bottom bar's pill, which NavigationBarItem draws itself and gives no
+ * border to.
+ */
+object TvFocus {
+	val FrameWidth = 2.dp
+	val fill: Color @Composable get() = MaterialTheme.colorScheme.surfaceContainerHighest
+	val frame: Color @Composable get() = MaterialTheme.colorScheme.onSurface
+	val stroke: BorderStroke @Composable get() = BorderStroke(FrameWidth, frame)
+}
+
+/** [TvFocus] on a hand-built control: fill and frame while focused, nothing otherwise. */
+@Composable
+fun Modifier.tvFocusFrame(focused: Boolean, shape: Shape): Modifier =
+	if (focused) background(TvFocus.fill, shape).border(TvFocus.stroke, shape) else this
 
 /**
  * Puts D-pad focus on a screen's first item when that screen appears. TV only.

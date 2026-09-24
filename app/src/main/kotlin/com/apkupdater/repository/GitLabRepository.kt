@@ -109,11 +109,14 @@ class GitLabRepository(
     }
 
     suspend fun search(text: String) = flow {
+        // Tallied, so a GitLab that could not be reached reads as a failed source rather than as
+        // "nothing found" — see GitHubRepository.search.
+        val tally = FailureTally()
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
 
         loadAllApps().forEach { app ->
             if (app.repo.contains(text, true) || app.user.contains(text, true) || app.packageName.contains(text, true)) {
-                checks.add(checkApp(null, app.user, app.repo, app.packageName, "?", null))
+                checks.add(checkApp(null, app.user, app.repo, app.packageName, "?", null, tally))
             }
         }
 
@@ -124,10 +127,25 @@ class GitLabRepository(
                 val r = all.flatMap { it }
                 emit(Result.success(r))
             }.collect()
+            tally.throwIfAllFailed(checks.size, "GitLab")
         }
     }.catch {
         emit(Result.failure(it))
         Log.e("GitLabRepository", "Error searching.", it)
+    }
+
+    /** One repository named in Search, known or not — see GitHubRepository.lookup. */
+    suspend fun lookup(user: String, repo: String) = flow {
+        val tally = FailureTally()
+        val known = loadAllApps().find { it.user.equals(user, true) && it.repo.equals(repo, true) }
+        checkApp(null, user, repo, known?.packageName ?: "$user/$repo", "?", null, tally)
+            .collect { found ->
+                tally.throwIfAllFailed(1, "GitLab")
+                emit(Result.success(found))
+            }
+    }.catch {
+        emit(Result.failure(it))
+        Log.e("GitLabRepository", "Error looking up $user/$repo.", it)
     }
 
     /**

@@ -42,3 +42,25 @@ fun parseRepoUrl(url: String): CustomGitRepo? {
 		packageName = "$user/$repo"
 	)
 }
+
+/**
+ * A search query that names one repository, as the repositories it could be: a GitHub or GitLab
+ * link gives exactly one, a bare `owner/repo` gives one per provider, anything else none.
+ *
+ * GitHub cannot be searched by Android package name — it knows nothing about package names, and
+ * a project like Happ publishes only release files, no source to search through. Naming the
+ * repository is the one reliable way in, so Search accepts it directly.
+ */
+fun parseRepoQuery(text: String): List<CustomGitRepo> {
+	val q = text.trim()
+	parseRepoUrl(q)?.let { return listOf(it.withoutGitSuffix()) }
+	val match = Regex("^([\\w.-]+)/([\\w.-]+)$").find(q) ?: return emptyList()
+	val (user, repo) = match.destructured
+	return GitProvider.entries.map { CustomGitRepo(it, user, repo, "$user/$repo").withoutGitSuffix() }
+}
+
+/** A clone URL ends in `.git`; the API wants the bare name. */
+private fun CustomGitRepo.withoutGitSuffix(): CustomGitRepo {
+	val bare = repo.removeSuffix(".git")
+	return if (bare == repo) this else copy(repo = bare, packageName = "$user/$bare")
+}

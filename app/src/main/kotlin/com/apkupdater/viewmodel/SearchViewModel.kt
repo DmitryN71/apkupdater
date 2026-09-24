@@ -2,7 +2,17 @@ package com.apkupdater.viewmodel
 
 import android.content.Context
 import androidx.lifecycle.viewModelScope
+import com.apkupdater.R
+import com.apkupdater.data.github.CustomGitRepo
+import com.apkupdater.data.github.GitHubApps
+import com.apkupdater.data.github.GitProvider
+import com.apkupdater.data.github.parseRepoQuery
+import com.apkupdater.data.gitlab.GitLabApps
+import com.apkupdater.data.snack.SnackType
+import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.GitHubSource
+import com.apkupdater.data.ui.GitLabSource
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.removeId
 import com.apkupdater.data.ui.markInstalledFrom
@@ -122,6 +132,37 @@ class SearchViewModel(
         _requestedQuery.value = null
     }
 
+    private val _trackable = MutableStateFlow<CustomGitRepo?>(null)
+    /**
+     * The repository the last search named as a link or `owner/repo`, when it was found and is
+     * not followed yet — built in or added by the user. Search offers to track it, which adds
+     * it to Custom Repositories so update checks include it from then on.
+     */
+    val trackable: StateFlow<CustomGitRepo?> = _trackable
+
+    private fun trackableRepo(query: String, found: List<AppUpdate>): CustomGitRepo? {
+        val followed = prefs.customGitRepos.get().map { "${it.user}/${it.repo}".lowercase() } +
+            GitHubApps.map { "${it.user}/${it.repo}".lowercase() } +
+            GitLabApps.map { "${it.user}/${it.repo}".lowercase() }
+        return parseRepoQuery(query).firstOrNull { repo ->
+            val source = if (repo.platform == GitProvider.GITHUB) GitHubSource else GitLabSource
+            "${repo.user}/${repo.repo}".lowercase() !in followed && found.any { it.source == source }
+        }
+    }
+
+    fun trackRepo() {
+        val repo = _trackable.value ?: return
+        val current = prefs.customGitRepos.get()
+        if (current.none { it.user.equals(repo.user, true) && it.repo.equals(repo.repo, true) }) {
+            prefs.customGitRepos.put(current + repo)
+        }
+        _trackable.value = null
+        snackBar.snackBar(viewModelScope, TextSnack(
+            stringer.get(R.string.search_repo_tracked, "${repo.user}/${repo.repo}"),
+            type = SnackType.SUCCESS
+        ))
+    }
+
     fun toggleSourceFilter(name: String) = _sourceFilter.update {
         if (it.contains(name)) it - name else it + name
     }
@@ -133,6 +174,7 @@ class SearchViewModel(
         _query.value = ""
         _searching.value = false
         _sourceFilter.value = emptySet()
+        _trackable.value = null
         state.value = SearchUiState.Success(emptyList())
         badger.changeSearchBadge("")
     }
@@ -145,6 +187,7 @@ class SearchViewModel(
         // Dropped for every new query. A filter set while looking for one app would otherwise
         // still be hiding sources for the next one, with nothing on screen to explain it.
         _sourceFilter.value = emptySet()
+        _trackable.value = null
         _searching.value = true
         state.value = SearchUiState.Loading
         badger.changeSearchBadge("")
@@ -152,7 +195,8 @@ class SearchViewModel(
             searchRepository.search(text).collect {
                 // Superseded by a clear() or a newer query — see the note on clearSearch().
                 if (generation.get() != mine) return@collect
-                it.onSuccess { apps ->
+                it.onSuccess { results ->
+                    val apps = results.apps
                     val installedFrom = prefs.installedFromMap()
                     val enriched = apps.map { app ->
                         val installed = getInstalledVersionCode(app.packageName)
@@ -169,7 +213,7 @@ class SearchViewModel(
                         val inFlight = current.updates()
                             .filter { u -> u.isInstalling || u.isInstalled }
                             .associateBy { u -> u.id }
-                        SearchUiState.Success(enriched.map { fresh ->
+                        SearchUiState.Success(failed = results.failed, updates = enriched.map { fresh ->
                             inFlight[fresh.id]?.let { live ->
                                 fresh.copy(
                                     isInstalling = live.isInstalling,
@@ -181,6 +225,7 @@ class SearchViewModel(
                         })
                     }
                     badger.changeSearchBadge(merged.updates().size.toString())
+                    _trackable.value = trackableRepo(text, merged.updates())
                 }.onFailure {
                     badger.changeSearchBadge("!")
                     state.value = SearchUiState.Error

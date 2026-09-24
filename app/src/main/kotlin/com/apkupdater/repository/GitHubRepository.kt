@@ -114,12 +114,16 @@ class GitHubRepository(
 
     suspend fun search(text: String) = flow {
         errorWarned.set(false)
+        // Tallied like updates(): each repository catches its own error, so without this a search
+        // that hit the hourly limit on every request answered "nothing found" — reported by
+        // Dmitry, searching for Happ from behind a VPN, whose address shares that limit.
+        val tally = FailureTally()
         val checks = mutableListOf<Flow<List<AppUpdate>>>()
         val allApps = loadAllApps()
 
         allApps.forEach { app ->
             if (app.repo.contains(text, true) || app.user.contains(text, true) || app.packageName.contains(text, true)) {
-                checks.add(checkApp(null, app.user, app.repo, app.packageName, "?", null))
+                checks.add(checkApp(null, app.user, app.repo, app.packageName, "?", app.extra, tally))
             }
         }
 
@@ -130,11 +134,35 @@ class GitHubRepository(
                 val r = all.flatMap { it }
                 emit(Result.success(r))
             }.collect()
+            tally.throwIfAllFailed(checks.size, "GitHub")
         }
     }.catch {
         handleGitHubError(it)
         emit(Result.failure(it))
         Log.e("GitHubRepository", "Error searching.", it)
+    }
+
+    /**
+     * One repository, named by the user in Search as a link or `owner/repo`, whether or not it is
+     * in any list. A repository we already know keeps its package name and asset filter, so the
+     * card matches the one an update check would show; an unknown one is labelled `owner/repo`,
+     * the same placeholder a custom repository carries until it is linked to an installed app.
+     *
+     * A 404 is an answer — no such repository, or no release — and comes back empty. Anything
+     * else fails the lookup, so Search can say GitHub did not answer instead of "nothing found".
+     */
+    suspend fun lookup(user: String, repo: String) = flow {
+        errorWarned.set(false)
+        val tally = FailureTally()
+        val known = loadAllApps().find { it.user.equals(user, true) && it.repo.equals(repo, true) }
+        checkApp(null, user, repo, known?.packageName ?: "$user/$repo", "?", known?.extra, tally)
+            .collect { found ->
+                tally.throwIfAllFailed(1, "GitHub")
+                emit(Result.success(found))
+            }
+    }.catch {
+        emit(Result.failure(it))
+        Log.e("GitHubRepository", "Error looking up $user/$repo.", it)
     }
 
     private fun selfCheck(tally: FailureTally? = null) = flow {
@@ -283,11 +311,6 @@ class GitHubRepository(
         packageName: String,
         extra: Regex?
     ): List<GitHubRelease> {
-        if (packageName == "com.apkupdater.ci") {
-            // TODO: Find a better way to do this
-            return service.getReleases(user, repo).filter { it.name.contains("CI-Release-3.x") }
-        }
-
         val latest = latestRelease(user, repo)
         if (prefs.ignorePreRelease.get() && latest != null && hasApkFor(latest.assets, extra)) {
             return listOf(latest)

@@ -1,5 +1,6 @@
 package com.apkupdater.ui.screen
 
+import com.apkupdater.ui.component.TvFocus
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -166,8 +167,9 @@ fun AboutItem(
 	// OutlinedCard(onClick), not clickable() on the card's outer modifier. Put there, the
 	// indication drew in the modifier's own bounds — a rectangle — behind a rounded card, so
 	// its corners showed past the curve whenever the row held D-pad focus; reported from a TV,
-	// "углы возле кота". And the row now takes the same solid fill every other focusable row
-	// in Settings has carried since 112, instead of Material's faint state layer.
+	// "углы возле кота". And the row takes the same TvFocus fill and frame as every other
+	// focusable row in Settings, instead of Material's faint state layer; the frame is the
+	// card's own border, so it follows the rounded corners.
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
 	OutlinedCard(
@@ -175,11 +177,10 @@ fun AboutItem(
 		modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
 		interactionSource = interaction,
 		colors = CardDefaults.outlinedCardColors(
-			containerColor = if (focused) MaterialTheme.colorScheme.inverseSurface
-				else MaterialTheme.colorScheme.surface,
-			contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface
-				else MaterialTheme.colorScheme.onSurface
-		)
+			containerColor = if (focused) TvFocus.fill else MaterialTheme.colorScheme.surface,
+			contentColor = MaterialTheme.colorScheme.onSurface
+		),
+		border = if (focused) TvFocus.stroke else CardDefaults.outlinedCardBorder()
 	) {
 		Row(Modifier.padding(8.dp)) {
 			icon()

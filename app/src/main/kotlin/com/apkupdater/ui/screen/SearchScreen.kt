@@ -1,5 +1,10 @@
 package com.apkupdater.ui.screen
 
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.border
+import com.apkupdater.ui.component.TvFocus
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -92,8 +97,19 @@ fun SearchScreen(
 	// Above the results rather than inside them, so it keeps its own height and the grid keeps
 	// the weighted remainder. The row is built from EVERY result, never from the filtered ones
 	// — deselecting the last source would otherwise take the chips away with it.
+	val trackable by viewModel.trackable.collectAsStateWithLifecycle()
+	trackable?.let { TrackRepoBar("${it.user}/${it.repo}") { viewModel.trackRepo() } }
 	state.onSuccess {
 		SourceFilterRow(it.updates, selectedSources) { name -> viewModel.toggleSourceFilter(name) }
+		// Results from the sources that did answer are real, but not the whole picture.
+		if (it.updates.isNotEmpty() && it.failed.isNotEmpty() && !searching) {
+			Text(
+				stringResource(R.string.search_sources_failed, it.failed.joinToString()),
+				style = MaterialTheme.typography.bodySmall,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
+			)
+		}
 	}
 	Box(Modifier.weight(1f).fillMaxWidth()) {
 		state.onError {
@@ -133,10 +149,15 @@ fun SearchScreenSuccess(
 		val query by viewModel.query.collectAsStateWithLifecycle()
 		Box(Modifier.fillMaxSize(), Alignment.Center) {
 			if (!searching) {
+				// "Nothing found" only when every source asked actually answered. A source that
+				// failed — GitHub over its hourly limit, above all — is named instead.
 				Text(
-					stringResource(
-						if (query.isBlank()) R.string.search_empty else R.string.search_no_results
-					),
+					when {
+						query.isBlank() -> stringResource(R.string.search_empty)
+						state.failed.isNotEmpty() ->
+							stringResource(R.string.search_no_answer, state.failed.joinToString())
+						else -> stringResource(R.string.search_no_results)
+					},
 					style = MaterialTheme.typography.bodyMedium,
 					color = MaterialTheme.colorScheme.onSurfaceVariant,
 					textAlign = TextAlign.Center,
@@ -178,6 +199,52 @@ fun SearchScreenSuccess(
 }
 
 /**
+ * Offers to follow a repository the user looked up by link or `owner/repo`: one press adds it to
+ * Custom Repositories, and update checks include it from then on. Shown only when the lookup
+ * found a release and the repository is not followed already.
+ *
+ * Its own row above the results rather than a button on the card, so the card stays the same as
+ * every other search result, and a D-pad reaches it first.
+ */
+@Composable
+fun TrackRepoBar(repo: String, onTrack: () -> Unit) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val focusManager = LocalFocusManager.current
+	Row(
+		Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		Text(
+			stringResource(R.string.search_track_hint, repo),
+			style = MaterialTheme.typography.bodyMedium,
+			color = MaterialTheme.colorScheme.onSurfaceVariant,
+			modifier = Modifier.weight(1f).padding(end = 12.dp)
+		)
+		Surface(
+			// The bar leaves the composition once the repository is tracked, and a focused node
+			// that is disposed drops the D-pad to the bottom bar (the trap of build 137). Hand
+			// focus to the result below first; with no D-pad in use this does nothing.
+			onClick = {
+				focusManager.moveFocus(FocusDirection.Down)
+				onTrack()
+			},
+			shape = RoundedCornerShape(50),
+			color = MaterialTheme.colorScheme.primaryContainer,
+			contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+			border = if (focused) TvFocus.stroke else null,
+			interactionSource = interaction
+		) {
+			Text(
+				stringResource(R.string.search_track),
+				style = MaterialTheme.typography.labelLarge,
+				modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+			)
+		}
+	}
+}
+
+/**
  * Lets the user narrow a result list that mixes sources. Shown only when there is something to
  * narrow: one source means one chip, which would be a control that does nothing.
  *
@@ -210,20 +277,19 @@ fun SourceFilterRow(
 
 @Composable
 fun SourceFilterChip(source: Source, isSelected: Boolean, onClick: () -> Unit) {
-	// Same focus treatment as every other chip in the app since 112: a solid inverseSurface
-	// fill, because Material's own state layer is too faint to find from across a room. See
-	// the cache chip in UpdatesTopBar.
+	// Same focus treatment as every other chip in the app: the TvFocus frame, because Material's
+	// own state layer is too faint to find from across a room. The fill keeps saying whether the
+	// chip is selected — the solid focus fill it had until 156 hid exactly that. See the cache
+	// chip in UpdatesTopBar.
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
 	// Named apart from the background/content modifiers on purpose — a local val called
 	// `background` next to Modifier.background reads as a shadowing bug even when it is not.
 	val chipBackground = when {
-		focused -> MaterialTheme.colorScheme.inverseSurface
 		isSelected -> MaterialTheme.colorScheme.primaryContainer
 		else -> MaterialTheme.colorScheme.surfaceVariant
 	}
 	val chipContent = when {
-		focused -> MaterialTheme.colorScheme.inverseOnSurface
 		isSelected -> MaterialTheme.colorScheme.onPrimaryContainer
 		else -> MaterialTheme.colorScheme.onSurfaceVariant
 	}
@@ -231,6 +297,7 @@ fun SourceFilterChip(source: Source, isSelected: Boolean, onClick: () -> Unit) {
 		Modifier
 			.clip(RoundedCornerShape(50))
 			.background(chipBackground)
+			.then(if (focused) Modifier.border(TvFocus.stroke, RoundedCornerShape(50)) else Modifier)
 			.clickable(interactionSource = interaction, indication = null) { onClick() }
 			.padding(horizontal = 12.dp, vertical = 6.dp),
 		verticalAlignment = Alignment.CenterVertically

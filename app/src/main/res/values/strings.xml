@@ -35,7 +35,12 @@
     <string name="stop_checking">Stop checking</string>
     <string name="clear_search_cd">Clear search</string>
     <string name="search_no_results">Nothing found for this search.</string>
-    <string name="search_empty">Search for apps by name across all sources.</string>
+    <string name="search_empty">Search for apps by name across all sources, or paste a GitHub or GitLab link.</string>
+    <string name="search_no_answer">Nothing found, but not every source answered: %1$s. Try again later.</string>
+    <string name="search_sources_failed">Did not answer: %1$s</string>
+    <string name="search_track_hint">%1$s is not in your repositories yet.</string>
+    <string name="search_track">Track updates</string>
+    <string name="search_repo_tracked">%1$s added to Custom Repositories</string>
 
     // Install mode errors
     <string name="root_not_granted">Root access not granted.</string>

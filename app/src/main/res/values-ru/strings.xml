@@ -106,7 +106,12 @@
     <string name="stop_checking">Остановить проверку</string>
     <string name="clear_search_cd">Очистить поиск</string>
     <string name="search_no_results">По этому запросу ничего не найдено.</string>
-    <string name="search_empty">Ищите приложения по названию во всех источниках.</string>
+    <string name="search_empty">Ищите приложения по названию во всех источниках или вставьте ссылку на GitHub или GitLab.</string>
+    <string name="search_no_answer">Ничего не найдено, но ответили не все источники: %1$s. Попробуйте позже.</string>
+    <string name="search_sources_failed">Не ответили: %1$s</string>
+    <string name="search_track_hint">%1$s пока нет в ваших репозиториях.</string>
+    <string name="search_track">Следить за обновлениями</string>
+    <string name="search_repo_tracked">%1$s добавлен в пользовательские репозитории</string>
 
     // Install mode errors
     <string name="root_not_granted">Root-доступ не предоставлен.</string>

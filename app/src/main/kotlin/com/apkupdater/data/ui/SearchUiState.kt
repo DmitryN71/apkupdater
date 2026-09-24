@@ -4,7 +4,8 @@ package com.apkupdater.data.ui
 sealed class SearchUiState {
     data object Loading: SearchUiState()
     data object Error : SearchUiState()
-    data class Success(val updates: List<AppUpdate>): SearchUiState()
+    /** [failed] names the sources that did not answer, so an empty list can say so. */
+    data class Success(val updates: List<AppUpdate>, val failed: List<String> = emptyList()): SearchUiState()
 
     inline fun onLoading(block: (Loading) -> Unit): SearchUiState {
         if (this is Loading) block(this)
@@ -42,5 +43,5 @@ sealed class SearchUiState {
      * empty result list mid-search.
      */
     fun withUpdates(updates: List<AppUpdate>): SearchUiState =
-        if (this is Success) Success(updates) else this
+        if (this is Success) copy(updates = updates) else this
 }

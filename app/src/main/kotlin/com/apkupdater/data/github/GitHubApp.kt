@@ -46,7 +46,9 @@ val GitHubApps = listOf(
     GitHubApp("green_green_avk.anotherterm.redist", "green-green-avk", "AnotherTerm", contains("redist-versioned")),
     GitHubApp("com.menny.android.anysoftkeyboard", "AnySoftKeyboard", "AnySoftKeyboard"),
     GitHubApp("org.courville.nova", "nova-video-player", "aos-AVP"),
-    GitHubApp("com.apkupdater.ci", "rumboalla", "apkupdater"),
+    // This fork, not rumboalla's original: searching "apkupdater" offered the parent's CI
+    // builds (com.apkupdater.ci) and never this one. Updates skip it — selfCheck covers that.
+    GitHubApp("com.apkupdater", "DmitryN71", "apkupdater"),
     GitHubApp("com.standardnotes", "standardnotes", "app"),
     GitHubApp("com.xBrowserSync.android", "xbrowsersync", "app"),
     GitHubApp("io.appflowy.appflowy", "AppFlowy-IO", "AppFlowy"),

@@ -1,5 +1,8 @@
 package com.apkupdater.ui.screen
 
+import androidx.compose.foundation.BorderStroke
+import com.apkupdater.ui.component.TvFocus
+import com.apkupdater.ui.component.tvFocusFrame
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -167,16 +170,14 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
 			// Also a D-pad stop, and the one that had no focus indication at all.
 			val chipInteraction = remember { MutableInteractionSource() }
 			val chipFocused by chipInteraction.collectIsFocusedAsState()
-			val chipContent = if (chipFocused) MaterialTheme.colorScheme.inverseOnSurface
+			val chipContent = if (chipFocused) MaterialTheme.colorScheme.onSurface
 				else MaterialTheme.colorScheme.onSecondaryContainer
 			Row(
 				Modifier
 					.padding(end = 4.dp)
 					.clip(RoundedCornerShape(50))
-					.background(
-						if (chipFocused) MaterialTheme.colorScheme.inverseSurface
-						else MaterialTheme.colorScheme.secondaryContainer
-					)
+					.background(MaterialTheme.colorScheme.secondaryContainer)
+					.tvFocusFrame(chipFocused, RoundedCornerShape(50))
 					.clickable(interactionSource = chipInteraction, indication = null) {
 						// Clearing zeroes the size and the chip leaves the composition while it holds
 						// the D-pad, which drops focus to the bottom bar (the disposed-node trap of
@@ -326,9 +327,10 @@ fun ColumnScope.UpdatesScreenIdle(onRefresh: () -> Unit, onCheck: () -> Unit, is
  * nothing here?" — this is. On a TV it takes the D-pad as soon as it appears, so a single OK
  * starts the check.
  *
- * The focus colours are the app's usual TV inversion (see TvIconButton). Surface's own onClick
- * draws the press ripple and the focus layer clipped to the circle, where a clickable on an
- * outer modifier would draw them in a square around it.
+ * Focus keeps the button's own colour and adds the app's TvFocus frame, on Surface's own border
+ * so it follows the circle. Surface's own onClick draws the press ripple and the focus layer
+ * clipped to the circle, where a clickable on an outer modifier would draw them in a square
+ * around it.
  */
 @Composable
 fun CheckPrompt(title: String, hint: String, onCheck: () -> Unit) = Box(Modifier.fillMaxSize()) {
@@ -346,10 +348,10 @@ fun CheckPrompt(title: String, hint: String, onCheck: () -> Unit) = Box(Modifier
 			onClick = onCheck,
 			modifier = Modifier.size(96.dp).focusRequester(focus),
 			shape = CircleShape,
-			color = if (focused) MaterialTheme.colorScheme.inverseSurface
-				else MaterialTheme.colorScheme.primaryContainer,
-			contentColor = if (focused) MaterialTheme.colorScheme.inverseOnSurface
-				else MaterialTheme.colorScheme.onPrimaryContainer,
+			color = MaterialTheme.colorScheme.primaryContainer,
+			contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+			// Thicker than the usual frame: it goes round a 96 dp circle, alone on the screen.
+			border = if (focused) BorderStroke(3.dp, TvFocus.frame) else null,
 			interactionSource = interaction
 		) {
 			Box(contentAlignment = Alignment.Center) {
