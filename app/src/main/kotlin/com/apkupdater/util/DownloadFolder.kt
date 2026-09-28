@@ -177,9 +177,16 @@ object DownloadFolder {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-                // octet-stream for both .apk and .xapk, so MediaStore does not append an
-                // extension of its own (.xapk used to end up saved as .xapk.zip).
-                put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
+                // The SAME type the tree path uses, and for a reason worth spelling out:
+                // MediaStore renames a duplicate by splitting the name into base + extension,
+                // and it decides what the extension IS from this type. Told octet-stream, it
+                // does not accept ".apk" as one, so the whole name became the base and the copy
+                // came out as "App-1.2.3.apk (1)" — a file Android no longer recognises as a
+                // package, with the blank icon and no way to install it. Reported by Maximoff,
+                // who downloaded one update from two sources. The package-archive type keeps
+                // the extension: "App-1.2.3 (1).apk". octet-stream stays for .xapk/.apks, which
+                // have no registered type and used to be saved as ".xapk.zip" without it.
+                put(MediaStore.Downloads.MIME_TYPE, mimeFor(fileName))
                 put(
                     MediaStore.Downloads.RELATIVE_PATH,
                     Environment.DIRECTORY_DOWNLOADS + File.separator + "APKUpdater"

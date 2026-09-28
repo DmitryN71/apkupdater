@@ -564,11 +564,19 @@ abstract class InstallViewModel(
         runCatching {
             val link = resolveLink(update)
             val safeName = update.name.replace(Regex("[^\\p{L}\\p{N}._\\- ]"), "").trim().ifEmpty { update.packageName }
+            // The source belongs in the name. The same version from two sources is not the
+            // same file — different signing key, sometimes a different build — and under one
+            // name the second download was deduped into a copy Android could not read.
+            // "F-Droid (Izzy)" becomes "F-Droid-Izzy": no spaces or brackets in a file name.
+            val sourceTag = update.source.name
+                .replace(Regex("[^\\p{L}\\p{N}]+"), "-")
+                .trim('-')
+                .ifEmpty { "source" }
 
             startDownloadProgress(update.id)
 
             when (link) {
-                is Link.Play -> downloadPlayToFolder(update.id, safeName, update.version, link)
+                is Link.Play -> downloadPlayToFolder(update.id, safeName, update.version, sourceTag, link)
                 is Link.Url, is Link.Xapk -> {
                     // Exhaustive: the outer branch already narrowed link to Url or Xapk.
                     val url = when (link) {
@@ -577,7 +585,7 @@ abstract class InstallViewModel(
                     }
                     val isXapk = link is Link.Xapk || url.contains(".xapk", true)
                     val ext = if (isXapk) "xapk" else "apk"
-                    val fileName = "$safeName-${update.version}.$ext"
+                    val fileName = "$safeName-${update.version}-$sourceTag.$ext"
 
                     val tempFile = downloader.downloadFile(url, update.id) { bytesDownloaded, totalBytes ->
                         installLog.emitProgress(AppInstallProgress(update.id, bytesDownloaded, totalBytes))
@@ -627,7 +635,13 @@ abstract class InstallViewModel(
         }
     }
 
-    private fun downloadPlayToFolder(id: Int, safeName: String, version: String, link: Link.Play) {
+    private fun downloadPlayToFolder(
+        id: Int,
+        safeName: String,
+        version: String,
+        sourceTag: String,
+        link: Link.Play
+    ) {
         val files = link.getInstallFiles()
         // Without this the throttled case ends in a SUCCESS message: zipping zero entries does
         // not fail, it just writes an empty archive, so the user was told "Saved: Foo.apks" and
@@ -663,7 +677,7 @@ abstract class InstallViewModel(
             }
         }
 
-        val fileName = "$safeName-${version}.apks"
+        val fileName = "$safeName-${version}-$sourceTag.apks"
         // The zip sits in cacheDir's root, which no sweep touches — delete it on every exit,
         // including a save that throws.
         val saved = try { saveToFolder(apksFile, fileName) } finally { apksFile.delete() }
