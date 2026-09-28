@@ -1,6 +1,7 @@
 package com.apkupdater.viewmodel
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.apkupdater.R
 import com.apkupdater.data.snack.TextSnack
@@ -28,6 +29,7 @@ import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
+import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import com.apkupdater.util.installedFromMap
@@ -58,7 +60,8 @@ class UpdatesViewModel(
 	context: Context,
 	background: BackgroundInstaller,
 	notification: UpdatesNotification,
-	private val playRepository: PlayRepository
+	private val playRepository: PlayRepository,
+	private val ruStoreSession: RuStoreSession
 ) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification) {
 
 	private val mutex = Mutex()
@@ -701,6 +704,20 @@ class UpdatesViewModel(
 			)
 		}
 		badger.changeUpdatesBadge(merged.updates().badgeCount())
+	}
+
+	/**
+	 * Draws a new RuStore device, the counterpart of [switchPlayAccount] for that store.
+	 *
+	 * No network and no account: RuStore has neither. The id it keys its staged rollout on is
+	 * simply thrown away, and the next check introduces itself as somebody else — which is the
+	 * only way to be offered a version this device is not in line for yet. Cheap enough to need
+	 * no limit; it costs one handshake on the next check.
+	 */
+	fun switchRuStoreDevice() = viewModelScope.launch(Dispatchers.IO) {
+		ruStoreSession.newDevice()
+		Log.i("UpdatesViewModel", "RuStore device re-rolled at the user's request.")
+		snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.rustore_device_switched)))
 	}
 
 	/** What the "check only" menu offers: the sources switched on in Settings. */

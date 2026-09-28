@@ -167,7 +167,7 @@ val mainModule = module {
 			.create(ApkPureService::class.java)
 	}
 
-	single { RuStoreSession(get()) }
+	single { RuStoreSession(get(), get()) }
 
 	single {
 		// Every RuStore call carries a signed session; see RuStoreSession for why (an unsigned
@@ -261,7 +261,7 @@ val mainModule = module {
 
 	viewModel { AppsViewModel(get(), get(), get()) }
 
-	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get(), get()) }
+	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get(), get(), get()) }
 
 	viewModel { SettingsViewModel(get(), get(), WorkManager.getInstance(get()), get(), get(), get(), get(), androidContext(), get(), get()) }
 

@@ -75,6 +75,7 @@ import com.apkupdater.util.launchIntentFor
 import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.PlaySource
+import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.data.ui.Source
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.ui.component.DefaultErrorScreen
@@ -274,8 +275,24 @@ fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
 					enabled = !checking
 				)
 			}
-			if (PlaySource in sources) {
+			if (PlaySource in sources || RuStoreSource in sources) {
 				HorizontalDivider(Modifier.padding(vertical = 4.dp))
+			}
+			if (RuStoreSource in sources) {
+				DropdownMenuItem(
+					text = { Text(stringResource(R.string.rustore_switch_device)) },
+					onClick = {
+						open = false
+						viewModel.switchRuStoreDevice()
+					},
+					leadingIcon = {
+						Icon(painterResource(R.drawable.ic_rustore), null, Modifier.size(20.dp))
+					},
+					// Nothing disables it: there is no network call and no limit behind it, and
+					// the new device is only introduced on the NEXT check anyway.
+				)
+			}
+			if (PlaySource in sources) {
 				DropdownMenuItem(
 					text = { Text(stringResource(R.string.play_switch_account)) },
 					onClick = {

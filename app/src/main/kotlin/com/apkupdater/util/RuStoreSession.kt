@@ -1,6 +1,7 @@
 package com.apkupdater.util
 
 import android.os.Build
+import com.apkupdater.prefs.Prefs
 import android.util.Base64
 import android.util.Log
 import com.google.gson.JsonParser
@@ -28,7 +29,7 @@ import kotlin.random.Random
  * Device values are the real ones from [Build] rather than a spoofed handset — RuStore uses them
  * to pick which APK variant to serve, so lying here would earn us the wrong downloads.
  */
-class RuStoreSession(private val client: OkHttpClient) {
+class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs) {
 
 	data class Session(val deviceId: String, val signature: String)
 
@@ -43,6 +44,20 @@ class RuStoreSession(private val client: OkHttpClient) {
 
 	/** Forces a new session — call after the API rejects the current one with 419. */
 	fun refresh(): Session? = synchronized(this) { create().also { cached = it } }
+
+	/**
+	 * Draws a new device — the user asking, from the ⋮ menu, for another roll of RuStore's
+	 * staged rollout.
+	 *
+	 * RuStore hands a given id a fixed share of the rollout (measured: twelve fresh ids, nine
+	 * saw the old version and three the new one; one id repeated always answered the same), so
+	 * this is the only way to be offered a version the current id is not in line for. The next
+	 * check does the handshake again with the new id.
+	 */
+	fun newDevice() = synchronized(this) {
+		prefs.ruStoreDeviceId.put(randomHalf())
+		cached = null
+	}
 
 	/**
 	 * Headers the RuStore client sends. Without a session we fall back to [FALLBACK_VER_CODE]:
@@ -106,17 +121,27 @@ class RuStoreSession(private val client: OkHttpClient) {
 	/**
 	 * `<random 8 bytes as hex>-<suffix>`, where the suffix mixes the Java string hashes of the
 	 * device identity exactly as the client does (Int arithmetic wraps the same way in Kotlin,
-	 * so no explicit 32-bit truncation is needed). The random half stands in for ANDROID_ID:
-	 * a session needs no stable identifier, and omitting one keeps devices unlinkable.
+	 * so no explicit 32-bit truncation is needed). The random half stands in for ANDROID_ID.
+	 *
+	 * KEPT between runs since build 158. It used to be drawn fresh every session, which sounds
+	 * harmless and was not: RuStore keys its staged rollout on this id, so every check was a new
+	 * draw and an update could appear, be installed, and be followed at once by the next one —
+	 * or appear and vanish. Reported on 4PDA and measured, see [[rustore-source-facts]].
+	 * The id stays random and local — nothing about the device leaks into the random half, and
+	 * [newDevice] throws it away on request — but a stable value does let RuStore tell one check
+	 * from another, which the old behaviour prevented. That is the trade the user was given a
+	 * button for.
 	 */
 	private fun deviceId(): String {
 		val manufacturer = javaHash(Build.MANUFACTURER.orEmpty())
 		val model = javaHash(Build.MODEL.orEmpty())
 		val hardware = javaHash(Build.HARDWARE.orEmpty())
 		val suffix = ((manufacturer * 31 + model) * 31 + hardware) * 31 + hardware
-		val random = (0 until 8).joinToString("") { "%02x".format(Random.nextInt(256)) }
+		val random = prefs.ruStoreDeviceId.get().ifEmpty { randomHalf().also { prefs.ruStoreDeviceId.put(it) } }
 		return "$random-$suffix"
 	}
+
+	private fun randomHalf() = (0 until 8).joinToString("") { "%02x".format(Random.nextInt(256)) }
 
 	private fun javaHash(value: String): Int = value.fold(0) { hash, char -> 31 * hash + char.code }
 

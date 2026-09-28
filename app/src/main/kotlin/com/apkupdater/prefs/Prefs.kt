@@ -69,6 +69,10 @@ class Prefs(
 	// session keeps using whatever profile it was made with. Bumping the version constant in
 	// PlayRepository forces one re-auth so profile changes actually reach Play.
 	val playProfileVersion = int("playProfileVersion", 0, true)
+	// The random half of the id RuStore is told, kept so that every check lands in the same
+	// rollout bucket — see util/RuStoreSession.kt. Re-rolled from the ⋮ menu, never derived from
+	// anything real about the device.
+	val ruStoreDeviceId = string("ruStoreDeviceId", defValue = "", backed = true)
 	val ruStore404Packages = json("ruStore404Packages", emptyList<RuStore404Entry>(), true)
 	val customGitRepos = json("customGitRepos", emptyList<CustomGitRepo>(), true)
 	/** Where this app installed each package from. See util/InstallRecords.kt. */

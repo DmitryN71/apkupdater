@@ -217,4 +217,6 @@
     <string name="play_account_switched">Аккаунт Google Play сменён. Можно проверить или установить заново.</string>
     <string name="play_account_switch_failed">Не удалось сменить аккаунт Google Play: %1$s</string>
     <string name="play_account_switch_too_soon">Не чаще раза в минуту — попробуйте чуть позже.</string>
+    <string name="rustore_switch_device">Сменить устройство для RuStore</string>
+    <string name="rustore_device_switched">Новое устройство RuStore. Проверьте обновления ещё раз.</string>
 </resources>

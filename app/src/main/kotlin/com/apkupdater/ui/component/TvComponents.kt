@@ -83,6 +83,7 @@ import com.apkupdater.util.isAndroidTv
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
 import androidx.compose.foundation.focusGroup
@@ -179,6 +180,9 @@ fun ProvenanceChip(installedFrom: String, source: Source?, modifier: Modifier = 
 		color = content,
 		style = MaterialTheme.typography.labelSmall,
 		maxLines = 1,
+		// Belt and braces: wherever it still runs out of room, it must end in an ellipsis rather
+		// than be cut mid-word, so it reads as shortened rather than as the whole message.
+		overflow = TextOverflow.Ellipsis,
 		modifier = modifier
 			.background(background, RoundedCornerShape(12.dp))
 			.padding(horizontal = 8.dp, vertical = 2.dp)
@@ -434,8 +438,13 @@ private fun FullCommonItem(
 			ReleaseTypeChip(releaseType)
 			SizeChip(fileSize)
 			DateChip(updateDate)
-			ProvenanceChip(installedFrom, source)
 		}
+		// On its own line, because this row does not wrap and nothing in it is weighted: the
+		// provenance chip was served last, got whatever width was left and was cut off mid-word
+		// — "Ставили" instead of "Ставили отсюда", and "В прошлый раз …" without the source that
+		// is the whole point of it. Reported by Maximoff on 4PDA against build 157. The compact
+		// card keeps it in its chip row, which scrolls, so there it can always be read.
+		ProvenanceChip(installedFrom, source, Modifier.padding(top = 4.dp))
 	}
 }
 

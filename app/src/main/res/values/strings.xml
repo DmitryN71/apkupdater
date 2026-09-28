@@ -218,4 +218,6 @@
     <string name="play_account_switched">Google Play account switched. You can check or install again.</string>
     <string name="play_account_switch_failed">Could not switch the Google Play account: %1$s</string>
     <string name="play_account_switch_too_soon">Once a minute at most — try again shortly.</string>
+    <string name="rustore_switch_device">Draw a new RuStore device</string>
+    <string name="rustore_device_switched">New RuStore device. Check for updates again.</string>
 </resources>
