@@ -100,6 +100,8 @@ class SettingsViewModel(
 	fun setUseSafeStores(b: Boolean) = prefs.useSafeStores.put(b)
 	fun getUseApkMirror() = prefs.useApkMirror.get()
 	fun setUseApkMirror(b: Boolean) = prefs.useApkMirror.put(b)
+	fun getApkMirrorDirect() = prefs.apkMirrorDirect.get()
+	fun setApkMirrorDirect(b: Boolean) = prefs.apkMirrorDirect.put(b)
 	fun getUseFdroid() = prefs.useFdroid.get()
 	fun setUseFdroid(b: Boolean) = prefs.useFdroid.put(b)
 	fun getUseIzzy() = prefs.useIzzy.get()

@@ -26,6 +26,7 @@ import com.apkupdater.service.FdroidService
 import com.apkupdater.service.GitHubService
 import com.apkupdater.service.GitLabService
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.ApkMirrorDownload
 import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Clipboard
@@ -214,6 +215,21 @@ val mainModule = module {
 
 	single { ApkMirrorRepository(get(), get(), androidContext().packageManager) }
 
+	// APKMirror's download chain (util/ApkMirrorDownload.kt): its own client, because download.php
+	// must be read as a redirect rather than followed, and the shared one caches pages that are
+	// single-use keys. The User-Agent is set per request there, and it is our own.
+	single {
+		ApkMirrorDownload(
+			OkHttpClient.Builder()
+				.connectionPool(get())
+				.followRedirects(false)
+				.followSslRedirects(false)
+				.connectTimeout(15, TimeUnit.SECONDS)
+				.readTimeout(30, TimeUnit.SECONDS)
+				.build()
+		)
+	}
+
 	single { AppsRepository(get(), get()) }
 
 	single { GitHubRepository(get(), get(), get(), get()) }
@@ -287,10 +303,10 @@ val mainModule = module {
 
 	viewModel { AppsViewModel(get(), get(), get()) }
 
-	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get(), get(), get()) }
+	viewModel { UpdatesViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get(), get(), get(), get()) }
 
 	viewModel { SettingsViewModel(get(), get(), WorkManager.getInstance(get()), get(), get(), get(), get(), androidContext(), get(), get()) }
 
-	viewModel { SearchViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get()) }
+	viewModel { SearchViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), androidContext(), get(), get(), get()) }
 
 }

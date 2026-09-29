@@ -22,6 +22,7 @@ import com.apkupdater.data.ui.setProgress
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.SearchRepository
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.ApkMirrorDownload
 import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Downloader
@@ -57,8 +58,9 @@ class SearchViewModel(
     ruStoreService: RuStoreService,
     context: Context,
     background: BackgroundInstaller,
-    notification: UpdatesNotification
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification) {
+    notification: UpdatesNotification,
+    apkMirror: ApkMirrorDownload
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification, apkMirror) {
 
     private val mutex = Mutex()
     private val installMutex = Mutex()
@@ -264,7 +266,7 @@ class SearchViewModel(
         try {
             state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
             installMutex.withLock {
-                val link = resolveLink(update)
+                val link = resolveLinkOrReport(update) ?: return@launch
                 downloadAndRootInstall(update.id, update.name, update.packageName, link)
             }
         } finally {
@@ -277,7 +279,7 @@ class SearchViewModel(
         try {
             state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
             installMutex.withLock {
-                val link = resolveLink(update)
+                val link = resolveLinkOrReport(update) ?: return@launch
                 downloadAndShizukuInstall(update.id, update.name, update.packageName, link)
             }
         } finally {
@@ -291,7 +293,7 @@ class SearchViewModel(
             try {
                 state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
                 installMutex.withLock {
-                    val link = resolveLink(update)
+                    val link = resolveLinkOrReport(update) ?: return@launch
                     downloadAndInstall(update.id, update.packageName, link, update.name)
                 }
             } finally {

@@ -48,10 +48,16 @@ fun List<AppUpdate>.markInstalledFrom(done: AppUpdate?): List<AppUpdate> =
 	if (done == null) this
 	else map { if (it.packageName == done.packageName) it.copy(installedFrom = done.source.name) else it }
 
+/**
+ * Starting or ending a task also clears the progress it left behind. Every caller is at one of
+ * those two points. Without the reset, a card that had just saved its file to the folder
+ * started its install at "100%", and sat there until the new download's first bytes — ten
+ * seconds for an APKMirror link.
+ */
 fun MutableList<AppUpdate>.setIsInstalling(id: Int, b: Boolean): List<AppUpdate> {
 	val index = this.indexOf(id)
 	if (index != -1) {
-		this[index] = this[index].copy(isInstalling = b)
+		this[index] = this[index].copy(isInstalling = b, progress = 0L, total = 0L)
 	}
 	return this
 }

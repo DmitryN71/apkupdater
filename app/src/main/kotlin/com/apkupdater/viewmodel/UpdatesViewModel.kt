@@ -20,6 +20,7 @@ import com.apkupdater.repository.PlayRepository
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.AppVisibility
+import com.apkupdater.util.ApkMirrorDownload
 import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.clearDownloadCacheBytes
@@ -61,8 +62,9 @@ class UpdatesViewModel(
 	background: BackgroundInstaller,
 	notification: UpdatesNotification,
 	private val playRepository: PlayRepository,
-	private val ruStoreSession: RuStoreSession
-) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification) {
+	private val ruStoreSession: RuStoreSession,
+	apkMirror: ApkMirrorDownload
+) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification, apkMirror) {
 
 	private val mutex = Mutex()
 	private val installMutex = Mutex()
@@ -371,7 +373,20 @@ class UpdatesViewModel(
 		background.begin(update.id, update.name)
 		try {
 			state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
-			val link = resolveLink(update)
+			val link = resolveLinkOrReport(update) ?: return@launch
+			// Root installs one APK with pm; a split archive goes to the standard installer
+			// instead, which needs no root. Refusing it wasted a whole APKMirror chain — three
+			// requests and a single-use download key — before saying "not supported".
+			if (link is com.apkupdater.data.ui.Link.Xapk) {
+				// That installer needs "install unknown apps", which a root user may never have
+				// granted; checkPermission() opens the setting for it, as the standard path does.
+				if (installer.checkPermission()) {
+					downloadAndInstall(update.id, update.packageName, link, update.name)
+				} else {
+					cancelInstall(update.id)
+				}
+				return@launch
+			}
 			if (link !is com.apkupdater.data.ui.Link.Url) {
 				snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.root_install_not_supported)))
 				cancelInstall(update.id)
@@ -435,7 +450,7 @@ class UpdatesViewModel(
 		background.begin(update.id, update.name)
 		try {
 		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
-		val link = resolveLink(update)
+		val link = resolveLinkOrReport(update) ?: return@launch
 		// Download in parallel (no mutex) — shizuku install methods delete files themselves
 		val files = runCatching {
 			when (link) {
@@ -548,7 +563,7 @@ class UpdatesViewModel(
 				state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(update.id, true)) }
 				// No ViewModel mutex — downloads run in parallel.
 				// SessionInstaller has its own mutex for commit sequencing.
-				val link = resolveLink(update)
+				val link = resolveLinkOrReport(update) ?: return@launch
 				downloadAndInstall(update.id, update.packageName, link, update.name)
 			} finally {
 				background.end(update.id)
@@ -560,12 +575,12 @@ class UpdatesViewModel(
 		uriHandler: androidx.compose.ui.platform.UriHandler,
 		notificationPermission: androidx.activity.compose.ManagedActivityResultLauncher<String, Boolean>? = null
 	) {
-		// ApkMirror has no direct download — install() opens its page in the browser — so
-		// "Update all" used to open one browser tab per ApkMirror update on top of the real
-		// installs. Those stay a manual tap.
+		// ApkMirror normally has no direct download — install() opens its page in the browser —
+		// so "Update all" used to open one browser tab per ApkMirror update on top of the real
+		// installs. Those stay a manual tap, unless the user switched on in-app downloads.
 		val updates = state.value.updates()
 			.filter {
-				!it.isInstalling && !it.isInstalled && it.source != com.apkupdater.data.ui.ApkMirrorSource
+				!it.isInstalling && !it.isInstalled && isBatchInstallable(it)
 			}
 			// Nor anything without a direct APK: install() opens the release page for those, so
 			// each such GitLab or GitHub card became one more browser tab.
@@ -583,6 +598,10 @@ class UpdatesViewModel(
 			install(update, uriHandler, if (index == 0) notificationPermission else null)
 		}
 	}
+
+	/** Shared with the screen, which shows "Update all" only when there is something for it. */
+	fun isBatchInstallable(update: AppUpdate) =
+		update.source != com.apkupdater.data.ui.ApkMirrorSource || isApkMirrorDirect(update)
 
 	override fun startDownloadProgress(id: Int) {
 		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, true)) }

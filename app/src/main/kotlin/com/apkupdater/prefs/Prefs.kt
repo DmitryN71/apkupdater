@@ -30,6 +30,9 @@ class Prefs(
 	val ignorePreRelease = boolean("ignorePreRelease", defValue = true, backed = true)
 	val useSafeStores = boolean("useSafeStores", defValue = true, backed = true)
 	val useApkMirror = boolean("useApkMirror", defValue = false, backed = true)
+	// Downloading from APKMirror inside the app instead of opening its page — see
+	// util/ApkMirrorDownload.kt. Off by default and only switched on through a warning.
+	val apkMirrorDirect = boolean("apkMirrorDirect", defValue = false, backed = true)
 	val useGitHub = boolean("useGitHub", defValue = true, backed = true)
 	val useGitLab = boolean("useGitLab", defValue = true, backed = true)
 	val useFdroid = boolean("useFdroid", defValue = true, backed = true)

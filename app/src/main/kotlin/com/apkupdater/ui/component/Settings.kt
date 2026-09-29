@@ -132,6 +132,30 @@ fun SwitchSetting(
     text: String,
     @DrawableRes icon: Int = R.drawable.ic_system
 ) {
+    var value by remember { mutableStateOf(getValue()) }
+    SwitchSetting(
+        checked = value,
+        onCheckedChange = {
+            setValue(it)
+            value = getValue()
+        },
+        text = text,
+        icon = icon
+    )
+}
+
+/**
+ * The same row with the value held by the caller: for a switch whose change goes through a
+ * dialog, or that shows or hides other rows. The row is never re-created to show a new value —
+ * re-creating it (with key()) dropped the D-pad focus off the page on a TV.
+ */
+@Composable
+fun SwitchSetting(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    text: String,
+    @DrawableRes icon: Int = R.drawable.ic_system
+) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     // D-pad focus marks the whole row (TvFocus), not the Switch: a ring around the Switch was
@@ -148,7 +172,6 @@ fun SwitchSetting(
             .padding(horizontal = 8.dp),
         verticalAlignment = CenterVertically
     ) {
-        var value by remember { mutableStateOf(getValue()) }
         Icon(
             painterResource(id = icon),
             text,
@@ -159,11 +182,8 @@ fun SwitchSetting(
         // instead of being drawn underneath it.
         Text(text, Modifier.weight(1f), color = contentColor)
         Switch(
-            checked = value,
-            onCheckedChange = {
-                setValue(it)
-                value = getValue()
-            },
+            checked = checked,
+            onCheckedChange = onCheckedChange,
             interactionSource = interaction,
             modifier = Modifier.padding(start = 8.dp)
         )

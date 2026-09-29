@@ -76,6 +76,7 @@ import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.ReleaseType
 import com.apkupdater.data.ui.Source
+import com.apkupdater.util.ApkMirrorDownload
 import com.apkupdater.util.getAppName
 import kotlinx.coroutines.delay
 import com.apkupdater.util.installerLabel
@@ -758,7 +759,16 @@ fun TvDownloadButton(
 	app: AppUpdate,
 	onDownload: (AppUpdate) -> Unit
 ) {
-	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play) && app.source != ApkMirrorSource
+	// Read unconditionally — get<Prefs>() is @Composable (see playTextAnimations above).
+	val apkMirrorDirect = get<Prefs>().apkMirrorDirect.get()
+	// An APKMirror link is a web page, which is why this button was hidden for it from build 61
+	// on. With the opt-in download switched on, a VARIANT page (what the update check gives)
+	// becomes a file through ApkMirrorDownload; a release page (what a search result gives) does
+	// not, and saving it would save HTML.
+	val apkMirrorFile = app.source == ApkMirrorSource && apkMirrorDirect &&
+		(app.link as? Link.Url)?.link?.let { ApkMirrorDownload.isVariantPage(it) } == true
+	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play) &&
+		(app.source != ApkMirrorSource || apkMirrorFile)
 	if (hasLink) {
 		// Single focusable node: the button itself. The old extra combinedClickable
 		// wrapper was a second focus stop with a rectangular highlight — the cause

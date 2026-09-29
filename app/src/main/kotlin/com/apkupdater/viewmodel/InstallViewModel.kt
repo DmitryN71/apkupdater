@@ -20,6 +20,7 @@ import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.ApkMirrorDownload
 import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.AppVisibility
 import com.apkupdater.util.BackgroundInstaller
@@ -40,6 +41,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 
 abstract class InstallViewModel(
@@ -52,7 +54,8 @@ abstract class InstallViewModel(
     private val ruStoreService: RuStoreService,
     protected val context: Context,
     protected val background: BackgroundInstaller,
-    protected val notification: UpdatesNotification
+    protected val notification: UpdatesNotification,
+    private val apkMirror: ApkMirrorDownload
 ): ViewModel() {
 
     /**
@@ -99,23 +102,33 @@ abstract class InstallViewModel(
             if (update.sourceUrl.isNotEmpty()) uriHandler.openUri(update.sourceUrl)
             return
         }
-        when (update.source) {
-            ApkMirrorSource -> uriHandler.openUri((update.link as Link.Url).link)
-            else -> {
-                if (isAlreadyUpToDate(update)) {
-                    snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.already_up_to_date)))
-                    return
-                }
-                if (prefs.rootInstall.get()) {
-                    downloadAndRootInstall(update)
-                } else if (prefs.shizukuInstall.get()) {
-                    downloadAndShizukuInstall(update)
-                } else {
-                    downloadAndInstall(update)
-                }
-            }
+        // APKMirror opens its page in the browser unless the user switched on in-app downloads,
+        // and even then only for a variant page — see isApkMirrorDirect.
+        if (update.source == ApkMirrorSource && !isApkMirrorDirect(update)) {
+            uriHandler.openUri((update.link as Link.Url).link)
+            return
+        }
+        if (isAlreadyUpToDate(update)) {
+            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.already_up_to_date)))
+            return
+        }
+        if (prefs.rootInstall.get()) {
+            downloadAndRootInstall(update)
+        } else if (prefs.shizukuInstall.get()) {
+            downloadAndShizukuInstall(update)
+        } else {
+            downloadAndInstall(update)
         }
     }
+
+    /**
+     * Whether this APKMirror update is downloaded by the app rather than opened in the browser:
+     * only with the switch in Settings on, and only for a variant page, which is what the update
+     * check links to. A search result links to a release page, where a person picks the variant.
+     */
+    fun isApkMirrorDirect(update: AppUpdate): Boolean = update.source == ApkMirrorSource &&
+        prefs.apkMirrorDirect.get() &&
+        (update.link as? Link.Url)?.link?.let { ApkMirrorDownload.isVariantPage(it) } == true
 
     fun getInstalledVersionCode(packageName: String): Long = runCatching {
         if (Build.VERSION.SDK_INT >= 28) {
@@ -140,7 +153,39 @@ abstract class InstallViewModel(
         return installed >= update.versionCode
     }
 
+    /**
+     * [resolveLink] for the install paths, which run in the background scope: that scope has no
+     * exception handler, so a throw here would take the whole app down. A failure is reported,
+     * the card is reset, and null tells the caller to stop.
+     */
+    protected suspend fun resolveLinkOrReport(update: AppUpdate): Link? = runCatching {
+        resolveLink(update)
+    }.getOrElse {
+        Log.e("InstallViewModel", "Could not get a download for ${update.packageName}", it)
+        installLog.emitProgress(AppInstallProgress(update.id, 0L))
+        snackInstallFailure(update.name, it, update.id)
+        cancelInstall(update.id)
+        null
+    }
+
     protected suspend fun resolveLink(update: AppUpdate): Link {
+        // Walked at install time, never at check time: the file link APKMirror hands out is
+        // signed and short-lived. Unlike RuStore below, a failure THROWS — falling back to the
+        // page link would download a web page and try to install it.
+        if (isApkMirrorDirect(update)) {
+            val page = update.link as Link.Url
+            // Asked before each request: a chain queued behind others is dropped the moment its
+            // card is cancelled or the setting is switched off, instead of walking all three pages.
+            val resolved = apkMirror.resolve(page.link) {
+                downloader.isCancelled(update.id) || !prefs.apkMirrorDirect.get()
+            }
+            return if (resolved.bundle) Link.Xapk(resolved.url, page.size) else Link.Url(resolved.url, page.size)
+        }
+        // Every other APKMirror link is a web page. The screens route those to the browser, and
+        // this makes sure no future path can hand one to an installer or save it as an APK.
+        if (update.source == ApkMirrorSource) {
+            throw ApkMirrorDownload.Failure(R.string.apkmirror_failed, "Not a direct APKMirror download: ${update.link}")
+        }
         if (update.source == RuStoreSource && update.link is Link.Url) {
             return runCatching {
                 // RuStore answers for one device kind at a time, so try both: a TV app is a 404
@@ -464,10 +509,12 @@ abstract class InstallViewModel(
         // whose message doesn't happen to say "canceled" were slipping through as a bogus
         // "failed to install — unexpected error" the moment the user pressed Cancel.
         if (id != null && downloader.isCancelled(id)) return
+        if (error is ApkMirrorDownload.Stopped) return
         if (error != null && isCancellation(error)) return
         val playReason = error?.let { playErrorResId(it) }
         val reason = when {
             error == null -> stringer.get(R.string.install_error_unknown)
+            error is ApkMirrorDownload.Failure -> stringer.get(error.reason)
             playReason != null -> stringer.get(playReason)
             isNetworkError(error) || isDownloadError(error) -> stringer.get(R.string.download_failed)
             else -> stringer.get(installErrorResId(error.message))
@@ -556,9 +603,29 @@ abstract class InstallViewModel(
         return msg.contains("canceled") || msg.contains("cancelled") || msg.contains("socket closed")
     }
 
+    /** Cards with a save to the folder already running, so another tap on Download is ignored. */
+    private val folderDownloads: MutableSet<Int> = ConcurrentHashMap.newKeySet()
+
     // Runs in the process-lifetime scope so the download survives leaving the app;
     // begin()/end() keep the foreground service (and its notification) alive meanwhile.
-    fun downloadToFolder(update: AppUpdate) = background.scope.launch(Dispatchers.IO) {
+    fun downloadToFolder(update: AppUpdate) {
+        // One save per card at a time. Until the card showed progress, every further tap
+        // queued another complete download: four copies of Continuity Service on 2026-09-29.
+        if (!folderDownloads.add(update.id)) return
+        // At the tap, BEFORE the link is resolved, as the install paths do. Resolving can take
+        // seconds — APKMirror walks three pages about four seconds apart, Play asks for a
+        // purchase — and the card sat unchanged with its button still live all that time.
+        startDownloadProgress(update.id)
+        background.scope.launch(Dispatchers.IO) {
+            try {
+                saveToFolderTask(update)
+            } finally {
+                folderDownloads.remove(update.id)
+            }
+        }
+    }
+
+    private suspend fun saveToFolderTask(update: AppUpdate) {
         background.begin(update.id, update.name)
         try {
         runCatching {
@@ -573,8 +640,6 @@ abstract class InstallViewModel(
                 .trim('-')
                 .ifEmpty { "source" }
 
-            startDownloadProgress(update.id)
-
             when (link) {
                 is Link.Play -> downloadPlayToFolder(update.id, safeName, update.version, sourceTag, link)
                 is Link.Url, is Link.Xapk -> {
@@ -584,7 +649,13 @@ abstract class InstallViewModel(
                         is Link.Xapk -> link.link
                     }
                     val isXapk = link is Link.Xapk || url.contains(".xapk", true)
-                    val ext = if (isXapk) "xapk" else "apk"
+                    // An APKMirror bundle keeps APKMirror's own extension, so the saved file
+                    // says what it is and opens in their installer as well as in SAI.
+                    val ext = when {
+                        link is Link.Xapk && update.source == ApkMirrorSource -> "apkm"
+                        isXapk -> "xapk"
+                        else -> "apk"
+                    }
                     val fileName = "$safeName-${update.version}-$sourceTag.$ext"
 
                     val tempFile = downloader.downloadFile(url, update.id) { bytesDownloaded, totalBytes ->
@@ -597,7 +668,7 @@ abstract class InstallViewModel(
                         snackBar.snackBar(viewModelScope, TextSnack(
                             stringer.get(R.string.download_failed), type = SnackType.ERROR
                         ))
-                        return@launch
+                        return
                     }
 
                     val saved = saveToFolder(tempFile, fileName)
@@ -622,11 +693,14 @@ abstract class InstallViewModel(
             // since 129. Filtering on the exception text hid every real network failure — a
             // Wi-Fi drop that outlived the retries ended in silence — while a cancel whose
             // exception happened not to say "canceled" showed "Download failed".
-            if (!downloader.isCancelled(update.id)) {
+            if (!downloader.isCancelled(update.id) && it !is ApkMirrorDownload.Stopped) {
                 // A Play refusal is an exception now, and it reaches this path too: say what
                 // Play said rather than a generic "download failed".
                 snackBar.snackBar(viewModelScope, TextSnack(
-                    stringer.get(playErrorResId(it) ?: R.string.download_failed), type = SnackType.ERROR
+                    stringer.get(
+                        (it as? ApkMirrorDownload.Failure)?.reason ?: playErrorResId(it) ?: R.string.download_failed
+                    ),
+                    type = SnackType.ERROR
                 ))
             }
         }

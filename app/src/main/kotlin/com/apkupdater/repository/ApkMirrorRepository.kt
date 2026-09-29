@@ -1,6 +1,7 @@
 package com.apkupdater.repository
 
 import android.content.pm.PackageManager
+import android.content.res.Resources
 import android.net.Uri
 import android.os.Build
 import android.util.Log
@@ -43,6 +44,16 @@ class ApkMirrorRepository(
 
     private val isAndroidTV = packageManager.isAndroidTv()
     private val api = Build.VERSION.SDK_INT
+
+    /**
+     * The density bucket APKMirror would file this screen under (120…640): the smallest bucket
+     * at or above the real density, so a 600 dpi QHD+ phone counts as 640. Only an approximation
+     * of Android's own choice (a 360 dpi screen really uses 320 art), which is enough for its one
+     * job: breaking a tie between variants of the same build.
+     */
+    private val densityBucket = Resources.getSystem().displayMetrics.densityDpi.let { dpi ->
+        DPI_BUCKETS.firstOrNull { dpi <= it } ?: DPI_BUCKETS.last()
+    }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val tally = FailureTally()
@@ -121,9 +132,33 @@ class ApkMirrorRepository(
                 .filter { filterMinApi(it) }
                 .filter { filterAndroidTv(it) }
                 .filter { filterWearOS(it) }
-                .maxByOrNull { it.versionCode }
+                // The newest build always wins; the screen only chooses between variants of that
+                // same build. Build 169 put screen fit FIRST, and that picked older builds: Play
+                // services 26.36.33 lists its Android 12+ build (…029) only as "320-480dpi", so a
+                // 640 dpi phone was offered the Android 9+ build (…013) instead, and then …029 as a
+                // same-version "update" right after. A "120-480dpi" page on a 640 dpi phone is
+                // usually just the newest build having no 640 variant; Android uses its 480 art.
+                .maxWithOrNull(compareBy<AppExistsResponseApk>({ it.versionCode }, { screenScore(it) }))
                 ?.toAppUpdate(apps.getApp(data.pname)!!, data.release)
         }
+
+    /**
+     * Among variants of one versionCode: nodpi first — one plain APK for every screen, which every
+     * install path can take, root included — then a build for exactly this density, then a range
+     * that includes it. Exact-density variants on APKMirror are often .apkm bundles (Play services
+     * lists its "480dpi" variants as bundles and its nodpi ones as APKs), and root cannot install
+     * a bundle at all.
+     */
+    private fun screenScore(apk: AppExistsResponseApk): Int {
+        val dpis = apk.dpis.orEmpty()
+        val mine = densityBucket.toString()
+        return when {
+            "nodpi" in dpis -> 3
+            dpis == listOf(mine) -> 2
+            mine in dpis -> 1
+            else -> 0
+        }
+    }
 
     private fun filterSignature(apk: AppExistsResponseApk, signature: String?) = when {
         apk.signaturesSha1.isNullOrEmpty() -> true
@@ -171,6 +206,11 @@ class ApkMirrorRepository(
     private fun buildIgnoreList() = mutableListOf<String>().apply {
         if (prefs.ignoreAlpha.get()) add("alpha")
         if (prefs.ignoreBeta.get()) add("beta")
+    }
+
+    companion object {
+        /** The densities APKMirror lists variants by; 213 is tvdpi. */
+        private val DPI_BUCKETS = listOf(120, 160, 213, 240, 320, 480, 640)
     }
 
 }

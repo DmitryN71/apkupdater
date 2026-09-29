@@ -291,7 +291,9 @@ class SessionInstaller(
         return try {
             // Extract APKs from XAPK (zip)
             val zip = ZipFile(xapkFile)
-            val apkEntries = zip.entries().toList().filter { it.name.contains(".apk") }
+            val allEntries = zip.entries().toList()
+            val wanted = selectSplitEntries(allEntries.map { it.name }).toSet()
+            val apkEntries = allEntries.filter { it.name in wanted }
             val tempFiles = apkEntries.map { entry ->
                 val apkFile = File(context.cacheDir, randomUUID())
                 zip.getInputStream(entry).use { input ->
@@ -390,10 +392,11 @@ class SessionInstaller(
             zip = ZipFile(file)
             val entries = zip.entries().toList()
 
-            // Install all the apks (skip progress tracking — download phase already tracked)
-            // TODO: Try to install only needed apks
+            // Install the apks this device needs (skip progress tracking — download phase already
+            // tracked). See selectSplitEntries for which ones.
             // TODO: Add root install support
-            val apks = entries.filter { it.name.contains(".apk") }.map { zip.getInputStream(it) }
+            val wanted = selectSplitEntries(entries.map { it.name }).toSet()
+            val apks = entries.filter { it.name in wanted }.map { zip.getInputStream(it) }
             install(id, packageName, apks, trackProgress = false)
         } finally {
             runCatching { stream.close() }
@@ -406,6 +409,34 @@ class SessionInstaller(
         install(id, packageName, streams)
 
 }
+
+/**
+ * The entries of a split archive (XAPK, APKMirror's .apkm) worth installing.
+ *
+ * An .apkm carries a config split for EVERY processor — for Telegram 12.10.5 four of them, about
+ * 20 MB each. Installing all of them is legal but writes the app to disk several times over. So:
+ * the base, every split that is not an ABI split (densities, languages, features), and of the ABI
+ * splits only the device's preferred one, which is what Play itself installs. When there is at
+ * most one ABI split, or none of them matches the device, everything goes in as before and the
+ * installer decides.
+ */
+internal fun selectSplitEntries(names: List<String>): List<String> {
+    // ENDS in .apk. "Contains" also took folder entries, `.apk.idsig` signatures and OBB data
+    // under Android/obb/<package>/ whenever the package name has ".apk" in it — and each of those
+    // went into the install session as an "APK" that could not be parsed.
+    val apks = names.filter { it.endsWith(".apk", ignoreCase = true) }
+    fun abiOf(name: String) = ABI_SPLIT.find(name.substringAfterLast('/'))?.groupValues?.get(1)
+    val abiSplits = apks.mapNotNull { abiOf(it) }.toSet()
+    if (abiSplits.size <= 1) return apks
+    val wanted = Build.SUPPORTED_ABIS
+        .map { it.replace('-', '_') }
+        .firstOrNull { it in abiSplits }
+        ?: return apks
+    return apks.filter { abiOf(it).let { abi -> abi == null || abi == wanted } }
+}
+
+/** `split_config.arm64_v8a.apk` (APKMirror) or `config.arm64_v8a.apk` (Play naming). */
+private val ABI_SPLIT = Regex("^(?:split_)?config\\.(arm64_v8a|armeabi_v7a|armeabi|x86_64|x86|mips64|mips)\\.apk$")
 
 /**
  * Maps a raw pm / PackageInstaller error message to a localized string resource id.

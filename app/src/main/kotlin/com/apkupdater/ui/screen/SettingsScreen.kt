@@ -64,6 +64,24 @@ import androidx.compose.material3.DropdownMenuItem
 import com.apkupdater.ui.component.TvTextField
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.annotation.StringRes
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import com.apkupdater.ui.component.tvFocusFrame
+import kotlinx.coroutines.launch
+import androidx.compose.material3.AlertDialog
 import com.apkupdater.data.github.GitProvider
 import com.apkupdater.data.ui.GitHubSource
 import android.widget.Toast
@@ -282,12 +300,19 @@ fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn {
 			stringResource(R.string.source_gitlab),
 			R.drawable.ic_gitlab
 		)
+		// Held here so the download switch below can follow it: with the source off there is
+		// nothing for it to act on, and going through its warning would change nothing visible.
+		var useApkMirror by remember { mutableStateOf(viewModel.getUseApkMirror()) }
 		SwitchSetting(
-			{ viewModel.getUseApkMirror() },
-			{ viewModel.setUseApkMirror(it) },
-			stringResource(R.string.source_apkmirror),
-			R.drawable.ic_apkmirror
+			checked = useApkMirror,
+			onCheckedChange = {
+				viewModel.setUseApkMirror(it)
+				useApkMirror = viewModel.getUseApkMirror()
+			},
+			text = stringResource(R.string.source_apkmirror),
+			icon = R.drawable.ic_apkmirror
 		)
+		if (useApkMirror) ApkMirrorDirectSetting(viewModel)
 		SwitchSetting(
 			{ viewModel.getUseFdroid() },
 			{ viewModel.setUseFdroid(it) },
@@ -798,3 +823,119 @@ fun SubSettingsTopBar(title: String, viewModel: SettingsViewModel) = TopAppBar(
 		}
 	}
 )
+
+/**
+ * The switch for downloading from APKMirror inside the app. Turning it ON goes through a
+ * warning first; turning it off is immediate. The value is held here rather than inside the
+ * row, so a confirm or a cancel only changes what the row shows — the row itself stays, and so
+ * does the D-pad focus on it.
+ */
+@Composable
+private fun ApkMirrorDirectSetting(viewModel: SettingsViewModel) {
+	var on by remember { mutableStateOf(viewModel.getApkMirrorDirect()) }
+	var showWarning by remember { mutableStateOf(false) }
+	SwitchSetting(
+		checked = on,
+		onCheckedChange = { wanted ->
+			if (wanted) {
+				showWarning = true
+			} else {
+				viewModel.setApkMirrorDirect(false)
+				on = false
+			}
+		},
+		text = stringResource(R.string.apkmirror_direct),
+		icon = R.drawable.ic_apkmirror
+	)
+	if (showWarning) {
+		ApkMirrorDirectWarning(
+			onConfirm = {
+				viewModel.setApkMirrorDirect(true)
+				on = true
+				showWarning = false
+			},
+			onDismiss = { showWarning = false }
+		)
+	}
+}
+
+/**
+ * Deliberately long and deliberately plain: the risks are real and land partly on other people.
+ *
+ * On a TV the text is what takes the focus first, framed like any focused row: Down scrolls it,
+ * and at its end Down moves to Cancel — never to the confirm button, which is reached only by
+ * Right from Cancel. So an absent-minded OK does nothing, and the whole text can be read with
+ * a remote: nothing inside a scrolling column is focusable, and without this it was cut off on
+ * a 540dp-high TV screen with no way to scroll it.
+ */
+@Composable
+private fun ApkMirrorDirectWarning(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+	val isTv = LocalContext.current.isAndroidTv()
+	val textFocus = remember { FocusRequester() }
+	val cancelFocus = remember { FocusRequester() }
+	val textInteraction = remember { MutableInteractionSource() }
+	val textFocused by textInteraction.collectIsFocusedAsState()
+	val scroll = rememberScrollState()
+	val scope = rememberCoroutineScope()
+	val step = with(LocalDensity.current) { 96.dp.toPx() }
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = { Text(stringResource(R.string.apkmirror_direct_warning_title)) },
+		text = {
+			val remote = if (isTv) Modifier
+				.focusRequester(textFocus)
+				.onPreviewKeyEvent { event ->
+					if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+					when (event.key) {
+						Key.DirectionDown -> {
+							if (scroll.canScrollForward) scope.launch { scroll.animateScrollBy(step) }
+							else runCatching { cancelFocus.requestFocus() }
+							true
+						}
+						Key.DirectionUp -> if (scroll.canScrollBackward) {
+							scope.launch { scroll.animateScrollBy(-step) }
+							true
+						} else false
+						else -> false
+					}
+				}
+				.tvFocusFrame(textFocused, RoundedCornerShape(8.dp))
+				.focusable(interactionSource = textInteraction)
+			else Modifier
+			Column(
+				Modifier
+					.heightIn(max = 420.dp)
+					.then(remote)
+					.verticalScroll(scroll)
+					.padding(if (isTv) 8.dp else 0.dp)
+			) {
+				Text(stringResource(R.string.apkmirror_direct_warning))
+			}
+			RequestInitialTvFocus(textFocus)
+		},
+		confirmButton = { DialogButton(R.string.apkmirror_direct_confirm, onConfirm) },
+		dismissButton = { DialogButton(R.string.cancel_cd, onDismiss, Modifier.focusRequester(cancelFocus)) }
+	)
+}
+
+/**
+ * A dialog button a TV viewer can tell is focused: filled with the accent colour, as the card
+ * buttons are. A plain TextButton marks focus with a faint 10% tint, invisible from a sofa — in
+ * a consent dialog, where it matters which of the two OK will press.
+ */
+@Composable
+private fun DialogButton(@StringRes text: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	TextButton(
+		onClick = onClick,
+		modifier = modifier,
+		interactionSource = interaction,
+		colors = ButtonDefaults.textButtonColors(
+			containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+		)
+	) {
+		Text(stringResource(text))
+	}
+}

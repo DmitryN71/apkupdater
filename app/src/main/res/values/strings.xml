@@ -224,4 +224,11 @@
     <string name="install_error_abi">This build has no code for your device processor. Try another source.</string>
     <string name="install_error_missing_split">The app is split into parts and this is only one of them. Try another source.</string>
     <string name="install_error_verification">Blocked by Play Protect during the check.</string>
+    <string name="apkmirror_direct">Download from APKMirror in the app (risky)</string>
+    <string name="apkmirror_direct_warning_title">Downloading from APKMirror in the app</string>
+    <string name="apkmirror_direct_warning">APKMirror does not allow programs to download files bypassing its pages: the site is funded by the ads you do not see this way, and its download page is closed to programs.\n\nBy turning this on you accept the risks:\n\n• Cloudflare, which protects APKMirror, may temporarily close the site to your internet address – not only in this app but in your browser too.\n\n• APKMirror may cut APKUpdater off from its update check – and then APKMirror updates stop being found for every user of the app, not just for you.\n\n• This may stop working at any moment and without warning: it only takes APKMirror changing its page or its protection.\n\nThe app downloads one file at a time, with pauses between requests; after the first refusal it leaves the site alone for ten minutes and never tries to get around it. Android checks the signature on install, as it does for every other source.\n\nIf in doubt, leave it off: without it the button simply opens the APKMirror page in your browser.</string>
+    <string name="apkmirror_direct_confirm">Turn on, I accept the risk</string>
+    <string name="apkmirror_blocked">APKMirror is limiting access for now (a Cloudflare check). Try again in about ten minutes, or open the page in the browser.</string>
+    <string name="apkmirror_page_changed">The file link was not found on the APKMirror page – the site seems to have changed. Open the page in the browser.</string>
+    <string name="apkmirror_failed">APKMirror did not hand out the file. Open the page in the browser.</string>
 </resources>
