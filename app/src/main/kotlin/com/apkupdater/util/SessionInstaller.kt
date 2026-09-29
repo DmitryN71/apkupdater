@@ -426,6 +426,19 @@ fun installErrorResId(raw: String?): Int = when {
     raw.contains("INSTALL_FAILED_ALREADY_EXISTS") -> R.string.install_error_already_exists
     raw.contains("INSTALL_FAILED_CONFLICTING_PROVIDER") -> R.string.install_error_conflicting_provider
     raw.contains("INSTALL_FAILED_USER_RESTRICTED") -> R.string.install_error_blocked
+    // Reported by Dmitry against build 160: Alipay from Aptoide failed with
+    // "INSTALL_FAILED_NO_MATCHING_ABIS: Failed to extract native libraries" and the app said
+    // only "unexpected error". The APK is real and installable — on a different processor.
+    // A store that serves one build to every device makes this the ordinary way a download can
+    // be useless, so it deserves its own sentence rather than the catch-all.
+    raw.contains("INSTALL_FAILED_NO_MATCHING_ABIS") ||
+        raw.contains("Failed to extract native libraries", true) -> R.string.install_error_abi
+    // The base APK of a split app on its own. Also a "the file is fine, it is the wrong file"
+    // failure, and the user can do something about it: install from a source that ships splits.
+    raw.contains("INSTALL_FAILED_MISSING_SPLIT") -> R.string.install_error_missing_split
+    // Play Protect refusing the package, which looks like a mysterious failure otherwise.
+    raw.contains("INSTALL_FAILED_VERIFICATION_FAILURE") ||
+        raw.contains("INSTALL_FAILED_VERIFICATION_TIMEOUT") -> R.string.install_error_verification
     else -> R.string.install_error_unknown
 }
 

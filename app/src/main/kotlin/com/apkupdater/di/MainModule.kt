@@ -14,10 +14,12 @@ import com.apkupdater.repository.FdroidRepository
 import com.apkupdater.repository.GitHubRepository
 import com.apkupdater.repository.GitLabRepository
 import com.apkupdater.repository.PlayRepository
+import com.apkupdater.repository.AppGalleryRepository
 import com.apkupdater.repository.RuStoreRepository
 import com.apkupdater.repository.SearchRepository
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.service.ApkMirrorService
+import com.apkupdater.service.AppGalleryService
 import com.apkupdater.service.ApkPureService
 import com.apkupdater.service.AptoideService
 import com.apkupdater.service.FdroidService
@@ -29,6 +31,7 @@ import com.apkupdater.util.Badger
 import com.apkupdater.util.Clipboard
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.InstallLog
+import com.apkupdater.util.AppGallerySession
 import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
@@ -225,13 +228,36 @@ val mainModule = module {
 
 	single { RuStoreRepository(get(), get()) }
 
+	single {
+		// AppGallery answers its own client and nothing else, so the request carries the store
+		// app's User-Agent. Added on top of the shared client, whose own UA interceptor runs
+		// first and is then overwritten by this one — network interceptors run in the order they
+		// were added, and both use header() to replace.
+		val appGalleryClient = get<OkHttpClient>().newBuilder()
+			.addUserAgentInterceptor(AppGallerySession.USER_AGENT)
+			.build()
+		Retrofit.Builder()
+			.client(appGalleryClient)
+			// Every call passes its own @Url — the host depends on the zone the handshake
+			// reports — but Retrofit insists on a base, so this is the one the handshake starts
+			// from anyway.
+			.baseUrl("https://store-dre.hispace.dbankcloud.com/")
+			.addConverterFactory(GsonConverterFactory.create(get()))
+			.build()
+			.create(AppGalleryService::class.java)
+	}
+
+	single { AppGallerySession(get(), get(), androidContext()) }
+
+	single { AppGalleryRepository(get(), get(), get(), get()) }
+
 	single(named("main")) { FdroidRepository(get(), "https://f-droid.org/repo/", FdroidSource, get()) }
 
 	single(named("izzy")) { FdroidRepository(get(), "https://apt.izzysoft.de/fdroid/repo/", IzzySource, get()) }
 
-	single { UpdatesRepository(get(), get(), get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get()) }
+	single { UpdatesRepository(get(), get(), get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get(), get()) }
 
-	single { SearchRepository(get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get(), get()) }
+	single { SearchRepository(get(), get(named("main")), get(named("izzy")), get(), get(), get(), get(), get(), get(), get(), get()) }
 
 	single { KryptoBuilder.nocrypt(get(), androidContext().getString(R.string.app_name)) }
 

@@ -44,6 +44,30 @@ class Downloader(
         private const val BUFFER_SIZE = 64 * 1024
         /** Server-side hiccups worth another attempt; a 404 or 403 will never fix itself. */
         private val RETRYABLE_CODES = setOf(408, 429, 500, 502, 503, 504)
+
+        /**
+         * A download slower than [SLOW_BYTES_PER_SECOND] over [SLOW_WINDOW_MS] moves to another
+         * host — but only where another host can serve the very same file (see [candidatesFor]).
+         * 200 KB/s turns a 100 MB APK into an eight-minute wait; eight seconds is long enough
+         * not to judge a host on its TCP ramp-up.
+         */
+        private const val SLOW_WINDOW_MS = 8_000L
+        private const val SLOW_BYTES_PER_SECOND = 200L * 1024
+
+        /** AppGallery's download CDN: `appdlc-<region>.hispace.dbankcloud.com|ru`. */
+        private val APPGALLERY_HOST = Regex("^appdlc-dr[a-z]+\\.hispace\\.dbankcloud\\.(?:com|ru)$")
+
+        /**
+         * Every regional AppGallery CDN, fastest first as measured from Moscow on 2026-09-29
+         * (16 MB of one APK each: Russia 14.4 MB/s, Europe 11.5, China 9.2, Asia 7.4). All four
+         * served the same file on the same path, so any of them can finish what another began.
+         */
+        private val APPGALLERY_HOSTS = listOf(
+            "appdlc-drru.hispace.dbankcloud.ru",
+            "appdlc-dre.hispace.dbankcloud.com",
+            "appdlc-drcn.hispace.dbankcloud.com",
+            "appdlc-dra.hispace.dbankcloud.com"
+        )
     }
 
     /**
@@ -67,6 +91,9 @@ class Downloader(
 
     /** HTTP status that isn't an I/O failure — carries the code so we know whether to retry. */
     private class HttpStatusException(val code: Int) : IOException("HTTP $code")
+
+    /** An attempt that was alive but too slow, abandoned so another host can take over. */
+    private class SlowHostException(val bytesPerSecond: Long) : IOException("Download too slow")
 
     /**
      * Marks the start of a fresh task for [id], clearing a cancel left over from a previous one.
@@ -161,21 +188,63 @@ class Downloader(
         val partial = File(partialDir(), if (resumable) name else "${randomUUID()}.part")
         var lastError: Throwable? = null
 
+        // Where to fetch from: normally just [url]; for AppGallery, its regional twins too. They
+        // all write into the one partial, keyed by the ORIGINAL url (trap 1 in the resume notes),
+        // and the Content-Range check in downloadAttempt still refuses a host that resumes from
+        // anywhere but our offset — so moving mid-file cannot splice two files together.
+        val candidates = candidatesFor(url)
+        var host = 0
+        val startedAt = System.currentTimeMillis()
+        val startBytes = if (partial.exists()) partial.length() else 0L
+
         try {
-            for (attempt in 0..MAX_RETRIES) {
-                if (attempt > 0 && !backOff(id, attempt)) throw IOException("Canceled")
+            var attempt = 0
+            var waitFirst = false
+            while (true) {
+                if (waitFirst && !backOff(id, attempt)) throw IOException("Canceled")
+                waitFirst = false
+                val current = candidates[host]
+                // The watchdog runs only while there is somewhere else to go. On the last host
+                // the download continues at whatever speed it gets: a slow network is slow on
+                // every host, and giving up would be worse than waiting.
+                val watchdog = host < candidates.lastIndex
                 try {
-                    if (downloadAttempt(url, id, partial, onProgress)) return finishPartial(partial)
+                    if (downloadAttempt(current, id, partial, onProgress, watchdog)) {
+                        logCompletion(current, partial.length() - startBytes, startedAt)
+                        return finishPartial(partial)
+                    }
                     lastError = IOException("Download incomplete")
+                } catch (e: SlowHostException) {
+                    // Not a failure, so no backoff and no retry spent: the bytes so far are in
+                    // the partial, and the next host resumes from them.
+                    Log.w(
+                        "Downloader",
+                        "Slow host ${hostOf(current)}: ${e.bytesPerSecond / 1024} KB/s at " +
+                            "${partial.length() / 1048576} MB, moving to ${hostOf(candidates[host + 1])}"
+                    )
+                    // A Cancel that landed while this host was being dropped must not be carried
+                    // off to the next one.
+                    if (isCancelled(id)) throw IOException("Canceled")
+                    host++
+                    continue
                 } catch (e: HttpStatusException) {
-                    if (e.code !in RETRYABLE_CODES) throw e
+                    // A status that will never fix itself ends the download — unless another
+                    // host is left to ask. An alternative host is a guess, so its refusal must
+                    // not stop a download the original host was serving perfectly well.
+                    if (e.code !in RETRYABLE_CODES && host == candidates.lastIndex) throw e
                     lastError = e
                 } catch (t: Throwable) {
                     if (t is kotlinx.coroutines.CancellationException || t is InterruptedException) throw t
                     if (isCancelled(id)) throw t
                     lastError = t
                 }
-                Log.e("Downloader", "Download attempt ${attempt + 1} failed: $url", lastError)
+                Log.e("Downloader", "Download attempt ${attempt + 1} failed: $current", lastError)
+                attempt++
+                if (attempt > MAX_RETRIES) break
+                // A host that fails outright — a stall that ran into the read timeout, a dropped
+                // connection — is also a reason to try the next one, when there is one.
+                if (host < candidates.lastIndex) host++
+                waitFirst = true
             }
         } finally {
             if (resumable) {
@@ -206,7 +275,8 @@ class Downloader(
         url: String,
         id: Int?,
         file: File,
-        onProgress: ((Long, Long) -> Unit)?
+        onProgress: ((Long, Long) -> Unit)?,
+        watchdog: Boolean = false
     ): Boolean {
         val have = if (file.exists()) file.length() else 0L
         val request = Request.Builder().url(url)
@@ -245,10 +315,25 @@ class Downloader(
                 FileOutputStream(file, resumed).use { output ->
                     val input = body.byteStream()
                     val buffer = ByteArray(BUFFER_SIZE)
+                    var windowStart = System.currentTimeMillis()
+                    var windowBytes = 0L
                     var read = input.read(buffer)
                     while (read >= 0) {
                         output.write(buffer, 0, read)
                         written += read
+                        if (watchdog) {
+                            windowBytes += read
+                            val now = System.currentTimeMillis()
+                            val span = now - windowStart
+                            if (span >= SLOW_WINDOW_MS) {
+                                val rate = windowBytes * 1000 / span
+                                // Thrown from inside use{}, which closes — and so flushes — the
+                                // file: everything received so far stays in the partial.
+                                if (rate < SLOW_BYTES_PER_SECOND) throw SlowHostException(rate)
+                                windowStart = now
+                                windowBytes = 0L
+                            }
+                        }
                         if (total > 0 && onProgress != null) {
                             val now = System.currentTimeMillis()
                             if (now - lastReport >= PROGRESS_INTERVAL_MS) {
@@ -282,6 +367,34 @@ class Downloader(
         } finally {
             unregisterCall(id, call)
         }
+    }
+
+    /**
+     * The hosts that can serve [url]: itself first, then — for AppGallery only — the same path on
+     * every other regional CDN. Anything else has exactly one host, and behaves as it always did.
+     */
+    private fun candidatesFor(url: String): List<String> {
+        val parsed = url.toHttpUrlOrNull() ?: return listOf(url)
+        if (!APPGALLERY_HOST.matches(parsed.host)) return listOf(url)
+        return listOf(url) + APPGALLERY_HOSTS
+            .filter { it != parsed.host }
+            .map { parsed.newBuilder().host(it).build().toString() }
+    }
+
+    private fun hostOf(url: String) = url.toHttpUrlOrNull()?.host ?: "?"
+
+    /**
+     * One line per finished download: where it came from and how fast. Written for every source,
+     * so that "downloads are slow" in Copy App Logs names the host and the speed instead of
+     * leaving it to guesswork — which is exactly what the first AppGallery report had to do.
+     */
+    private fun logCompletion(url: String, bytes: Long, startedAt: Long) {
+        val seconds = ((System.currentTimeMillis() - startedAt) / 1000.0).coerceAtLeast(0.001)
+        val mb = bytes / 1048576.0
+        Log.i(
+            "Downloader",
+            "Downloaded %.1f MB from %s in %.1f s (%.2f MB/s)".format(mb, hostOf(url), seconds, mb / seconds)
+        )
     }
 
     /** Offset the server says it resumed from ("bytes 100-999/1000" -> 100), or null if unstated. */

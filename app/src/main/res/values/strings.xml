@@ -220,4 +220,8 @@
     <string name="play_account_switch_too_soon">Once a minute at most — try again shortly.</string>
     <string name="rustore_switch_device">Draw a new RuStore device</string>
     <string name="rustore_device_switched">New RuStore device. Check for updates again.</string>
+    <string name="source_appgallery">Huawei AppGallery</string>
+    <string name="install_error_abi">This build has no code for your device processor. Try another source.</string>
+    <string name="install_error_missing_split">The app is split into parts and this is only one of them. Try another source.</string>
+    <string name="install_error_verification">Blocked by Play Protect during the check.</string>
 </resources>

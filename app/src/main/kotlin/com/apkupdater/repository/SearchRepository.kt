@@ -6,6 +6,7 @@ import com.apkupdater.data.github.parseRepoQuery
 import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.ApkPureSource
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.AppGallerySource
 import com.apkupdater.data.ui.AptoideSource
 import com.apkupdater.data.ui.FdroidSource
 import com.apkupdater.data.ui.GitHubSource
@@ -30,6 +31,7 @@ class SearchRepository(
     private val gitLabRepository: GitLabRepository,
     private val playRepository: PlayRepository,
     private val ruStoreRepository: RuStoreRepository,
+    private val appGalleryRepository: AppGalleryRepository,
     private val prefs: Prefs
 ) {
 
@@ -63,6 +65,7 @@ class SearchRepository(
             if (prefs.useGitLab.get()) sources.add(GitLabSource.name to gitLabRepository.search(text))
             if (prefs.usePlay.get()) sources.add(PlaySource.name to playRepository.search(text))
             if (prefs.useRuStore.get()) sources.add(RuStoreSource.name to ruStoreRepository.search(text))
+            if (prefs.useAppGallery.get()) sources.add(AppGallerySource.name to appGalleryRepository.search(text))
         }
 
         if (sources.isNotEmpty()) {

@@ -2,6 +2,7 @@ package com.apkupdater.repository
 
 import android.util.Log
 import com.apkupdater.data.ui.ApkMirrorSource
+import com.apkupdater.data.ui.AppGallerySource
 import com.apkupdater.data.ui.ApkPureSource
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.AptoideSource
@@ -36,13 +37,14 @@ class UpdatesRepository(
     private val gitLabRepository: GitLabRepository,
     private val playRepository: PlayRepository,
     private val ruStoreRepository: RuStoreRepository,
+    private val appGalleryRepository: AppGalleryRepository,
     private val prefs: Prefs
 ) {
 
     /** Every source, in the order a check has always started them. */
     private val allSources = listOf(
         ApkMirrorSource, GitHubSource, FdroidSource, IzzySource, AptoideSource,
-        ApkPureSource, GitLabSource, PlaySource, RuStoreSource
+        ApkPureSource, GitLabSource, PlaySource, RuStoreSource, AppGallerySource
     )
 
     private fun isEnabled(source: Source) = when (source) {
@@ -55,6 +57,7 @@ class UpdatesRepository(
         GitLabSource -> prefs.useGitLab.get()
         PlaySource -> prefs.usePlay.get()
         RuStoreSource -> prefs.useRuStore.get()
+        AppGallerySource -> prefs.useAppGallery.get()
         else -> false
     }
 
@@ -88,6 +91,7 @@ class UpdatesRepository(
                 if (include(GitLabSource)) { sourceNames.add("GitLab"); sourceObjs.add(GitLabSource); sourceFlows.add(gitLabRepository.updates(filtered)) }
                 if (include(PlaySource)) { sourceNames.add("Play"); sourceObjs.add(PlaySource); sourceFlows.add(playRepository.updates(filtered)) }
                 if (include(RuStoreSource)) { sourceNames.add("RuStore"); sourceObjs.add(RuStoreSource); sourceFlows.add(ruStoreRepository.updates(filtered)) }
+                if (include(AppGallerySource)) { sourceNames.add("AppGallery"); sourceObjs.add(AppGallerySource); sourceFlows.add(appGalleryRepository.updates(filtered)) }
 
                 val totalSources = sourceFlows.size
                 if (totalSources > 0) {

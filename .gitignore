@@ -13,3 +13,5 @@
 apkupdateross-*/
 keystore.properties
 *.jks
+# Kotlin compiler caches and error reports
+.kotlin/

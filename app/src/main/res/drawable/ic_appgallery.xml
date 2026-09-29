@@ -1,0 +1,19 @@
+<!--
+  The AppGallery source mark: a rounded tile with an "A" cut out of it.
+
+  Deliberately our own drawing, not Huawei's logo — that is their trademark, and the sibling fork
+  carries a 59 KB auto-trace of it that collapses into a smudge anyway. Every source icon in this
+  app is tinted to a single colour by the chip that shows it, so only the silhouette matters: one
+  path, three subpaths, evenOdd. Outer tile fills, the letter cuts a hole in it, and the counter
+  inside the letter fills again.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M7.5,2 H16.5 A5.5,5.5 0 0 1 22,7.5 V16.5 A5.5,5.5 0 0 1 16.5,22 H7.5 A5.5,5.5 0 0 1 2,16.5 V7.5 A5.5,5.5 0 0 1 7.5,2 Z M12,5.4 L17.6,18.6 H14.8 L13.9,16.3 H10.1 L9.2,18.6 H6.4 Z M12,9.9 L10.75,13.7 H13.25 Z" />
+</vector>

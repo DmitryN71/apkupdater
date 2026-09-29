@@ -219,4 +219,8 @@
     <string name="play_account_switch_too_soon">Не чаще раза в минуту — попробуйте чуть позже.</string>
     <string name="rustore_switch_device">Сменить устройство для RuStore</string>
     <string name="rustore_device_switched">Новое устройство RuStore. Проверьте обновления ещё раз.</string>
+    <string name="source_appgallery">Huawei AppGallery</string>
+    <string name="install_error_abi">В этой сборке нет кода под процессор вашего устройства. Попробуйте другой источник.</string>
+    <string name="install_error_missing_split">Приложение состоит из нескольких частей, а это только одна из них. Попробуйте другой источник.</string>
+    <string name="install_error_verification">Установку заблокировал Play Protect при проверке.</string>
 </resources>

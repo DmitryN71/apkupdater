@@ -117,6 +117,8 @@ class SettingsViewModel(
 	fun getUsePlay() = prefs.usePlay.get()
 	fun setUsePlay(b: Boolean) = prefs.usePlay.put(b)
 	fun getUseRuStore() = prefs.useRuStore.get()
+	fun setUseAppGallery(b: Boolean) = prefs.useAppGallery.put(b)
+	fun getUseAppGallery() = prefs.useAppGallery.get()
 	fun setUseRuStore(b: Boolean) = prefs.useRuStore.put(b)
 	fun getAndroidTvUi() = prefs.androidTvUi.get()
 	fun setAndroidTvUi(b: Boolean) = prefs.androidTvUi.put(b)
@@ -264,10 +266,12 @@ class SettingsViewModel(
 	fun setAppearance() { state.value = SettingsUiState.Appearance }
 	fun setTools() { state.value = SettingsUiState.Tools }
 
-	// Every source toggle, so the front page can say "7 of 9 enabled" without opening the list.
+	// Every source toggle, so the front page can say "7 of 10 enabled" without opening the list.
+	// Add a source here as well as to UpdatesRepository, or the front page keeps counting the
+	// old total — AppGallery was missing in 160 and the page still said "9 of 9".
 	private val sourcePrefs get() = listOf(
 		prefs.useGitHub, prefs.useGitLab, prefs.useApkMirror, prefs.useFdroid, prefs.useIzzy,
-		prefs.useAptoide, prefs.useApkPure, prefs.usePlay, prefs.useRuStore
+		prefs.useAptoide, prefs.useApkPure, prefs.usePlay, prefs.useRuStore, prefs.useAppGallery
 	)
 
 	fun getEnabledSourceCount() = sourcePrefs.count { it.get() }
@@ -357,6 +361,7 @@ class SettingsViewModel(
 			addProperty("useApkPure", prefs.useApkPure.get())
 			addProperty("usePlay", prefs.usePlay.get())
 			addProperty("useRuStore", prefs.useRuStore.get())
+			addProperty("useAppGallery", prefs.useAppGallery.get())
 			addProperty("checkOnLaunch", prefs.checkOnLaunch.get())
 			addProperty("enableAlarm", prefs.enableAlarm.get())
 			addProperty("alarmHour", prefs.alarmHour.get())
@@ -408,6 +413,7 @@ class SettingsViewModel(
 		obj.get("useApkPure")?.asBoolean?.let { prefs.useApkPure.put(it) }
 		obj.get("usePlay")?.asBoolean?.let { prefs.usePlay.put(it) }
 		obj.get("useRuStore")?.asBoolean?.let { prefs.useRuStore.put(it) }
+		obj.get("useAppGallery")?.asBoolean?.let { prefs.useAppGallery.put(it) }
 		obj.get("checkOnLaunch")?.asBoolean?.let { prefs.checkOnLaunch.put(it) }
 		obj.get("enableAlarm")?.asBoolean?.let { prefs.enableAlarm.put(it) }
 		obj.get("alarmHour")?.asInt?.let { prefs.alarmHour.put(it) }

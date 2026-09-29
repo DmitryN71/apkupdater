@@ -325,6 +325,12 @@ fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn {
 			R.drawable.ic_rustore
 		)
 		SwitchSetting(
+			{ viewModel.getUseAppGallery() },
+			{ viewModel.setUseAppGallery(it) },
+			stringResource(R.string.source_appgallery),
+			R.drawable.ic_appgallery
+		)
+		SwitchSetting(
 			{ viewModel.getUseSafeStores() },
 			{ viewModel.setUseSafeStores(it) },
 			stringResource(R.string.use_safe_stores),

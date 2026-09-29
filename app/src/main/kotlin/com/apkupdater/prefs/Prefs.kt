@@ -38,6 +38,9 @@ class Prefs(
 	val useApkPure = boolean("useApkPure", defValue = true, backed = true)
 	val usePlay = boolean("usePlay", defValue = true, backed = true)
 	val useRuStore = boolean("useRuStore", defValue = false, backed = true)
+	// Off by default, like every source that is not on for everyone: it carries Russian
+	// banking and state apps that left Play, and nothing at all for most other people.
+	val useAppGallery = boolean("useAppGallery", defValue = false, backed = true)
 	// Off by default since build 156. A launch used to start a full check of every source even
 	// when the app was opened for Search or the Apps tab — spending the GitHub hourly quota and
 	// Play's patience on nothing. The Updates tab now opens on a big Check button instead, and
@@ -73,6 +76,8 @@ class Prefs(
 	// rollout bucket — see util/RuStoreSession.kt. Re-rolled from the ⋮ menu, never derived from
 	// anything real about the device.
 	val ruStoreDeviceId = string("ruStoreDeviceId", defValue = "", backed = true)
+	/** Kept for the same reason as [ruStoreDeviceId] — see util/AppGallerySession.kt. */
+	val appGalleryDeviceId = string("appGalleryDeviceId", defValue = "", backed = true)
 	val ruStore404Packages = json("ruStore404Packages", emptyList<RuStore404Entry>(), true)
 	val customGitRepos = json("customGitRepos", emptyList<CustomGitRepo>(), true)
 	/** Where this app installed each package from. See util/InstallRecords.kt. */

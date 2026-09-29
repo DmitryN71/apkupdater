@@ -62,8 +62,17 @@ class ApkMirrorRepository(
         val a = row.select("a.byDeveloper")
         val h5 = row.select("h5.appRowTitle").take(a.size)
         val img = row.select("img")
+        // No results is an answer, not a failure. The page always carries other rows (the
+        // sidebar's latest uploads), but a search that matches nothing has no developer links
+        // at all — and dropping the first of an empty list threw, so an ordinary miss such as
+        // «лэтуаль» was reported as "APKMirror did not answer". Measured on 2026-09-29: 10
+        // developer links for "telegram", none for «лэтуаль».
+        if (a.isEmpty()) {
+            emit(Result.success(emptyList()))
+            return@flow
+        }
         a.removeAt(0)
-        img.removeAt(0)
+        if (img.isNotEmpty()) img.removeAt(0)
         val result = (0 until a.size).map {
             val releaseUrl = "$baseUrl${h5[it].selectFirst("a")?.attr("href")}"
             AppUpdate(
