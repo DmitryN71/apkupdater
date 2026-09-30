@@ -159,14 +159,24 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 	private fun failureFor(response: Response, url: String): Failure {
 		val challenge = response.header("cf-mitigated")
 		Log.w(TAG, "APKMirror answered ${response.code} (cf-mitigated=$challenge) for $url")
-		// 403 is what the "Just a moment…" challenge came back as; 429 and 503 are the other two
-		// ways Cloudflare says "slow down". None of them is fixed by asking again right away.
-		return when (response.code) {
-			403, 429, 503 -> {
-				blockedUntil = SystemClock.elapsedRealtime() + BLOCK_PAUSE_MS
-				Failure(R.string.apkmirror_blocked, "APKMirror ${response.code} for $url")
-			}
-			else -> Failure(R.string.apkmirror_failed, "APKMirror ${response.code} for $url")
+		// Only Cloudflare's own refusals pause the queue: a challenge ("Just a moment…", marked
+		// cf-mitigated), a rate limit (429), or a flat 403 (a firewall rule refusing us). Build 175
+		// also counted 503 — and APKMirror's origin answers a release the update check already
+		// lists but the site has not published yet with its "Page Not Found" page and status 503
+		// (MAX 26.34.0 on 2026-09-30, the same for every User-Agent). That showed "limiting access"
+		// for an hour and paused every other APKMirror download ten minutes per retry.
+		if (challenge != null || response.code == 403 || response.code == 429) {
+			blockedUntil = SystemClock.elapsedRealtime() + BLOCK_PAUSE_MS
+			return Failure(R.string.apkmirror_blocked, "APKMirror ${response.code} for $url")
+		}
+		// The page's <title> sits about 20 KB in; peek, so nothing else of the body is consumed.
+		val notPublished = response.code == 404 || runCatching {
+			response.peekBody(64 * 1024L).string().contains("Page Not Found")
+		}.getOrDefault(false)
+		return if (notPublished) {
+			Failure(R.string.apkmirror_not_published, "APKMirror has no page yet: ${response.code} for $url")
+		} else {
+			Failure(R.string.apkmirror_failed, "APKMirror ${response.code} for $url")
 		}
 	}
 
