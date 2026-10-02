@@ -231,4 +231,12 @@
     <string name="apkmirror_not_published">Проверка обновлений APKMirror уже видит эту версию, но её страницы на сайте пока нет. Попробуйте позже или откройте страницу в браузере.</string>
     <string name="apkmirror_page_changed">На странице APKMirror не нашлась ссылка на файл – похоже, сайт изменился. Откройте страницу в браузере.</string>
     <string name="apkmirror_failed">APKMirror не отдал файл. Откройте страницу в браузере.</string>
+    <string name="whats_new">Что нового</string>
+    <string name="card_details">Подробности</string>
+    <string name="show_more_cd">Показать полностью</string>
+    <string name="show_less_cd">Свернуть</string>
+    <string name="version_code">Код версии %1$s</string>
+    <string name="download_progress">%1$s из %2$s</string>
+    <string name="download_preparing">Подготовка…</string>
+    <string name="go_home_cd">На стартовый экран</string>
 </resources>

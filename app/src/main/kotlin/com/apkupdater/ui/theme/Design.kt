@@ -6,7 +6,8 @@ import androidx.compose.ui.unit.dp
 
 /**
  * The building blocks of the redesign, which goes in stages: the start screen first (build 177),
- * then one screen per build, each checked on a TV before the next.
+ * the update and search cards next (178), then one screen per build, each checked on a TV before
+ * the next.
  *
  * Kept apart from MaterialTheme's own shapes on purpose. Setting those would restyle every
  * button, card, menu and dialog in the app at once — exactly the all-at-once change the stages
@@ -28,6 +29,9 @@ object Design {
 	val ChipShape = RoundedCornerShape(10.dp)
 	val ChipSize = 32.dp
 	val ChipIconSize = 18.dp
+
+	/** A box set into a card, such as the update card's "What's new" (build 178). */
+	val InsetShape = RoundedCornerShape(12.dp)
 
 	/** Between tiles, both ways. */
 	val Gap = 8.dp

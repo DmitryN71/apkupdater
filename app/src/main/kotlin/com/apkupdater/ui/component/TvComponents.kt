@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -37,7 +35,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -83,18 +80,15 @@ import com.apkupdater.util.installerLabel
 import com.apkupdater.util.isAndroidTv
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.AnnotatedString
 import com.apkupdater.util.toAnnotatedString
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.material.icons.automirrored.filled.ArrowRightAlt
 import androidx.compose.ui.graphics.Color
 import com.apkupdater.prefs.Prefs
 import org.koin.androidx.compose.get
@@ -119,26 +113,6 @@ fun VersionChip(
 			.background(bgColor, RoundedCornerShape(12.dp))
 			.padding(horizontal = 8.dp, vertical = 2.dp)
 	)
-}
-
-@Composable
-fun SizeChip(sizeBytes: Long, modifier: Modifier = Modifier) {
-	if (sizeBytes > 0) {
-		val text = when {
-			sizeBytes >= 1_073_741_824 -> "%.1f GB".format(sizeBytes / 1_073_741_824.0)
-			sizeBytes >= 1_048_576 -> "%.1f MB".format(sizeBytes / 1_048_576.0)
-			sizeBytes >= 1024 -> "%.0f KB".format(sizeBytes / 1024.0)
-			else -> "$sizeBytes B"
-		}
-		Text(
-			text,
-			color = MaterialTheme.colorScheme.onSurfaceVariant,
-			style = MaterialTheme.typography.labelSmall,
-			modifier = modifier
-				.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-				.padding(horizontal = 8.dp, vertical = 2.dp)
-		)
-	}
 }
 
 /**
@@ -219,31 +193,6 @@ fun InstallerChip(installer: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun DateChip(date: String, modifier: Modifier = Modifier) {
-	if (date.isNotBlank()) {
-		Row(
-			modifier = modifier
-				.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
-				.padding(horizontal = 8.dp, vertical = 2.dp),
-			verticalAlignment = Alignment.CenterVertically,
-			horizontalArrangement = Arrangement.spacedBy(4.dp)
-		) {
-			Icon(
-				Icons.Outlined.Schedule,
-				contentDescription = stringResource(R.string.updated_on, ""),
-				tint = MaterialTheme.colorScheme.onSurfaceVariant,
-				modifier = Modifier.size(13.dp)
-			)
-			Text(
-				date,
-				color = MaterialTheme.colorScheme.onSurfaceVariant,
-				style = MaterialTheme.typography.labelSmall
-			)
-		}
-	}
-}
-
-@Composable
 fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
 	val shape = RoundedCornerShape(50)
 	val clickable = onClick != null
@@ -298,7 +247,7 @@ fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Un
  * hard to read, and worse on a screen you glance at.
  */
 @Composable
-private fun bounceScroll(animate: Boolean): Modifier {
+internal fun bounceScroll(animate: Boolean): Modifier {
 	val scrollState = rememberScrollState()
 	val overflow = scrollState.maxValue
 	if (overflow > 0 && animate) {
@@ -317,230 +266,60 @@ private fun bounceScroll(animate: Boolean): Modifier {
 	return Modifier.horizontalScroll(scrollState)
 }
 
+/**
+ * The Apps tab's card body: two lines and a 48 dp icon — the name, then the installed version,
+ * the store that put the app here and the package name in one row that scrolls.
+ *
+ * It used to be the compact half of a layout shared with the Updates and Search cards. Those have
+ * their own header since build 178 (UpdateCardHeader), and this kept only what the Apps tab draws.
+ * The package name stays on the face here, unlike there: nothing on this tab expands, and its own
+ * search box matches on the package (AppsScreen), so hiding it would leave people searching for
+ * text they cannot see.
+ */
 @Composable
 fun TvCommonItem(
 	packageName: String,
 	name: String,
 	version: String,
-	oldVersion: String?,
-	versionCode: Long,
-	oldVersionCode: Long?,
-	uri: Uri? = null,
-	single: Boolean = false,
-	source: Source? = null,
-	onSourceClick: (() -> Unit)? = null,
-	fileSize: Long = 0L,
-	updateDate: String = "",
-	releaseType: ReleaseType = ReleaseType.Stable,
-	chipRightFocus: FocusRequester? = null,
-	// Decided by the caller, not read from the setting here: a card the user has tapped open
-	// must show the full layout even though the setting still says compact. The Apps tab passes
-	// true unconditionally — it is a list you scroll looking for a name and its card has one
-	// action.
-	compact: Boolean = false,
-	// Compact drops the package name: on Updates and Search it is the least-read line on the
-	// card, and one tap brings the whole full layout back. The Apps tab has neither of those —
-	// nothing there expands, and its own search box matches on the package (AppsScreen), so
-	// hiding it would leave people searching for text they cannot see.
-	showPackageName: Boolean = false,
 	/** Already-readable name of the installing store, "" to draw nothing. See installerLabel. */
-	installer: String = "",
-	/** Source.name this app was last installed from by us, "" if never — see ProvenanceChip. */
-	installedFrom: String = "",
+	installer: String = ""
 ) {
 	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
 	val animateText = get<Prefs>().playTextAnimations.get()
-	if (compact) {
-		CompactCommonItem(
-			packageName, name, version, oldVersion, uri, single, source, onSourceClick,
-			fileSize, releaseType, chipRightFocus, animateText, showPackageName, installer,
-			installedFrom
-		)
-	} else {
-		FullCommonItem(
-			packageName, name, version, oldVersion, versionCode, oldVersionCode, uri, single,
-			source, onSourceClick, fileSize, updateDate, releaseType, chipRightFocus, animateText,
-			installedFrom
-		)
-	}
-}
-
-/**
- * The card as it has always been: a 100 dp icon with the source under it, the package name, both
- * version codes, and room for the changelog underneath.
- */
-@Composable
-private fun FullCommonItem(
-	packageName: String,
-	name: String,
-	version: String,
-	oldVersion: String?,
-	versionCode: Long,
-	oldVersionCode: Long?,
-	uri: Uri?,
-	single: Boolean,
-	source: Source?,
-	onSourceClick: (() -> Unit)?,
-	fileSize: Long,
-	updateDate: String,
-	releaseType: ReleaseType,
-	chipRightFocus: FocusRequester?,
-	animateText: Boolean,
-	installedFrom: String
-) = Row(Modifier.padding(12.dp)) {
-	Column(horizontalAlignment = Alignment.CenterHorizontally) {
-		if (uri == null) {
-			LoadingImageApp(packageName, Modifier.height(100.dp))
-		} else {
-			LoadingImage(uri, Modifier.height(100.dp))
-		}
-		if (source != null) {
-				// When wired, D-pad RIGHT from the chip jumps to this card's action buttons
-				// (overrides geometric/grid focus search so it can't leak to the next column
-				// or the bottom nav bar).
-				val chipMod = Modifier.padding(top = 6.dp).then(
-					if (chipRightFocus != null) Modifier.focusProperties { right = chipRightFocus } else Modifier
-				)
-				SourceChip(source, chipMod, onClick = onSourceClick)
-		}
-	}
-	Column(Modifier.align(Alignment.CenterVertically).padding(start = 12.dp)) {
-		LargeTitle(name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName })
-		MediumText(packageName, Modifier.alpha(0.6f))
-		if (oldVersion != null && !single) {
-			Row(
-				verticalAlignment = Alignment.CenterVertically,
-				horizontalArrangement = Arrangement.spacedBy(4.dp),
-				modifier = Modifier.padding(top = 4.dp).then(bounceScroll(animateText))
-			) {
-				VersionChip(oldVersion, isNew = false)
-				Icon(
-					Icons.AutoMirrored.Filled.ArrowRightAlt,
-					contentDescription = null,
-					tint = MaterialTheme.colorScheme.onSurfaceVariant,
-					modifier = Modifier.size(16.dp)
-				)
-				VersionChip(version, isNew = true)
-			}
-		} else {
-			VersionChip(version, isNew = !single, modifier = Modifier.padding(top = 4.dp))
-		}
-		if (oldVersionCode != null && !single) {
-			val code = if (versionCode == 0L) "?" else versionCode.toString()
-			MediumText("$oldVersionCode → $code", Modifier.alpha(0.4f).padding(top = 2.dp))
-		}
-		// Download size + source release date, as chips in one row (Obtainium-style).
-		Row(
-			Modifier.padding(top = 4.dp),
-			horizontalArrangement = Arrangement.spacedBy(6.dp),
-			verticalAlignment = Alignment.CenterVertically
-		) {
-			ReleaseTypeChip(releaseType)
-			SizeChip(fileSize)
-			DateChip(updateDate)
-		}
-		// On its own line, because this row does not wrap and nothing in it is weighted: the
-		// provenance chip was served last, got whatever width was left and was cut off mid-word
-		// — "Ставили" instead of "Ставили отсюда", and "В прошлый раз …" without the source that
-		// is the whole point of it. Reported by Maximoff on 4PDA against build 157. The compact
-		// card keeps it in its chip row, which scrolls, so there it can always be read.
-		ProvenanceChip(installedFrom, source, Modifier.padding(top = 4.dp))
-	}
-}
-
-/**
- * Two lines and a 48 dp icon, for people who would rather see eight apps than two.
- *
- * What it drops is the material that is either derivable or rarely read: both version codes
- * (the version names say the same thing in words), the release date, and — unless the caller
- * asks for it back — the package name. What it keeps is everything the choice to update rests
- * on: which app, from which source, to which version, how big, and whether it is a beta.
- *
- * The changelog is dropped by the callers, not here: only the Updates card has one.
- */
-@Composable
-private fun CompactCommonItem(
-	packageName: String,
-	name: String,
-	version: String,
-	oldVersion: String?,
-	uri: Uri?,
-	single: Boolean,
-	source: Source?,
-	onSourceClick: (() -> Unit)?,
-	fileSize: Long,
-	releaseType: ReleaseType,
-	chipRightFocus: FocusRequester?,
-	animateText: Boolean,
-	showPackageName: Boolean,
-	installer: String,
-	installedFrom: String
-) = Row(
-	Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-	verticalAlignment = Alignment.CenterVertically
-) {
-	// 52 dp of box with a 2 dp inset leaves 48 dp of icon — a launcher-sized icon, and twice
-	// what the first attempt drew. The default 10 dp inset is written for the 100 dp card.
-	if (uri == null) {
+	Row(
+		Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		// 52 dp of box with a 2 dp inset leaves 48 dp of icon — a launcher-sized icon. The default
+		// 10 dp inset is written for a 100 dp image.
 		LoadingImageApp(packageName, Modifier.size(52.dp), padding = 2.dp)
-	} else {
-		LoadingImage(uri, Modifier.size(52.dp), padding = 2.dp)
-	}
-	// weight(1f), or this column takes the whole row: a Row measures its unweighted children
-	// first, each against everything that is left, and only then divides the remainder among
-	// the weighted ones. Unweighted here, the column would leave nothing for the button beside
-	// it on the Apps tab.
-	Column(Modifier.padding(start = 10.dp).weight(1f)) {
-		// Scrolls rather than ending in an ellipsis: "1Password: Password Ma…" is the real
-		// case, and a truncated name is worse here than in the full card, where the package
-		// name underneath said which app it was. titleLarge would eat the height the smaller
-		// icon just saved.
-		Text(
-			name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName },
-			style = MaterialTheme.typography.titleMedium,
-			fontWeight = FontWeight.Bold,
-			maxLines = 1,
-			softWrap = false,
-			modifier = Modifier.fillMaxWidth().then(bounceScroll(animateText))
-		)
-		// Scrollable rather than wrapping: a second line here would undo the whole point, and
-		// a long version name is exactly what would cause one.
-		Row(
-			Modifier.padding(top = 3.dp).then(bounceScroll(animateText)),
-			horizontalArrangement = Arrangement.spacedBy(4.dp),
-			verticalAlignment = Alignment.CenterVertically
-		) {
-			if (oldVersion != null && !single) {
-				VersionChip(oldVersion, isNew = false)
-				Icon(
-					Icons.AutoMirrored.Filled.ArrowRightAlt,
-					contentDescription = null,
-					tint = MaterialTheme.colorScheme.onSurfaceVariant,
-					modifier = Modifier.size(14.dp)
-				)
+		// weight(1f), or this column takes the whole row: a Row measures its unweighted children
+		// first, each against everything that is left, and only then divides the remainder among
+		// the weighted ones. Unweighted here, the column would leave nothing for the buttons
+		// beside it.
+		Column(Modifier.padding(start = 10.dp).weight(1f)) {
+			// Scrolls rather than ending in an ellipsis: "1Password: Password Ma…" is the real
+			// case. titleLarge would eat the height the smaller icon saves.
+			Text(
+				name.ifEmpty { LocalContext.current.getAppName(packageName) }.ifEmpty { packageName },
+				style = MaterialTheme.typography.titleMedium,
+				fontWeight = FontWeight.Bold,
+				maxLines = 1,
+				softWrap = false,
+				modifier = Modifier.fillMaxWidth().then(bounceScroll(animateText))
+			)
+			// Scrollable rather than wrapping: a second line here would undo the whole point, and
+			// a long version name is exactly what would cause one.
+			Row(
+				Modifier.padding(top = 3.dp).then(bounceScroll(animateText)),
+				horizontalArrangement = Arrangement.spacedBy(4.dp),
+				verticalAlignment = Alignment.CenterVertically
+			) {
+				VersionChip(version, isNew = true)
+				if (installer.isNotEmpty()) InstallerChip(installer)
+				MediumText(packageName, Modifier.alpha(0.6f))
 			}
-			VersionChip(version, isNew = !single)
-			ReleaseTypeChip(releaseType)
-			SizeChip(fileSize)
-			if (source != null) {
-				// Down here rather than beside the name, and for the measurement reason above:
-				// the chip is unweighted, so on the name row it was served first and a source
-				// like "F-Droid (Izzy)" ate the space the name needed. In this row nothing is
-				// weighted and the row scrolls, so it can starve nothing. D-pad RIGHT from the
-				// chip still reaches this card's action buttons.
-				val chipMod = if (chipRightFocus != null) {
-					Modifier.focusProperties { right = chipRightFocus }
-				} else {
-					Modifier
-				}
-				SourceChip(source, chipMod, onClick = onSourceClick)
-			}
-			// Both last, and inside the row that already scrolls, so they cost no height — the
-			// whole point of the compact card is that it is two lines and stays two lines.
-			ProvenanceChip(installedFrom, source)
-			if (installer.isNotEmpty()) InstallerChip(installer)
-			if (showPackageName) MediumText(packageName, Modifier.alpha(0.6f))
 		}
 	}
 }
@@ -565,17 +344,24 @@ fun TvInstallButton(
 	// hugged the invisible 48dp touch-target box and stuck out vertically).
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
+	// Filled with primary at rest on a phone (build 178): the one strong colour on the card, so
+	// the eye finds the button that matters first. Not on a TV, where a solid primary fill IS
+	// the focus cue of every button inside a card — an Update button filled at rest would look
+	// focused on every card at once. There it stays tonal until it holds the D-pad.
+	val filled = !LocalContext.current.isAndroidTv()
 
 	val container = when {
-		app.isInstalling -> if (focused) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.errorContainer
+		// Outlined, not red: stopping a download is an ordinary choice, and the progress bar
+		// above already says what is going on.
+		app.isInstalling -> if (focused) MaterialTheme.colorScheme.primary else Color.Transparent
 		app.isInstalled -> if (focused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer
-		focused -> MaterialTheme.colorScheme.primary
+		focused || filled -> MaterialTheme.colorScheme.primary
 		else -> MaterialTheme.colorScheme.primaryContainer
 	}
 	val content = when {
-		app.isInstalling -> if (focused) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onErrorContainer
+		app.isInstalling -> if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
 		app.isInstalled -> if (focused) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer
-		focused -> MaterialTheme.colorScheme.onPrimary
+		focused || filled -> MaterialTheme.colorScheme.onPrimary
 		else -> MaterialTheme.colorScheme.onPrimaryContainer
 	}
 
@@ -593,25 +379,16 @@ fun TvInstallButton(
 		colors = ButtonDefaults.filledTonalButtonColors(
 			containerColor = container,
 			contentColor = content
-		)
+		),
+		border = if (app.isInstalling && !focused) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null
 	) {
 		if (app.isInstalling) {
-			Icon(Icons.Filled.Close, stringResource(R.string.cancel_cd), Modifier.size(16.dp))
+			// Just "Cancel": the percentage moved to DownloadProgress above the buttons. As the
+			// label it made the button a different width on most ticks, and the End-aligned row
+			// of buttons jittered for the whole download.
+			Icon(Icons.Filled.Close, contentDescription = null, Modifier.size(16.dp))
 			Spacer(Modifier.width(4.dp))
-			if (app.total != 0L && app.progress != 0L) {
-				// Whole percent in a fixed-width slot. Two decimals made the label a
-				// different width on every tick, so the button kept resizing and the
-				// End-aligned row of buttons visibly jittered for the whole download.
-				val p = ((app.progress.toFloat() / app.total) * 100f).coerceIn(0f, 100f)
-				Text(
-					"${p.toInt()}%",
-					maxLines = 1,
-					textAlign = TextAlign.Center,
-					modifier = Modifier.widthIn(min = 36.dp)
-				)
-			} else {
-				Text(stringResource(R.string.cancel_cd))
-			}
+			Text(stringResource(R.string.cancel_cd))
 		} else if (app.isInstalled) {
 			Text(stringResource(R.string.open_cd))
 		} else if (isUpToDate) {
@@ -691,8 +468,8 @@ fun TvInstalledItem(
 ) {
 	// Always compact, whatever the setting says, and the button shares the row rather than
 	// claiming one of its own — that row costs about 50 dp, which on this tab is most of the
-	// card. Nothing is lost by it: this list has one action and no changelog, and the package
-	// name is asked for explicitly below, so the name, the package and the version all fit.
+	// card. Nothing is lost by it: this list has one action and no changelog, and TvCommonItem
+	// keeps the package name in its scrolling row, so the name, the package and the version all fit.
 	Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
 		// Touch only, for the same reason as the update cards: clickable is focusable on a
 		// D-pad but not on a finger, and on a television it would add a stop with no highlight.
@@ -703,8 +480,7 @@ fun TvInstalledItem(
 				.then(if (tappable) Modifier.clickable { onOpenInfo(app.packageName) } else Modifier)
 		) {
 			TvCommonItem(
-				app.packageName, app.name, app.version, null, app.versionCode, null,
-				compact = true, showPackageName = true,
+				app.packageName, app.name, app.version,
 				// Our own record outranks the system's installer field: for anything this app
 				// installed, that field says only "APKUpdater".
 				installer = app.installedFrom.ifEmpty { installerLabel(app.installer) }
@@ -934,36 +710,40 @@ fun TvUpdateItem(
 		//
 		// rememberSaveable, keyed by nothing of ours: the lazy grid stores each item's saveable
 		// state under the item key it was given, so a card left open is still open after
-		// scrolling away and back. The tap is on the information row only, so the buttons
-		// underneath keep their own clicks and their own D-pad focus; in the full layout there
-		// is nothing to reveal, so no click is attached at all and that path is untouched.
+		// scrolling away and back. The tap is on the header only, so the buttons underneath keep
+		// their own clicks and their own D-pad focus; in the full layout there is nothing to
+		// reveal, so no click is attached at all and that path is untouched.
 		var expanded by rememberSaveable { mutableStateOf(false) }
 		val compact = get<Prefs>().compactCards.get()
 		val showFull = !compact || expanded
-		// fillMaxWidth FIRST: the full layout's Row has no weighted child, so it is only as
-		// wide as its contents, and the Box was inheriting that. On a card with a short name
-		// and a small icon the right-hand third was outside the clickable area entirely and
-		// swallowed the tap — reported as "this card collapses, that one doesn't", which is
-		// exactly the difference between a long title and a short one.
+		// fillMaxWidth so the whole width of the header takes the tap, whatever the name's
+		// length — "this card collapses, that one doesn't" was exactly that difference once.
 		// Touch only. Modifier.clickable delegates a FocusableInNonTouchMode node, which is
 		// focusable on a D-pad and not on a finger — so on a television every compact card
-		// would gain a focus stop over its information area with no highlight of its own,
-		// while the chevron in the action row is already the proper, styled control there.
+		// would gain a focus stop over its header with no highlight of its own, while the
+		// chevron in the action row is already the proper, styled control there.
 		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
 		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
-			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, uri = app.iconUri.takeIf { it != Uri.EMPTY }, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull, installedFrom = app.installedFrom)
+			UpdateCardHeader(
+				app.packageName, app.name, app.version, app.oldVersion,
+				uri = app.iconUri.takeIf { it != Uri.EMPTY },
+				source = app.source,
+				onSourceClick = onSourceClick,
+				fileSize = app.link.fileSize,
+				updateDate = app.updateDate,
+				releaseType = app.releaseType,
+				installedFrom = app.installedFrom,
+				chipRightFocus = actionFocus
+			)
 		}
-		if (showFull) WhatsNew(app.whatsNew, app.source)
+		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, app.oldVersionCode)
 		// Takes up whatever height the card was given beyond its content — which happens only
 		// when a neighbour in the same row is taller (TvEqualRows) — so the action row sits at
 		// the bottom and lines up with the neighbour's. Zero in portrait, where a row is one card.
 		Spacer(Modifier.weight(1f))
-		HorizontalDivider(
-			Modifier.padding(horizontal = 12.dp),
-			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-		)
+		if (app.isInstalling) DownloadProgress(app.progress, app.total, Modifier.padding(top = 10.dp))
 		Row(
-			modifier = Modifier.fillMaxWidth().focusRequester(actionFocus).focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().focusRequester(actionFocus).focusGroup().padding(horizontal = 8.dp, vertical = 6.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
@@ -1006,36 +786,34 @@ fun TvSearchItem(
 		var expanded by rememberSaveable { mutableStateOf(false) }
 		val compact = get<Prefs>().compactCards.get()
 		val showFull = !compact || expanded
-		// fillMaxWidth FIRST: the full layout's Row has no weighted child, so it is only as
-		// wide as its contents, and the Box was inheriting that. On a card with a short name
-		// and a small icon the right-hand third was outside the clickable area entirely and
-		// swallowed the tap — reported as "this card collapses, that one doesn't", which is
-		// exactly the difference between a long title and a short one.
-		// Touch only. Modifier.clickable delegates a FocusableInNonTouchMode node, which is
-		// focusable on a D-pad and not on a finger — so on a television every compact card
-		// would gain a focus stop over its information area with no highlight of its own,
-		// while the chevron in the action row is already the proper, styled control there.
 		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
 		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
-			TvCommonItem(app.packageName, app.name, app.version, app.oldVersion, app.versionCode, app.oldVersionCode, app.iconUri, true, source = app.source, onSourceClick = onSourceClick, fileSize = app.link.fileSize, updateDate = app.updateDate, releaseType = app.releaseType, chipRightFocus = actionFocus, compact = !showFull, installedFrom = app.installedFrom)
+			// The new version alone: a search result is not an update of anything in particular,
+			// and the button below already says Install, Update or Installed.
+			UpdateCardHeader(
+				app.packageName, app.name, app.version, oldVersion = null,
+				uri = app.iconUri,
+				source = app.source,
+				onSourceClick = onSourceClick,
+				fileSize = app.link.fileSize,
+				updateDate = app.updateDate,
+				releaseType = app.releaseType,
+				installedFrom = app.installedFrom,
+				chipRightFocus = actionFocus
+			)
 		}
-		if (showFull) WhatsNew(app.whatsNew, app.source)
+		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, oldVersionCode = null)
 		// Takes up whatever height the card was given beyond its content — which happens only
 		// when a neighbour in the same row is taller (TvEqualRows) — so the action row sits at
 		// the bottom and lines up with the neighbour's. Zero in portrait, where a row is one card.
 		Spacer(Modifier.weight(1f))
-		HorizontalDivider(
-			Modifier.padding(horizontal = 12.dp),
-			color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-		)
+		if (app.isInstalling) DownloadProgress(app.progress, app.total, Modifier.padding(top = 10.dp))
 		Row(
-			modifier = Modifier.fillMaxWidth().focusRequester(actionFocus).focusGroup().padding(horizontal = 4.dp, vertical = 4.dp),
+			modifier = Modifier.fillMaxWidth().focusRequester(actionFocus).focusGroup().padding(horizontal = 8.dp, vertical = 6.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
 		) {
-			// Pinned to the far left by the spacer, away from the three that act on the app.
-			// It does something different from them — it changes what you are looking at, not
-			// what happens to the app — and the gap says so.
+			// Pinned to the far left by the spacer, away from the two that act on the app.
 			if (compact) {
 				TvExpandButton(expanded) { expanded = !expanded }
 				Spacer(Modifier.weight(1f))
@@ -1046,20 +824,20 @@ fun TvSearchItem(
 	}
 }
 
+/**
+ * A changelog as styled text: Markdown or HTML, cut at 1 500 characters, trailing blank lines
+ * dropped. Empty when there is none. Drawn by CardDetails.
+ */
 @Composable
-fun WhatsNew(whatsNew: String, source: Source) {
-	if (whatsNew.isNotBlank()) {
-		val text = remember(whatsNew) {
-			runCatching {
-				val truncated = if (whatsNew.length > 1500) whatsNew.take(1500) + "\u2026" else whatsNew
-				val html = markdownToHtml(truncated.trim())
-				HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toAnnotatedString()
-			}.getOrElse { AnnotatedString(whatsNew.take(1500)) }
-		}
-		if (text.text.isNotBlank()) {
-			ExpandingAnnotatedText(text, Modifier.padding(8.dp).fillMaxWidth())
-		}
-	}
+internal fun rememberChangelog(whatsNew: String): AnnotatedString = remember(whatsNew) {
+	if (whatsNew.isBlank()) return@remember AnnotatedString("")
+	val text = runCatching {
+		val truncated = if (whatsNew.length > 1500) whatsNew.take(1500) + "…" else whatsNew
+		val html = markdownToHtml(truncated.trim())
+		HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT).toAnnotatedString()
+	}.getOrElse { AnnotatedString(whatsNew.take(1500)) }
+	// fromHtml ends a paragraph with a newline, which would hold an empty last line open.
+	text.subSequence(0, text.text.trimEnd().length)
 }
 
 /** Simple Markdown to HTML converter for changelogs. */

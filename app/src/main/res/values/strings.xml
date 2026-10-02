@@ -232,4 +232,12 @@
     <string name="apkmirror_not_published">APKMirror\'s update check already lists this version, but its page is not on the site yet. Try again later, or open the page in the browser.</string>
     <string name="apkmirror_page_changed">The file link was not found on the APKMirror page – the site seems to have changed. Open the page in the browser.</string>
     <string name="apkmirror_failed">APKMirror did not hand out the file. Open the page in the browser.</string>
+    <string name="whats_new">What\'s new</string>
+    <string name="card_details">Details</string>
+    <string name="show_more_cd">Show more</string>
+    <string name="show_less_cd">Show less</string>
+    <string name="version_code">Version code %1$s</string>
+    <string name="download_progress">%1$s of %2$s</string>
+    <string name="download_preparing">Preparing…</string>
+    <string name="go_home_cd">Back to the start screen</string>
 </resources>

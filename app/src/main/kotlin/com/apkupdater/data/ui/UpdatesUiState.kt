@@ -36,7 +36,8 @@ sealed class UpdatesUiState {
 	}
 
 	/**
-	 * Nothing has been checked yet: the app was opened with checking at launch turned off.
+	 * Nothing has been checked yet: the app was opened with checking at launch turned off, or the
+	 * user went back to the start screen with the top bar's Home button (UpdatesViewModel.goHome).
 	 *
 	 * Deliberately not an empty [Success], which the screen draws as "All up to date" — a claim
 	 * with nothing behind it. This one asks for a check instead.

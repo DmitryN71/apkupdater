@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -237,8 +238,30 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
 		UpdatesMoreAction(viewModel, checking)
 	},
 	navigationIcon = {
-		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Sync, null)
+		// Home, where the app's own icon sits, whenever there is a list to leave: one tap back
+		// to the start screen (UpdatesViewModel.goHome). Not while a check runs or a card is
+		// downloading or installing — goHome refuses then, and a button that does nothing is
+		// worse than none.
+		val state = viewModel.state().collectAsStateWithLifecycle().value
+		val checking = viewModel.isChecking.collectAsStateWithLifecycle().value
+		val canGoHome = !checking && state is UpdatesUiState.Success &&
+			state.updates.isNotEmpty() && state.updates.none { it.isInstalling }
+		if (canGoHome) {
+			val isTv = LocalContext.current.isAndroidTv()
+			TvIconButton(onClick = {
+				// This button leaves the composition as the start screen comes in, and a focused
+				// node that goes drops the D-pad to the bottom bar (build 137). Its neighbour
+				// across the bar takes it first; the big Check button then claims it, as it does
+				// whenever the start screen appears.
+				if (isTv) runCatching { refreshFocus.requestFocus() }
+				viewModel.goHome()
+			}) {
+				Icon(Icons.Outlined.Home, stringResource(R.string.go_home_cd))
+			}
+		} else {
+			Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
+				Icon(Icons.Filled.Sync, null)
+			}
 		}
 	}
 )
