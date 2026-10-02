@@ -20,7 +20,13 @@ sealed class UpdatesUiState {
 		/** The screen was [Idle] when this check started. See [restored]. */
 		val wasIdle: Boolean = false,
 		/** The [Success.only] of the screen this check replaced. See [restored]. */
-		val wasOnly: Source? = null
+		val wasOnly: Source? = null,
+		/**
+		 * The [Success.skipped] of the screen this check replaced. Carried for the same reason as
+		 * [updates]: a check of one source keeps the other sources' cards, skipped ones included,
+		 * and setSuccess finds them here.
+		 */
+		val skipped: List<AppUpdate> = emptyList()
 	): UpdatesUiState() {
 		/**
 		 * What goes back on screen when a check ends without publishing anything — stopped, or
@@ -32,7 +38,7 @@ sealed class UpdatesUiState {
 		 * first thing many users saw, so a check that started from nothing goes back to nothing.
 		 */
 		fun restored(): UpdatesUiState =
-			if (wasIdle && updates.isEmpty()) Idle else Success(updates, wasOnly)
+			if (wasIdle && updates.isEmpty()) Idle else Success(updates, wasOnly, skipped)
 	}
 
 	/**
@@ -48,8 +54,16 @@ sealed class UpdatesUiState {
 	/**
 	 * @property only set when the check behind this list covered that one source alone, so an
 	 * empty list can say "GitHub: no updates" instead of claiming every source is up to date.
+	 * @property skipped the updates the check found whose version the user skipped. Kept apart
+	 * rather than thrown away (build 179), so ⋮ → "Show skipped" can list them and each can be
+	 * brought back: the skip list itself stores only a hash of each card's id, with no name to
+	 * show. Never counted by the badge or "Update all" — those read [updates] alone.
 	 */
-	data class Success(val updates: List<AppUpdate>, val only: Source? = null): UpdatesUiState()
+	data class Success(
+		val updates: List<AppUpdate>,
+		val only: Source? = null,
+		val skipped: List<AppUpdate> = emptyList()
+	): UpdatesUiState()
 
 	inline fun onLoading(block: (Loading) -> Unit): UpdatesUiState {
 		if (this is Loading) block(this)
@@ -80,6 +94,13 @@ sealed class UpdatesUiState {
 	fun updates(): List<AppUpdate> = when (this) {
 		is Success -> updates
 		is Loading -> updates
+		else -> emptyList()
+	}
+
+	/** The skipped cards this state holds. See [Success.skipped]. */
+	fun skipped(): List<AppUpdate> = when (this) {
+		is Success -> skipped
+		is Loading -> skipped
 		else -> emptyList()
 	}
 

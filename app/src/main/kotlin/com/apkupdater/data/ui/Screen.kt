@@ -15,7 +15,7 @@ import com.apkupdater.R
 
 sealed class Screen(
 	val route: String,
-	@StringRes val resourceId: Int,
+	@param:StringRes val resourceId: Int,
 	val icon: ImageVector,
 	val iconSelected: ImageVector
 ) {

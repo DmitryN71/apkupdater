@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Alignment.Companion.CenterHorizontally
 import androidx.compose.ui.Alignment.Companion.CenterVertically
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +53,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apkupdater.BuildConfig
@@ -92,6 +96,10 @@ import com.apkupdater.ui.component.LargeTitle
 import com.apkupdater.ui.component.LoadingImageApp
 import com.apkupdater.ui.component.SectionHeader
 import com.apkupdater.ui.component.SettingsCategory
+import com.apkupdater.ui.component.SettingsContentRow
+import com.apkupdater.ui.component.SettingsGroup
+import com.apkupdater.ui.component.SettingsRow
+import androidx.compose.foundation.layout.PaddingValues
 import com.apkupdater.ui.component.RequestInitialTvFocus
 import com.apkupdater.ui.component.MediumText
 import com.apkupdater.ui.component.MediumTitle
@@ -152,10 +160,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = koinViewModel()) = Column {
 }
 
 @Composable
-fun About() = LazyColumn(
-	Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
+fun About() = LazyColumn(Modifier.fillMaxSize()) {
 	item {
-		Column(Modifier.padding(vertical = 16.dp)) {
+		Column(Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
 			LoadingImageApp(BuildConfig.APPLICATION_ID)
 			LargeTitle(stringResource(R.string.app_name), Modifier.align(CenterHorizontally))
 			MediumText("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.align(CenterHorizontally))
@@ -164,387 +171,485 @@ fun About() = LazyColumn(
 		}
 	}
 	item {
-		AboutItem(
-			"GitHub - APKUpdater",
-			stringResource(R.string.about_github),
-			"https://github.com/DmitryN71/apkupdater",
-			{ SourceIcon(GitHubSource, Modifier.size(64.dp).align(CenterVertically)) }
-		)
-	}
-}
-
-
-@Composable
-fun AboutItem(
-	title: String,
-	body: String,
-	link: String,
-	icon: @Composable RowScope.() -> Unit,
-	handler: UriHandler = LocalUriHandler.current
-) {
-	// OutlinedCard(onClick), not clickable() on the card's outer modifier. Put there, the
-	// indication drew in the modifier's own bounds — a rectangle — behind a rounded card, so
-	// its corners showed past the curve whenever the row held D-pad focus; reported from a TV,
-	// "углы возле кота". And the row takes the same TvFocus fill and frame as every other
-	// focusable row in Settings, instead of Material's faint state layer; the frame is the
-	// card's own border, so it follows the rounded corners.
-	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
-	OutlinedCard(
-		onClick = { handler.openUri(link) },
-		modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-		interactionSource = interaction,
-		colors = CardDefaults.outlinedCardColors(
-			containerColor = if (focused) TvFocus.fill else MaterialTheme.colorScheme.surface,
-			contentColor = MaterialTheme.colorScheme.onSurface
-		),
-		border = if (focused) TvFocus.stroke else CardDefaults.outlinedCardBorder()
-	) {
-		Row(Modifier.padding(8.dp)) {
-			icon()
-			Column(Modifier.padding(start = 16.dp)) {
-				MediumTitle(title)
-				MediumText(body, maxLines = 2)
+		// The one thing on this page that takes the D-pad, so it takes it at once.
+		val handler = LocalUriHandler.current
+		val linkFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(linkFocus)
+		SettingsGroup {
+			row("github") {
+				SettingsCategory(
+					"GitHub - APKUpdater",
+					stringResource(R.string.about_github),
+					R.drawable.ic_github,
+					modifier = Modifier.focusRequester(linkFocus),
+					trailingArrow = false
+				) { handler.openUri("https://github.com/DmitryN71/apkupdater") }
 			}
 		}
 	}
 }
 
+/**
+ * The Settings front page (build 179, redesign stage 3, variant A): the categories in four
+ * groups — what is checked, how it is installed, how the app looks and what it keeps, and About.
+ */
 @Composable
-fun Settings(viewModel: SettingsViewModel) = LazyColumn {
+fun Settings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = PaddingValues(vertical = 6.dp)) {
 	item {
 		// Otherwise opening this tab leaves focus on the bottom bar: DOWN does nothing and UP
 		// jumps to the LAST row. Same fix Updates got in 130.
 		val firstRowFocus = remember { FocusRequester() }
 		RequestInitialTvFocus(firstRowFocus)
-		SettingsCategory(
-			stringResource(R.string.settings_sources),
-			stringResource(
-				R.string.settings_sources_summary,
-				viewModel.getEnabledSourceCount(),
-				viewModel.getSourceCount()
-			),
-			R.drawable.ic_appstore,
-			modifier = Modifier.focusRequester(firstRowFocus)
-		) { viewModel.setSources() }
-		SettingsCategory(
-			stringResource(R.string.settings_custom_repos),
-			stringResource(R.string.settings_repos_summary, viewModel.getCustomGitRepos().size),
-			R.drawable.ic_github
-		) { viewModel.setCustomRepos() }
-		SettingsCategory(
-			stringResource(R.string.settings_updates),
-			if (viewModel.getEnableAlarm()) stringResource(
-				when (viewModel.getAlarmFrequency()) {
-					1 -> R.string.settings_alarm_3day
-					2 -> R.string.settings_alarm_weekly
-					else -> R.string.settings_alarm_daily
-				}
-			) else stringResource(R.string.settings_alarm_off),
-			R.drawable.ic_alarm
-		) { viewModel.setUpdates() }
-		SettingsCategory(
-			stringResource(R.string.settings_install),
-			// The first thing we ask a reporter whenever an install misbehaves — the three
-			// install paths fail in completely different ways. Now it is on the front page.
-			stringResource(
-				when {
-					viewModel.getRootInstall() -> R.string.root_install
-					viewModel.getShizukuInstall() -> R.string.shizuku_install
-					else -> R.string.install_standard
-				}
-			),
-			R.drawable.ic_install
-		) { viewModel.setInstall() }
-		SettingsCategory(
-			stringResource(R.string.settings_ui),
-			stringResource(
-				when (viewModel.getTheme()) {
-					1 -> R.string.theme_dark
-					2 -> R.string.theme_light
-					else -> R.string.theme_system
-				}
-			),
-			R.drawable.ic_theme
-		) { viewModel.setAppearance() }
-		SettingsCategory(stringResource(R.string.settings_utils), null, R.drawable.ic_export) {
-			viewModel.setTools()
+		SettingsGroup {
+			row("sources") {
+				SettingsCategory(
+					stringResource(R.string.settings_sources),
+					stringResource(
+						R.string.settings_sources_summary,
+						viewModel.getEnabledSourceCount(),
+						viewModel.getSourceCount()
+					),
+					R.drawable.ic_appstore,
+					modifier = Modifier.focusRequester(firstRowFocus)
+				) { viewModel.setSources() }
+			}
+			row("repos") {
+				SettingsCategory(
+					stringResource(R.string.settings_custom_repos),
+					stringResource(R.string.settings_repos_summary, viewModel.getCustomGitRepos().size),
+					R.drawable.ic_github
+				) { viewModel.setCustomRepos() }
+			}
 		}
-		SettingsCategory(stringResource(R.string.about), null, R.drawable.ic_info) {
-			viewModel.setAbout()
+		SettingsGroup {
+			row("updates") {
+				SettingsCategory(
+					stringResource(R.string.settings_updates),
+					if (viewModel.getEnableAlarm()) stringResource(
+						when (viewModel.getAlarmFrequency()) {
+							1 -> R.string.settings_alarm_3day
+							2 -> R.string.settings_alarm_weekly
+							else -> R.string.settings_alarm_daily
+						}
+					) else stringResource(R.string.settings_alarm_off),
+					R.drawable.ic_alarm
+				) { viewModel.setUpdates() }
+			}
+			row("install") {
+				SettingsCategory(
+					stringResource(R.string.settings_install),
+					// The first thing we ask a reporter whenever an install misbehaves — the three
+					// install paths fail in completely different ways. So it is on the front page.
+					stringResource(
+						when {
+							viewModel.getRootInstall() -> R.string.root_install
+							viewModel.getShizukuInstall() -> R.string.shizuku_install
+							else -> R.string.install_standard
+						}
+					),
+					R.drawable.ic_install
+				) { viewModel.setInstall() }
+			}
+		}
+		SettingsGroup {
+			row("appearance") {
+				SettingsCategory(
+					stringResource(R.string.settings_ui),
+					stringResource(
+						when (viewModel.getTheme()) {
+							1 -> R.string.theme_dark
+							2 -> R.string.theme_light
+							else -> R.string.theme_system
+						}
+					),
+					R.drawable.ic_theme
+				) { viewModel.setAppearance() }
+			}
+			row("tools") {
+				SettingsCategory(
+					stringResource(R.string.settings_utils),
+					stringResource(R.string.settings_utils_summary),
+					R.drawable.ic_export
+				) { viewModel.setTools() }
+			}
+		}
+		SettingsGroup {
+			row("about") {
+				// The version on the row itself: "which build are you on?" is the first question
+				// on the forum, and now it is answered without opening anything.
+				SettingsCategory(
+					stringResource(R.string.about),
+					"${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+					R.drawable.ic_info
+				) { viewModel.setAbout() }
+			}
 		}
 	}
 }
 
 @Composable
-fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn {
+fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
 	item {
-		SwitchSetting(
-			{ viewModel.getUseGitHub() },
-			{ viewModel.setUseGitHub(it) },
-			stringResource(R.string.source_github),
-			R.drawable.ic_github
-		)
-		var githubToken by remember { mutableStateOf(viewModel.getGitHubToken()) }
-		TvTextField(
-			value = githubToken,
-			onValueChange = { githubToken = it; viewModel.setGitHubToken(it) },
-			label = { Text(stringResource(R.string.github_token)) },
-			placeholder = { Text(stringResource(R.string.github_token_hint)) },
-			supportingText = { Text(stringResource(R.string.github_token_help)) },
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-		)
-		SwitchSetting(
-			{ viewModel.getUseGitLab() },
-			{ viewModel.setUseGitLab(it) },
-			stringResource(R.string.source_gitlab),
-			R.drawable.ic_gitlab
-		)
+		// Every sub-screen puts the D-pad on its first row as it opens. Until build 179 only the
+		// front page did, so on a TV focus stayed on the bottom bar and DOWN did nothing.
+		val firstRowFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(firstRowFocus)
 		// Held here so the download switch below can follow it: with the source off there is
 		// nothing for it to act on, and going through its warning would change nothing visible.
 		var useApkMirror by remember { mutableStateOf(viewModel.getUseApkMirror()) }
-		SwitchSetting(
-			checked = useApkMirror,
-			onCheckedChange = {
-				viewModel.setUseApkMirror(it)
-				useApkMirror = viewModel.getUseApkMirror()
-			},
-			text = stringResource(R.string.source_apkmirror),
-			icon = R.drawable.ic_apkmirror
-		)
-		if (useApkMirror) ApkMirrorDirectSetting(viewModel)
-		SwitchSetting(
-			{ viewModel.getUseFdroid() },
-			{ viewModel.setUseFdroid(it) },
-			stringResource(R.string.source_fdroid),
-			R.drawable.ic_fdroid
-		)
-		SwitchSetting(
-			{ viewModel.getUseIzzy() },
-			{ viewModel.setUseIzzy(it) },
-			stringResource(R.string.source_izzy),
-			R.drawable.ic_izzy
-		)
-		SwitchSetting(
-			{ viewModel.getUseAptoide() },
-			{ viewModel.setUseAptoide(it) },
-			stringResource(R.string.source_aptoide),
-			R.drawable.ic_aptoide
-		)
-		SwitchSetting(
-			{ viewModel.getUseApkPure() },
-			{ viewModel.setUseApkPure(it) },
-			stringResource(R.string.source_apkpure),
-			R.drawable.ic_apkpure
-		)
-		SwitchSetting(
-			{ viewModel.getUsePlay() },
-			{ viewModel.setUsePlay(it) },
-			stringResource(R.string.source_play),
-			R.drawable.ic_play
-		)
-		SwitchSetting(
-			{ viewModel.getUseRuStore() },
-			{ viewModel.setUseRuStore(it) },
-			stringResource(R.string.source_rustore),
-			R.drawable.ic_rustore
-		)
-		SwitchSetting(
-			{ viewModel.getUseAppGallery() },
-			{ viewModel.setUseAppGallery(it) },
-			stringResource(R.string.source_appgallery),
-			R.drawable.ic_appgallery
-		)
-		SwitchSetting(
-			{ viewModel.getUseSafeStores() },
-			{ viewModel.setUseSafeStores(it) },
-			stringResource(R.string.use_safe_stores),
-			R.drawable.ic_safe
-		)
-	}
-}
-
-@Composable
-fun UpdatesSettings(viewModel: SettingsViewModel) = LazyColumn {
-	item {
-		val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
-		var alarmEnabled by remember { mutableStateOf(viewModel.getEnableAlarm()) }
-		SectionHeader(stringResource(R.string.settings_alarm))
-		// First, because it is the check most people will meet first: the one when the app opens.
-		SwitchSetting(
-			{ viewModel.getCheckOnLaunch() },
-			{ viewModel.setCheckOnLaunch(it) },
-			stringResource(R.string.check_on_launch),
-			R.drawable.ic_refresh
-		)
-		SwitchSetting(
-			getValue = { alarmEnabled },
-			setValue = { viewModel.setEnableAlarm(it, launcher); alarmEnabled = it },
-			text = stringResource(R.string.settings_alarm),
-			icon = R.drawable.ic_alarm
-		)
-		if (alarmEnabled) {
-			if (LocalContext.current.isAndroidTv()) {
-				DropDownSetting(
-					text = stringResource(R.string.settings_hour),
-					options = (0..23).map { it.toString() },
-					getValue = { viewModel.getAlarmHour() },
-					setValue = { viewModel.setAlarmHour(it) },
-					icon = R.drawable.ic_hour
-				)
-			} else {
-				SliderSetting(
-					getValue = { viewModel.getAlarmHour().toFloat() },
-					setValue = { viewModel.setAlarmHour(it.toInt()) },
-					text = stringResource(R.string.settings_hour),
-					valueRange = 0f..23f,
-					steps = 23,
-					R.drawable.ic_hour
+		SectionHeader(stringResource(R.string.settings_code_hosting))
+		SettingsGroup {
+			row("github") {
+				SwitchSetting(
+					{ viewModel.getUseGitHub() },
+					{ viewModel.setUseGitHub(it) },
+					stringResource(R.string.source_github),
+					R.drawable.ic_github,
+					modifier = Modifier.focusRequester(firstRowFocus)
 				)
 			}
-			DropDownSetting(
-				text = stringResource(R.string.frequency),
-				options = listOf(
-					stringResource(R.string.settings_alarm_daily),
-					stringResource(R.string.settings_alarm_3day),
-					stringResource(R.string.settings_alarm_weekly)
-				),
-				getValue = { viewModel.getAlarmFrequency() },
-				setValue = { viewModel.setAlarmFrequency(it) },
-				icon = R.drawable.ic_frequency,
-				width = 170
-			)
+			row("github_token") {
+				SettingsContentRow {
+					var githubToken by remember { mutableStateOf(viewModel.getGitHubToken()) }
+					TvTextField(
+						value = githubToken,
+						onValueChange = { githubToken = it; viewModel.setGitHubToken(it) },
+						label = { Text(stringResource(R.string.github_token)) },
+						placeholder = { Text(stringResource(R.string.github_token_hint)) },
+						supportingText = { Text(stringResource(R.string.github_token_help)) },
+						modifier = Modifier.fillMaxWidth()
+					)
+				}
+			}
+			row("gitlab") {
+				SwitchSetting(
+					{ viewModel.getUseGitLab() },
+					{ viewModel.setUseGitLab(it) },
+					stringResource(R.string.source_gitlab),
+					R.drawable.ic_gitlab
+				)
+			}
 		}
-	}
-	item {
-		SectionHeader(stringResource(R.string.settings_versions))
-		SwitchSetting(
-			{ viewModel.getIgnoreAlpha() },
-			{ viewModel.setIgnoreAlpha(it) },
-			stringResource(R.string.ignore_alpha),
-			R.drawable.ic_alpha
-		)
-		SwitchSetting(
-			{ viewModel.getIgnoreBeta() },
-			{ viewModel.setIgnoreBeta(it) },
-			stringResource(R.string.ignore_beta),
-			R.drawable.ic_beta
-		)
-		SwitchSetting(
-			{ viewModel.getIgnorePreRelease() },
-			{ viewModel.setIgnorePreRelease(it) },
-			stringResource(R.string.ignore_preRelease),
-			R.drawable.ic_pre_release
-		)
+		SectionHeader(stringResource(R.string.settings_stores))
+		SettingsGroup {
+			row("apkmirror") {
+				SwitchSetting(
+					checked = useApkMirror,
+					onCheckedChange = {
+						viewModel.setUseApkMirror(it)
+						useApkMirror = viewModel.getUseApkMirror()
+					},
+					text = stringResource(R.string.source_apkmirror),
+					icon = R.drawable.ic_apkmirror
+				)
+			}
+			if (useApkMirror) row("apkmirror_direct") { ApkMirrorDirectSetting(viewModel) }
+			row("fdroid") {
+				SwitchSetting(
+					{ viewModel.getUseFdroid() },
+					{ viewModel.setUseFdroid(it) },
+					stringResource(R.string.source_fdroid),
+					R.drawable.ic_fdroid
+				)
+			}
+			row("izzy") {
+				SwitchSetting(
+					{ viewModel.getUseIzzy() },
+					{ viewModel.setUseIzzy(it) },
+					stringResource(R.string.source_izzy),
+					R.drawable.ic_izzy
+				)
+			}
+			row("aptoide") {
+				SwitchSetting(
+					{ viewModel.getUseAptoide() },
+					{ viewModel.setUseAptoide(it) },
+					stringResource(R.string.source_aptoide),
+					R.drawable.ic_aptoide
+				)
+			}
+			// Right under Aptoide, which it belongs to: it limits Aptoide to its vetted stores.
+			row("safe_stores") {
+				SwitchSetting(
+					{ viewModel.getUseSafeStores() },
+					{ viewModel.setUseSafeStores(it) },
+					stringResource(R.string.use_safe_stores),
+					R.drawable.ic_safe
+				)
+			}
+			row("apkpure") {
+				SwitchSetting(
+					{ viewModel.getUseApkPure() },
+					{ viewModel.setUseApkPure(it) },
+					stringResource(R.string.source_apkpure),
+					R.drawable.ic_apkpure
+				)
+			}
+			row("play") {
+				SwitchSetting(
+					{ viewModel.getUsePlay() },
+					{ viewModel.setUsePlay(it) },
+					stringResource(R.string.source_play),
+					R.drawable.ic_play
+				)
+			}
+			row("rustore") {
+				SwitchSetting(
+					{ viewModel.getUseRuStore() },
+					{ viewModel.setUseRuStore(it) },
+					stringResource(R.string.source_rustore),
+					R.drawable.ic_rustore
+				)
+			}
+			row("appgallery") {
+				SwitchSetting(
+					{ viewModel.getUseAppGallery() },
+					{ viewModel.setUseAppGallery(it) },
+					stringResource(R.string.source_appgallery),
+					R.drawable.ic_appgallery
+				)
+			}
+		}
 	}
 }
 
 @Composable
-fun InstallSettings(viewModel: SettingsViewModel) = LazyColumn {
+fun UpdatesSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
 	item {
-		SwitchSetting(
-			{ viewModel.getRootInstall() },
-			{ viewModel.setRootInstall(it) },
-			stringResource(R.string.root_install),
-			R.drawable.ic_root
-		)
-		SwitchSetting(
-			{ viewModel.getShizukuInstall() },
-			{ viewModel.setShizukuInstall(it) },
-			stringResource(R.string.shizuku_install),
-			R.drawable.ic_shizuku
-		)
-		SwitchSetting(
-			{ viewModel.getFakePlayStore() },
-			{ viewModel.setFakePlayStore(it) },
-			stringResource(R.string.fake_play_store),
-			R.drawable.ic_play
-		)
-		SwitchSetting(
-			{ viewModel.getCleanUpAfterInstall() },
-			{ viewModel.setCleanUpAfterInstall(it) },
-			stringResource(R.string.clean_up_after_install),
-			R.drawable.ic_cleanup
-		)
-		SwitchSetting(
-			{ viewModel.getNotifyOnInstall() },
-			{ viewModel.setNotifyOnInstall(it) },
-			stringResource(R.string.notify_on_install),
-			R.drawable.ic_notification
-		)
+		val firstRowFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(firstRowFocus)
+		val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+		var alarmEnabled by remember { mutableStateOf(viewModel.getEnableAlarm()) }
+		val isTv = LocalContext.current.isAndroidTv()
+		SectionHeader(stringResource(R.string.settings_alarm))
+		SettingsGroup {
+			// First, because it is the check most people will meet first: the one when the app opens.
+			row("on_launch") {
+				SwitchSetting(
+					{ viewModel.getCheckOnLaunch() },
+					{ viewModel.setCheckOnLaunch(it) },
+					stringResource(R.string.check_on_launch),
+					R.drawable.ic_refresh,
+					modifier = Modifier.focusRequester(firstRowFocus)
+				)
+			}
+			row("alarm") {
+				SwitchSetting(
+					getValue = { alarmEnabled },
+					setValue = { viewModel.setEnableAlarm(it, launcher); alarmEnabled = it },
+					text = stringResource(R.string.settings_alarm),
+					icon = R.drawable.ic_alarm
+				)
+			}
+			if (alarmEnabled) {
+				row("hour") {
+					if (isTv) {
+						DropDownSetting(
+							text = stringResource(R.string.settings_hour),
+							options = (0..23).map { it.toString() },
+							getValue = { viewModel.getAlarmHour() },
+							setValue = { viewModel.setAlarmHour(it) },
+							icon = R.drawable.ic_hour
+						)
+					} else {
+						SliderSetting(
+							getValue = { viewModel.getAlarmHour().toFloat() },
+							setValue = { viewModel.setAlarmHour(it.toInt()) },
+							text = stringResource(R.string.settings_hour),
+							valueRange = 0f..23f,
+							// 24 hours = 22 stops between the two ends. 23 made 25 stops, with 0 twice.
+							steps = 22,
+							R.drawable.ic_hour
+						)
+					}
+				}
+				row("frequency") {
+					DropDownSetting(
+						text = stringResource(R.string.frequency),
+						options = listOf(
+							stringResource(R.string.settings_alarm_daily),
+							stringResource(R.string.settings_alarm_3day),
+							stringResource(R.string.settings_alarm_weekly)
+						),
+						getValue = { viewModel.getAlarmFrequency() },
+						setValue = { viewModel.setAlarmFrequency(it) },
+						icon = R.drawable.ic_frequency
+					)
+				}
+			}
+		}
+		SectionHeader(stringResource(R.string.settings_versions))
+		SettingsGroup {
+			row("alpha") {
+				SwitchSetting(
+					{ viewModel.getIgnoreAlpha() },
+					{ viewModel.setIgnoreAlpha(it) },
+					stringResource(R.string.ignore_alpha),
+					R.drawable.ic_alpha
+				)
+			}
+			row("beta") {
+				SwitchSetting(
+					{ viewModel.getIgnoreBeta() },
+					{ viewModel.setIgnoreBeta(it) },
+					stringResource(R.string.ignore_beta),
+					R.drawable.ic_beta
+				)
+			}
+			row("prerelease") {
+				SwitchSetting(
+					{ viewModel.getIgnorePreRelease() },
+					{ viewModel.setIgnorePreRelease(it) },
+					stringResource(R.string.ignore_preRelease),
+					R.drawable.ic_pre_release
+				)
+			}
+		}
+	}
+}
 
-		// Last on purpose: the installer switches above are why people open this screen, and
-		// the reset row below appears and disappears — at the bottom that shifts nothing.
-		// The picker returns a tree Uri; the ViewModel takes the grant on it before storing it,
-		// so a folder we cannot actually write to never becomes the setting.
+@Composable
+fun InstallSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = PaddingValues(vertical = 6.dp)) {
+	item {
+		val firstRowFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(firstRowFocus)
+		SettingsGroup {
+			row("root") {
+				SwitchSetting(
+					{ viewModel.getRootInstall() },
+					{ viewModel.setRootInstall(it) },
+					stringResource(R.string.root_install),
+					R.drawable.ic_root,
+					modifier = Modifier.focusRequester(firstRowFocus)
+				)
+			}
+			row("shizuku") {
+				SwitchSetting(
+					{ viewModel.getShizukuInstall() },
+					{ viewModel.setShizukuInstall(it) },
+					stringResource(R.string.shizuku_install),
+					R.drawable.ic_shizuku
+				)
+			}
+			row("fake_play") {
+				SwitchSetting(
+					{ viewModel.getFakePlayStore() },
+					{ viewModel.setFakePlayStore(it) },
+					stringResource(R.string.fake_play_store),
+					R.drawable.ic_play
+				)
+			}
+			row("cleanup") {
+				SwitchSetting(
+					{ viewModel.getCleanUpAfterInstall() },
+					{ viewModel.setCleanUpAfterInstall(it) },
+					stringResource(R.string.clean_up_after_install),
+					R.drawable.ic_cleanup
+				)
+			}
+			row("notify") {
+				SwitchSetting(
+					{ viewModel.getNotifyOnInstall() },
+					{ viewModel.setNotifyOnInstall(it) },
+					stringResource(R.string.notify_on_install),
+					R.drawable.ic_notification
+				)
+			}
+		}
+
+		// A group of its own, and last on purpose: the installer switches above are why people
+		// open this screen, and the reset row below appears and disappears — at the bottom that
+		// shifts nothing. The picker returns a tree Uri; the ViewModel takes the grant on it
+		// before storing it, so a folder we cannot actually write to never becomes the setting.
 		val folderPicker = rememberLauncherForActivityResult(
 			ActivityResultContracts.OpenDocumentTree()
 		) { uri -> if (uri != null) viewModel.setDownloadFolder(uri) }
 		val folder = viewModel.downloadFolder.collectAsStateWithLifecycle().value
 		val folderRowFocus = remember { FocusRequester() }
 		val isTv = LocalContext.current.isAndroidTv()
-		SettingsCategory(
-			stringResource(R.string.download_folder),
-			folder ?: stringResource(R.string.download_folder_default),
-			R.drawable.ic_folder,
-			modifier = Modifier.focusRequester(folderRowFocus),
-			trailingArrow = false
-		) {
-			// Plenty of TV boxes ship without a documents provider, and launch() throws
-			// ActivityNotFoundException there rather than returning a null result.
-			runCatching { folderPicker.launch(null) }
-				.onFailure { viewModel.downloadFolderUnavailable() }
-		}
-		if (folder != null) {
-			SettingsCategory(
-				stringResource(R.string.download_folder_reset),
-				null,
-				R.drawable.ic_cleanup,
-				trailingArrow = false
-			) {
-				// This row removes itself on OK. Move focus off it FIRST, or the D-pad falls
-				// to the bottom bar — the very fault 137 fixed on Updates and Settings. TV
-				// only: on a phone a programmatic focus would paint the row's focus fill.
-				if (isTv) runCatching { folderRowFocus.requestFocus() }
-				viewModel.resetDownloadFolder()
+		SettingsGroup {
+			row("folder") {
+				SettingsCategory(
+					stringResource(R.string.download_folder),
+					folder ?: stringResource(R.string.download_folder_default),
+					R.drawable.ic_folder,
+					modifier = Modifier.focusRequester(folderRowFocus),
+					trailingArrow = false
+				) {
+					// Plenty of TV boxes ship without a documents provider, and launch() throws
+					// ActivityNotFoundException there rather than returning a null result.
+					runCatching { folderPicker.launch(null) }
+						.onFailure { viewModel.downloadFolderUnavailable() }
+				}
+			}
+			if (folder != null) {
+				row("folder_reset") {
+					SettingsCategory(
+						stringResource(R.string.download_folder_reset),
+						null,
+						R.drawable.ic_cleanup,
+						trailingArrow = false
+					) {
+						// This row removes itself on OK. Move focus off it FIRST, or the D-pad falls
+						// to the bottom bar — the very fault 137 fixed on Updates and Settings. TV
+						// only: on a phone a programmatic focus would paint the row's focus fill.
+						if (isTv) runCatching { folderRowFocus.requestFocus() }
+						viewModel.resetDownloadFolder()
+					}
+				}
 			}
 		}
 	}
 }
 
 @Composable
-fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn {
+fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = PaddingValues(vertical = 6.dp)) {
 	item {
-		SwitchSetting(
-			{ viewModel.getCompactCards() },
-			{ viewModel.setCompactCards(it) },
-			stringResource(R.string.compact_cards),
-			R.drawable.ic_compact
-		)
-		SwitchSetting(
-			{ viewModel.getPlayTextAnimations() },
-			{ viewModel.setPlayTextAnimations(it) },
-			stringResource(R.string.play_text_animations),
-			R.drawable.ic_animation
-		)
-		SegmentedButtonSetting(
-			stringResource(R.string.theme),
-			listOf(
-				stringResource(R.string.theme_system),
-				stringResource(R.string.theme_dark),
-				stringResource(R.string.theme_light)
-			),
-			{ viewModel.getTheme() },
-			{ viewModel.setTheme(it) },
-			R.drawable.ic_theme
-		)
+		val firstRowFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(firstRowFocus)
+		SettingsGroup {
+			row("compact") {
+				SwitchSetting(
+					{ viewModel.getCompactCards() },
+					{ viewModel.setCompactCards(it) },
+					stringResource(R.string.compact_cards),
+					R.drawable.ic_compact,
+					modifier = Modifier.focusRequester(firstRowFocus)
+				)
+			}
+			row("animations") {
+				SwitchSetting(
+					{ viewModel.getPlayTextAnimations() },
+					{ viewModel.setPlayTextAnimations(it) },
+					stringResource(R.string.play_text_animations),
+					R.drawable.ic_animation
+				)
+			}
+		}
+		SettingsGroup {
+			row("theme") {
+				SegmentedButtonSetting(
+					stringResource(R.string.theme),
+					listOf(
+						stringResource(R.string.theme_system),
+						stringResource(R.string.theme_dark),
+						stringResource(R.string.theme_light)
+					),
+					{ viewModel.getTheme() },
+					{ viewModel.setTheme(it) },
+					R.drawable.ic_theme
+				)
+			}
+		}
 	}
 }
 
 @Composable
-fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn {
+fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = PaddingValues(vertical = 6.dp)) {
 	item {
 		val context = LocalContext.current
+		val firstRowFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(firstRowFocus)
 		val exportLauncher = rememberLauncherForActivityResult(
 			ActivityResultContracts.CreateDocument("application/json")
 		) { uri ->
@@ -569,55 +674,76 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn {
 				).show()
 			}
 		}
-
-		ButtonSetting(
-			stringResource(R.string.export_config),
-			{ exportLauncher.launch("apkupdater-config.json") },
-			R.drawable.ic_export,
-			R.drawable.ic_export
-		)
-		ButtonSetting(
-			stringResource(R.string.import_config),
-			{ importLauncher.launch(arrayOf("application/json")) },
-			R.drawable.ic_import,
-			R.drawable.ic_import
-		)
 		val ignoredCount = remember { mutableStateOf(viewModel.getIgnoredVersionsCount()) }
-		ButtonSetting(
-			stringResource(R.string.clear_ignored_versions, ignoredCount.value),
-			{
-				if (ignoredCount.value > 0) {
-					viewModel.clearIgnoredVersions()
-					ignoredCount.value = 0
-					Toast.makeText(context, context.getString(R.string.ignored_versions_cleared), Toast.LENGTH_SHORT).show()
-				} else {
-					Toast.makeText(context, context.getString(R.string.no_ignored_versions), Toast.LENGTH_SHORT).show()
+
+		// The settings backup: the two belong together and are what most people come here for.
+		SettingsGroup {
+			row("export") {
+				ButtonSetting(
+					stringResource(R.string.export_config),
+					{ exportLauncher.launch("apkupdater-config.json") },
+					R.drawable.ic_export,
+					R.drawable.ic_export,
+					modifier = Modifier.focusRequester(firstRowFocus)
+				)
+			}
+			row("import") {
+				ButtonSetting(
+					stringResource(R.string.import_config),
+					{ importLauncher.launch(arrayOf("application/json")) },
+					R.drawable.ic_import,
+					R.drawable.ic_import
+				)
+			}
+		}
+		SettingsGroup {
+			row("clear_skipped") {
+				ButtonSetting(
+					stringResource(R.string.clear_ignored_versions, ignoredCount.value),
+					{
+						if (ignoredCount.value > 0) {
+							viewModel.clearIgnoredVersions()
+							ignoredCount.value = 0
+							Toast.makeText(context, context.getString(R.string.ignored_versions_cleared), Toast.LENGTH_SHORT).show()
+						} else {
+							Toast.makeText(context, context.getString(R.string.no_ignored_versions), Toast.LENGTH_SHORT).show()
+						}
+					},
+					R.drawable.ic_cleanup,
+					R.drawable.ic_cleanup
+				)
+			}
+		}
+		// What a bug report needs.
+		SettingsGroup {
+			row("app_list") {
+				ButtonSetting(
+					stringResource(R.string.copy_app_list),
+					{ viewModel.copyAppList() },
+					R.drawable.ic_root,
+					R.drawable.ic_copy
+				)
+			}
+			row("app_logs") {
+				ButtonSetting(
+					stringResource(R.string.copy_app_logs),
+					{ viewModel.copyAppLogs() },
+					R.drawable.ic_root,
+					R.drawable.ic_copy
+				)
+			}
+			// Only shown after a crash was captured on the previous run — lets the user hand over
+			// the stack trace without logcat/adb or the ROM's (often broken) crash uploader.
+			if (viewModel.hasCrashReport()) {
+				row("crash_report") {
+					ButtonSetting(
+						stringResource(R.string.copy_crash_report),
+						{ viewModel.copyCrashReport() },
+						R.drawable.ic_system,
+						R.drawable.ic_copy
+					)
 				}
-			},
-			R.drawable.ic_cleanup,
-			R.drawable.ic_cleanup
-		)
-		ButtonSetting(
-			stringResource(R.string.copy_app_list),
-			{ viewModel.copyAppList() },
-			R.drawable.ic_root,
-			R.drawable.ic_copy
-		)
-		ButtonSetting(
-			stringResource(R.string.copy_app_logs),
-			{ viewModel.copyAppLogs() },
-			R.drawable.ic_root,
-			R.drawable.ic_copy
-		)
-		// Only shown after a crash was captured on the previous run — lets the user hand over
-		// the stack trace without logcat/adb or the ROM's (often broken) crash uploader.
-		if (viewModel.hasCrashReport()) {
-			ButtonSetting(
-				stringResource(R.string.copy_crash_report),
-				{ viewModel.copyCrashReport() },
-				R.drawable.ic_system,
-				R.drawable.ic_copy
-			)
+			}
 		}
 	}
 }
@@ -640,13 +766,17 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 		val allApps = viewModel.installedApps.collectAsStateWithLifecycle().value
 
 		val isTvRepo = LocalContext.current.isAndroidTv()
+		// The address field takes the D-pad as the screen opens, like the first row of every
+		// other sub-screen (build 179). OK on it starts typing; nothing opens a keyboard by itself.
+		val urlFocus = remember { FocusRequester() }
+		RequestInitialTvFocus(urlFocus)
 		TvTextField(
 			value = repoUrl,
 			onValueChange = { repoUrl = it; errorMsg = null },
 			label = { Text(stringResource(R.string.custom_repo_hint)) },
 			isError = errorMsg != null,
 			supportingText = errorMsg?.let { msg -> { Text(msg) } },
-			modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+			modifier = Modifier.focusRequester(urlFocus).fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
 		)
 
 		// Installed app picker
@@ -722,44 +852,44 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 			}
 		}
 
-		repos.forEach { repo ->
-			val host = if (repo.platform == GitProvider.GITHUB) "github.com" else "gitlab.com"
-			Row(
-				Modifier
-					.fillMaxWidth()
-					.clickable {
-						// Load this repo into the form for editing.
-						repoUrl = "$host/${repo.user}/${repo.repo}"
-						selectedPkgName = repo.installedPackageName
-						appQuery = allApps.find { it.packageName == repo.installedPackageName }?.name
-							?: repo.installedPackageName
-						errorMsg = null
-						editingId = repo.id
+		// One group of rows, each opening the repository in the form above for editing, with its
+		// delete button at the end; the one being edited is marked.
+		SettingsGroup {
+			repos.forEach { repo ->
+				row(repo.id) {
+					val host = if (repo.platform == GitProvider.GITHUB) "github.com" else "gitlab.com"
+					// The delete button sits inside the row's own focus target, where a D-pad move
+					// never looks — on a TV it could not be reached at all. RIGHT goes to it, LEFT
+					// comes back.
+					val rowFocus = remember { FocusRequester() }
+					val deleteFocus = remember { FocusRequester() }
+					SettingsRow(
+						text = "${repo.user}/${repo.repo}",
+						subtitle = repo.installedPackageName.ifEmpty { null },
+						icon = if (repo.platform == GitProvider.GITHUB) R.drawable.ic_github else R.drawable.ic_gitlab,
+						selected = editingId == repo.id,
+						modifier = Modifier.focusRequester(rowFocus).focusProperties { right = deleteFocus },
+						onClick = {
+							// Load this repo into the form for editing.
+							repoUrl = "$host/${repo.user}/${repo.repo}"
+							selectedPkgName = repo.installedPackageName
+							appQuery = allApps.find { it.packageName == repo.installedPackageName }?.name
+								?: repo.installedPackageName
+							errorMsg = null
+							editingId = repo.id
+						}
+					) {
+						TvIconButton(
+							onClick = {
+								viewModel.removeCustomGitRepo(repo.id)
+								repos = viewModel.getCustomGitRepos()
+								if (editingId == repo.id) clearRepoForm()
+							},
+							modifier = Modifier.focusProperties { left = rowFocus }.focusRequester(deleteFocus)
+						) {
+							Icon(Icons.Default.Delete, stringResource(R.string.delete))
+						}
 					}
-					.background(
-						if (editingId == repo.id) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-						else androidx.compose.ui.graphics.Color.Transparent
-					)
-					.padding(horizontal = 16.dp, vertical = 8.dp),
-				verticalAlignment = CenterVertically
-			) {
-				Icon(
-					painterResource(if (repo.platform == GitProvider.GITHUB) R.drawable.ic_github else R.drawable.ic_gitlab),
-					repo.platform.name,
-					Modifier.size(24.dp)
-				)
-				Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-					Text("${repo.user}/${repo.repo}", style = MaterialTheme.typography.bodyLarge)
-					if (repo.installedPackageName.isNotEmpty()) {
-						Text(repo.installedPackageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-					}
-				}
-				TvIconButton(onClick = {
-					viewModel.removeCustomGitRepo(repo.id)
-					repos = viewModel.getCustomGitRepos()
-					if (editingId == repo.id) clearRepoForm()
-				}) {
-					Icon(Icons.Default.Delete, stringResource(R.string.delete))
 				}
 			}
 		}
@@ -815,7 +945,8 @@ fun AboutTopBar(viewModel: SettingsViewModel) = TopAppBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubSettingsTopBar(title: String, viewModel: SettingsViewModel) = TopAppBar(
-	title = { Text(title) },
+	// One line: a two-line title in a one-line bar is cut off mid-word.
+	title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
 	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
 	navigationIcon = {
 		TvIconButton(onClick = { viewModel.setSettings() }) {
@@ -880,6 +1011,9 @@ private fun ApkMirrorDirectWarning(onConfirm: () -> Unit, onDismiss: () -> Unit)
 	val step = with(LocalDensity.current) { 96.dp.toPx() }
 	AlertDialog(
 		onDismissRequest = onDismiss,
+		// The risk sign, in the colour the confirm button wears (build 179). With an icon,
+		// Material centres the title under it.
+		icon = { Icon(Icons.Outlined.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
 		title = { Text(stringResource(R.string.apkmirror_direct_warning_title)) },
 		text = {
 			val remote = if (isTv) Modifier
@@ -913,7 +1047,7 @@ private fun ApkMirrorDirectWarning(onConfirm: () -> Unit, onDismiss: () -> Unit)
 			}
 			RequestInitialTvFocus(textFocus)
 		},
-		confirmButton = { DialogButton(R.string.apkmirror_direct_confirm, onConfirm) },
+		confirmButton = { DialogButton(R.string.apkmirror_direct_confirm, onConfirm, risky = true) },
 		dismissButton = { DialogButton(R.string.cancel_cd, onDismiss, Modifier.focusRequester(cancelFocus)) }
 	)
 }
@@ -922,19 +1056,30 @@ private fun ApkMirrorDirectWarning(onConfirm: () -> Unit, onDismiss: () -> Unit)
  * A dialog button a TV viewer can tell is focused: filled with the accent colour, as the card
  * buttons are. A plain TextButton marks focus with a faint 10% tint, invisible from a sofa — in
  * a consent dialog, where it matters which of the two OK will press.
+ *
+ * [risky] is for the button that accepts a risk (build 179): outlined in the error colour, and
+ * filled with it on focus, so it cannot be taken for the safe choice beside it.
  */
 @Composable
-private fun DialogButton(@StringRes text: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun DialogButton(
+	@StringRes text: Int,
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
+	risky: Boolean = false
+) {
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
+	val accent = if (risky) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+	val onAccent = if (risky) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary
 	TextButton(
 		onClick = onClick,
 		modifier = modifier,
 		interactionSource = interaction,
 		colors = ButtonDefaults.textButtonColors(
-			containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
-			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
-		)
+			containerColor = if (focused) accent else Color.Transparent,
+			contentColor = if (focused) onAccent else accent
+		),
+		border = if (risky && !focused) BorderStroke(1.dp, accent) else null
 	) {
 		Text(stringResource(text))
 	}

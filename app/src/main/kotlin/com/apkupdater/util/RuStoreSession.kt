@@ -104,7 +104,7 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 				Log.e("RuStoreSession", "Nonce request failed: ${response.code}")
 				return null
 			}
-			val body = response.body?.string().orEmpty()
+			val body = response.body.string()
 			return JsonParser.parseString(body).asJsonObject.get("nonce")?.asString
 		}
 	}

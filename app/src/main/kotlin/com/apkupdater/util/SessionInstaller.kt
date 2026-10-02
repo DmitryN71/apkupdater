@@ -8,7 +8,6 @@ import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES
-import androidx.core.content.ContextCompat.startActivity
 import com.apkupdater.BuildConfig
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstallProgress
@@ -357,7 +356,7 @@ class SessionInstaller(
                 val uri = Uri.parse("package:${BuildConfig.APPLICATION_ID}")
                 val intent = Intent(ACTION_MANAGE_UNKNOWN_APP_SOURCES, uri)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                startActivity(context, intent, null)
+                context.startActivity(intent)
                 return false
             }
         }

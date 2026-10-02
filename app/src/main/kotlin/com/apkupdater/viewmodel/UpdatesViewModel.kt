@@ -178,7 +178,22 @@ class UpdatesViewModel(
 			if (wentHome) UpdatesUiState.Idle else it
 		}
 		// The badge counted the cards just dropped; until the next check there is nothing to count.
-		if (wentHome) badger.changeUpdatesBadge("")
+		if (wentHome) {
+			badger.changeUpdatesBadge("")
+			_showSkipped.value = false
+		}
+	}
+
+	/**
+	 * Whether the skipped cards are drawn, dimmed, after the others (⋮ → "Show skipped", build
+	 * 179). Off whenever the app starts, and again after Home: the skipped cards are the ones the
+	 * user asked not to see, so showing them is a look, not a mode to live in.
+	 */
+	private val _showSkipped = MutableStateFlow(false)
+	val showSkipped: StateFlow<Boolean> = _showSkipped
+
+	fun toggleShowSkipped() {
+		_showSkipped.value = !_showSkipped.value
 	}
 
 	private val _cacheSize = MutableStateFlow(0L)
@@ -246,7 +261,8 @@ class UpdatesViewModel(
 				// screen, but an Idle or empty screen has no list — it has the big Check button,
 				// which would sit there for the whole check doing nothing when pressed.
 				val nothingShown = state.value.let {
-					it is UpdatesUiState.Idle || (it is UpdatesUiState.Success && it.updates.isEmpty())
+					it is UpdatesUiState.Idle || (it is UpdatesUiState.Success && it.updates.isEmpty() &&
+						(!_showSkipped.value || it.skipped.isEmpty()))
 				}
 				if (load || nothingShown) state.update { current ->
 					UpdatesUiState.Loading(
@@ -257,7 +273,8 @@ class UpdatesViewModel(
 							is UpdatesUiState.Success -> current.only
 							is UpdatesUiState.Loading -> current.wasOnly
 							else -> null
-						}
+						},
+						skipped = current.skipped()
 					)
 				}
 				_refreshProgress.value = stringer.get(R.string.checking_updates)
@@ -349,11 +366,27 @@ class UpdatesViewModel(
 		badger.changeUpdatesBadge(updated.updates().badgeCount())
 	}
 
-	fun ignoreVersion(id: Int) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+	/**
+	 * Skip this version (the card's Skip), or bring a skipped one back ([skip] false — the
+	 * "Unskip" of a skipped card, build 179).
+	 *
+	 * Explicit rather than the toggle it used to be. A toggle is right only while the button and
+	 * the stored list agree, and since skipped cards are kept on screen they can disagree:
+	 * "Clear ignored versions" in Settings empties the list while the cards still sit among the
+	 * skipped, and toggling one of those would have skipped it again.
+	 *
+	 * The list on screen is republished whole — the cards and the skipped ones — and setSuccess
+	 * sorts them back into the two piles by the list as it is now.
+	 */
+	fun ignoreVersion(id: Int, skip: Boolean = true) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
 		val ignored = prefs.ignoredVersions.get().toMutableList()
-		if (ignored.contains(id)) ignored.remove(id) else ignored.add(id)
+		if (skip) {
+			if (id !in ignored) ignored.add(id)
+		} else {
+			ignored.remove(id)
+		}
 		prefs.ignoredVersions.put(ignored)
-		setSuccess(state.value.mutableUpdates(), keepLabel = true)
+		setSuccess(state.value.mutableUpdates() + state.value.skipped(), keepLabel = true)
 	}
 
 	override fun cancelInstall(id: Int): Job {
@@ -633,9 +666,6 @@ class UpdatesViewModel(
 		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, false)) }
 	}
 
-	private fun List<AppUpdate>.filterIgnoredVersions(ignoredVersions: List<Int>) = this
-		.filter { !ignoredVersions.contains(it.id) }
-
 	/**
 	 * Finished updates float to the top, so in a long list it stays obvious which ones were
 	 * already handled. Deliberately only applied once an install COMPLETES — a card that is
@@ -669,7 +699,7 @@ class UpdatesViewModel(
 	) {
 		// Read the ignore list once, outside: the block below can be re-run under contention
 		// and must stay free of side effects.
-		val ignored = prefs.ignoredVersions.get()
+		val ignored = prefs.ignoredVersions.get().toHashSet()
 		val installedFrom = prefs.installedFromMap()
 		// Also outside, for the same reason: what a kept card is checked against.
 		//
@@ -692,7 +722,7 @@ class UpdatesViewModel(
 		} else {
 			enabled = updatesRepository.enabledSources().toSet()
 			ignoredApps = prefs.ignoredApps.get().toSet()
-			installedNow = state.value.updates()
+			installedNow = (state.value.updates() + state.value.skipped())
 				.filter { it.source !in answered }
 				.map { it.packageName }
 				.distinct()
@@ -708,7 +738,9 @@ class UpdatesViewModel(
 			val inFlight = current.updates()
 				.filter { it.isInstalling || it.isInstalled }
 				.associateBy { it.id }
-			val kept = if (answered == null) emptyList() else current.updates().filter { card ->
+			// The skipped cards are kept by the same rules: a check of one source must not lose the
+			// other sources' skipped cards, or ⋮ → "Show skipped" would show fewer after it.
+			val kept = if (answered == null) emptyList() else (current.updates() + current.skipped()).filter { card ->
 				card.source !in answered &&
 					card.source in enabled &&
 					card.packageName !in ignoredApps &&
@@ -725,26 +757,33 @@ class UpdatesViewModel(
 			// id. Dropping it took the Cancel button away mid-download, and when the install then
 			// finished there was no card to record it against or to offer Open.
 			val running = current.updates().filter { it.isInstalling && it.id !in freshIds }
+			val all = (fresh + running)
+				.map { it.copy(installedFrom = installedFrom[it.packageName].orEmpty()) }
+				.distinctBy { it.id }
+				.map { card ->
+					inFlight[card.id]?.let {
+						card.copy(
+							isInstalling = it.isInstalling,
+							isInstalled = it.isInstalled,
+							progress = it.progress,
+							total = it.total
+						)
+					} ?: card
+				}
+			// Sorted into two piles instead of the skipped ones being thrown away (build 179). A card
+			// that is downloading or installing stays with the others whatever the list says — the
+			// Cancel and the progress live on it — though Skip is disabled while one runs anyway.
+			val (skipped, shown) = all.partition { it.id in ignored && !it.isInstalling }
 			UpdatesUiState.Success(
-				(fresh + running)
-					.map { it.copy(installedFrom = installedFrom[it.packageName].orEmpty()) }
-					.filterIgnoredVersions(ignored)
-					.distinctBy { it.id }
-					.map { card ->
-						inFlight[card.id]?.let {
-							card.copy(
-								isInstalling = it.isInstalling,
-								isInstalled = it.isInstalled,
-								progress = it.progress,
-								total = it.total
-							)
-						} ?: card
-					}
-					.sortFinishedFirst(),
+				shown.sortFinishedFirst(),
+				skipped = skipped.sortedBy { it.name.lowercase() },
 				only = if (keepLabel) (current as? UpdatesUiState.Success)?.only else only
 			)
 		}
 		badger.changeUpdatesBadge(merged.updates().badgeCount())
+		// Nothing left to show: the menu item goes, so the switch goes with it. Left on, the next
+		// Skip would leave its card on screen, dimmed, instead of taking it away.
+		if (merged.skipped().isEmpty()) _showSkipped.value = false
 	}
 
 	/**

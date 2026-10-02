@@ -262,7 +262,8 @@ class Downloader(
             if (isCancelled(id)) partial.delete()
         }
         // The partial file is kept on purpose — the next attempt picks up where this left off.
-        throw lastError ?: IOException("Download failed")
+        // Never null here: the loop only breaks after an attempt has recorded its error.
+        throw lastError
     }
 
     /**
@@ -292,7 +293,7 @@ class Downloader(
                     return false
                 }
                 if (!response.isSuccessful) throw HttpStatusException(response.code)
-                val body = response.body ?: throw IOException("Empty response body")
+                val body = response.body
                 // 206 means the server honoured the Range. A plain 200 means it ignored it
                 // and is sending the whole file, so whatever we had must be overwritten.
                 val resumed = response.code == 206 && have > 0
@@ -468,7 +469,7 @@ class Downloader(
         // NB: Call is unregistered when the body stream is fully consumed downstream;
         // we don't unregister here because the stream is still being read.
         if (response.isSuccessful) {
-            response.body?.let { body ->
+            response.body.let { body ->
                 val size = body.contentLength().let { if (it > 0) it else 0L }
                 return StreamWithSize(body.byteStream(), size)
             }
@@ -494,7 +495,7 @@ class Downloader(
             throw t
         }
         if (response.isSuccessful) {
-            response.body?.let {
+            response.body.let {
                 return it.byteStream()
             }
         } else {

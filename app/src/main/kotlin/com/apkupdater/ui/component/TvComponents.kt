@@ -91,7 +91,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.ui.graphics.Color
 import com.apkupdater.prefs.Prefs
-import org.koin.androidx.compose.get
+import org.koin.compose.koinInject
 
 
 @Composable
@@ -284,9 +284,9 @@ fun TvCommonItem(
 	/** Already-readable name of the installing store, "" to draw nothing. See installerLabel. */
 	installer: String = ""
 ) {
-	// Read once, unconditionally — get<Prefs>() is @Composable and must not be
+	// Read once, unconditionally — koinInject<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
-	val animateText = get<Prefs>().playTextAnimations.get()
+	val animateText = koinInject<Prefs>().playTextAnimations.get()
 	Row(
 		Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
 		verticalAlignment = Alignment.CenterVertically
@@ -495,6 +495,8 @@ fun TvInstalledItem(
 fun TvIgnoreVersionButton(
 	app: AppUpdate,
 	onIgnoreVersion: (Int) -> Unit,
+	/** The card is a skipped one: the button brings it back and says so. */
+	skipped: Boolean = false
 ) {
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
@@ -507,7 +509,7 @@ fun TvIgnoreVersionButton(
 			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 		)
 	) {
-		Text(stringResource(R.string.skip_cd))
+		Text(stringResource(if (skipped) R.string.unskip_cd else R.string.skip_cd))
 	}
 }
 
@@ -535,8 +537,8 @@ fun TvDownloadButton(
 	app: AppUpdate,
 	onDownload: (AppUpdate) -> Unit
 ) {
-	// Read unconditionally — get<Prefs>() is @Composable (see playTextAnimations above).
-	val apkMirrorDirect = get<Prefs>().apkMirrorDirect.get()
+	// Read unconditionally — koinInject<Prefs>() is @Composable (see playTextAnimations above).
+	val apkMirrorDirect = koinInject<Prefs>().apkMirrorDirect.get()
 	// An APKMirror link is a web page, which is why this button was hidden for it from build 61
 	// on. With the opt-in download switched on, a VARIANT page (what the update check gives)
 	// becomes a file through ApkMirrorDownload; a release page (what a search result gives) does
@@ -698,9 +700,15 @@ fun TvUpdateItem(
 	onCancel: (Int) -> Unit = {},
 	// Set on the FIRST card only, so the screen can put D-pad focus there instead of leaving
 	// it on the bottom navigation bar — see UpdatesScreenSuccess.
-	firstItemFocus: FocusRequester? = null
+	firstItemFocus: FocusRequester? = null,
+	// A skipped version, shown because the user asked to see them (⋮ → "Show skipped"). Dimmed
+	// like an ignored app on the Apps tab, and with one button, Unskip: downloading or installing
+	// a version you said to skip is one tap away once it is back among the others.
+	skipped: Boolean = false
 ) = TvFocusCard(modifier) {
-	Column {
+	// The content is dimmed, not the card: alpha on the card's modifier is an offscreen layer
+	// the card's size, which would cut off the glow that shows a focused card on a TV.
+	Column(if (skipped) Modifier.alpha(0.6f) else Modifier) {
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
 		val actionFocus = remember { FocusRequester() }
@@ -714,7 +722,7 @@ fun TvUpdateItem(
 		// their own clicks and their own D-pad focus; in the full layout there is nothing to
 		// reveal, so no click is attached at all and that path is untouched.
 		var expanded by rememberSaveable { mutableStateOf(false) }
-		val compact = get<Prefs>().compactCards.get()
+		val compact = koinInject<Prefs>().compactCards.get()
 		val showFull = !compact || expanded
 		// fillMaxWidth so the whole width of the header takes the tap, whatever the name's
 		// length — "this card collapses, that one doesn't" was exactly that difference once.
@@ -754,16 +762,20 @@ fun TvUpdateItem(
 				TvExpandButton(expanded) { expanded = !expanded }
 				Spacer(Modifier.weight(1f))
 			}
-			if (!app.isInstalled) {
-				TvIgnoreVersionButton(app, onIgnoreVersion)
+			if (skipped) {
+				TvIgnoreVersionButton(app, onIgnoreVersion, skipped = true)
 			} else {
-				TvHideButton { onHide(app.id) }
+				if (!app.isInstalled) {
+					TvIgnoreVersionButton(app, onIgnoreVersion)
+				} else {
+					TvHideButton { onHide(app.id) }
+				}
+				TvDownloadButton(app, onDownload)
+				TvInstallButton(
+					app, onInstall, onOpen, onCancel,
+					modifier = if (firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier
+				)
 			}
-			TvDownloadButton(app, onDownload)
-			TvInstallButton(
-				app, onInstall, onOpen, onCancel,
-				modifier = if (firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier
-			)
 		}
 	}
 }
@@ -784,7 +796,7 @@ fun TvSearchItem(
 		val actionFocus = remember { FocusRequester() }
 		// Tap to open, exactly as on the Updates card — see TvUpdateItem for why.
 		var expanded by rememberSaveable { mutableStateOf(false) }
-		val compact = get<Prefs>().compactCards.get()
+		val compact = koinInject<Prefs>().compactCards.get()
 		val showFull = !compact || expanded
 		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
 		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {

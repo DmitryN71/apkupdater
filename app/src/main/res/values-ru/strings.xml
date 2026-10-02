@@ -32,7 +32,7 @@
     <string name="settings_landscape_columns">Горизонтальные столбцы</string>
     <string name="play_text_animations">Проигрывать анимации текста</string>
     <string name="settings_sources">Источники</string>
-    <string name="settings_ui">Интерфейс</string>
+    <string name="settings_ui">Внешний вид</string>
     <string name="settings_alarm">Авто-проверка</string>
     <string name="settings_options">Настройки</string>
     <string name="settings_updates">Проверка обновлений</string>
@@ -42,7 +42,7 @@
     <string name="install_standard">Обычный установщик</string>
     <string name="settings_sources_summary">Включено %1$d из %2$d</string>
     <string name="settings_repos_summary">Добавлено: %1$d</string>
-    <string name="settings_utils">Утилиты</string>
+    <string name="settings_utils">Инструменты</string>
     <string name="settings_hour">Время проверки</string>
     <string name="settings_alarm_daily">Ежедневно</string>
     <string name="settings_alarm_3day">3 Дня</string>
@@ -151,9 +151,9 @@
     <string name="config_exported">Конфигурация экспортирована</string>
     <string name="config_imported">Конфигурация импортирована</string>
     <string name="config_import_failed">Не удалось импортировать конфигурацию</string>
-    <string name="clear_ignored_versions">Очистить игнорируемые версии (%1$d)</string>
-    <string name="ignored_versions_cleared">Игнорируемые версии очищены</string>
-    <string name="no_ignored_versions">Нет игнорируемых версий</string>
+    <string name="clear_ignored_versions">Очистить пропущенные версии (%1$d)</string>
+    <string name="ignored_versions_cleared">Пропущенные версии очищены</string>
+    <string name="no_ignored_versions">Нет пропущенных версий</string>
 
     // Notifications
     <string name="notification_channel_name">Обновления</string>
@@ -239,4 +239,10 @@
     <string name="download_progress">%1$s из %2$s</string>
     <string name="download_preparing">Подготовка…</string>
     <string name="go_home_cd">На стартовый экран</string>
+    <string name="show_skipped">Показать пропущенные (%1$d)</string>
+    <string name="hide_skipped">Скрыть пропущенные</string>
+    <string name="unskip_cd">Вернуть</string>
+    <string name="settings_utils_summary">Экспорт, импорт, логи</string>
+    <string name="settings_code_hosting">Хостинг кода</string>
+    <string name="settings_stores">Магазины</string>
 </resources>

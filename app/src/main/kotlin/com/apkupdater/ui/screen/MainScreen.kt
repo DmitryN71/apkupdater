@@ -9,12 +9,18 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,7 +32,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,7 +103,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
-import org.koin.androidx.compose.get
+import org.koin.compose.koinInject
 import org.koin.androidx.compose.koinViewModel
 import kotlin.coroutines.CoroutineContext
 
@@ -123,7 +129,7 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	RefreshAppsOnPackageChanges(appsViewModel)
 
 	// Used to launch the install intent and get dismissal result
-	val installLog = get<InstallLog>()
+	val installLog = koinInject<InstallLog>()
 	val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
 		if (it.resultCode == RESULT_CANCELED) {
 			installLog.cancelCurrentInstall()
@@ -137,7 +143,7 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	intentListener(mainViewModel, updatesViewModel, navController, launcher)
 
 	// Theme
-	val theme = get<Themer>().flow().collectAsStateWithLifecycle().value
+	val theme = koinInject<Themer>().flow().collectAsStateWithLifecycle().value
 
 	// SnackBar
 	val snackBarHostState = handleSnackBar()
@@ -250,7 +256,7 @@ fun AppSnackbarHost(hostState: SnackbarHostState) = SnackbarHost(hostState) { da
 @Composable
 fun handleSnackBar(): SnackbarHostState {
 	val snackBarHostState = remember { SnackbarHostState() }
-	get<SnackBar>().flow().CollectAsEffect(Dispatchers.IO) {
+	koinInject<SnackBar>().flow().CollectAsEffect(Dispatchers.IO) {
 		snackBarHostState.showSnackbar(it)
 	}
 	return snackBarHostState
@@ -330,20 +336,46 @@ fun BottomBar(mainViewModel: MainViewModel, navController: NavController) {
 	// list too. LEFT/RIGHT between the tabs is unaffected by any of this: once focus is inside
 	// the group, the custom-enter fallback is not on the path.
 	val selectedTabFocus = remember { FocusRequester() }
-	BottomAppBar(
-		modifier = Modifier
-			.focusProperties { enter = { selectedTabFocus } }
-			.focusGroup()
+	// A floating bar since build 179 (redesign, variant B — Dmitry's pick): a rounded panel held
+	// off the screen's edges, instead of a strip across the bottom. It still sits in Scaffold's
+	// bottom slot, so the screens end above it rather than scrolling underneath: letting the
+	// lists run under the bar would mean re-padding every list, and the last card would hide
+	// behind the bar on any screen that forgot to.
+	//
+	// The system bar insets are applied here because this is no longer BottomAppBar, which did
+	// that itself; the margins and the 68 dp panel come to about the 80 dp the old bar took.
+	Box(
+		Modifier
+			.fillMaxWidth()
+			.windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+			.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp)
 	) {
-		val badges = get<Badger>().flow().collectAsStateWithLifecycle().value
-		mainViewModel.screens.forEach { screen ->
-			val state = navController.currentBackStackEntryAsState().value
-			val selected = state?.destination?.route  == screen.route
-			BottomBarItem(
-				mainViewModel, navController, screen, selected,
-				badges[screen.route].orEmpty(),
-				if (selected) selectedTabFocus else null
-			)
+		Surface(
+			shape = RoundedCornerShape(28.dp),
+			color = MaterialTheme.colorScheme.surfaceContainerHigh,
+			shadowElevation = 3.dp,
+			modifier = Modifier.fillMaxWidth()
+		) {
+			// focusProperties BEFORE focusGroup — see above; the order is the whole fix.
+			Row(
+				Modifier
+					.focusProperties { enter = { selectedTabFocus } }
+					.focusGroup()
+					.height(68.dp)
+					.padding(horizontal = 4.dp),
+				verticalAlignment = Alignment.CenterVertically
+			) {
+				val badges = koinInject<Badger>().flow().collectAsStateWithLifecycle().value
+				mainViewModel.screens.forEach { screen ->
+					val state = navController.currentBackStackEntryAsState().value
+					val selected = state?.destination?.route  == screen.route
+					BottomBarItem(
+						mainViewModel, navController, screen, selected,
+						badges[screen.route].orEmpty(),
+						if (selected) selectedTabFocus else null
+					)
+				}
+			}
 		}
 	}
 }
@@ -399,7 +431,9 @@ fun RowScope.BottomBarItem(
 			else MaterialTheme.colorScheme.onSurfaceVariant
 	),
 	icon = {
-		BadgedBox({ BadgeText(badge) }) {
+		// Red only where something waits for the user: the updates, or a tab that failed ("!").
+		// The Apps and Search figures are counts — 946 installed apps is not an alarm.
+		BadgedBox({ BadgeText(badge, alert = screen == Screen.Updates || badge == "!") }) {
 			Icon(if (selected) screen.iconSelected else screen.icon, contentDescription = null)
 		}
    	},

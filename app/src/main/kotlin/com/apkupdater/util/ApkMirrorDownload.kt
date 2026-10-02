@@ -52,7 +52,7 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 	data class Resolved(val url: String, val bundle: Boolean)
 
 	/** A failure with a sentence the user can act on; [reason] is a string resource. */
-	class Failure(@StringRes val reason: Int, message: String) : IOException(message)
+	class Failure(@param:StringRes val reason: Int, message: String) : IOException(message)
 
 	/**
 	 * The chain was abandoned on purpose — the card was cancelled, or the setting switched off,

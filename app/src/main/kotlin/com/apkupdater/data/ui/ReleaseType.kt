@@ -17,7 +17,7 @@ import com.apkupdater.R
  * matches while a version that merely contains those letters — `devel`, `precise`, `src` —
  * does not. Anything unrecognised is Stable and shows no chip at all.
  */
-enum class ReleaseType(@StringRes val labelRes: Int?) {
+enum class ReleaseType(@param:StringRes val labelRes: Int?) {
     Stable(null),
     PreRelease(R.string.release_type_pre_release),
     Beta(R.string.release_type_beta),

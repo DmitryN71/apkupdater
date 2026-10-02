@@ -55,9 +55,14 @@ class UpdatesWorker(
     private val okHttpClient: OkHttpClient by inject()
 
     override suspend fun doWork(): Result {
-        updatesRepository.updates().collect {
-            if (it.isNotEmpty()) {
-                notification.showUpdateNotification(it.size)
+        // Skipped versions are not counted (build 179). The Updates tab never listed them, so a
+        // notification saying "5 updates" opened a list of 3 — and a version skipped for good kept
+        // the notification coming back after every scheduled check.
+        val skipped = prefs.ignoredVersions.get().toHashSet()
+        updatesRepository.updates().collect { found ->
+            val count = found.count { it.id !in skipped }
+            if (count > 0) {
+                notification.showUpdateNotification(count)
             }
         }
         // Release idle connections so Android doesn't count the app as "background active"

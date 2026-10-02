@@ -10,7 +10,7 @@ import com.apkupdater.R
  * SAVED DATA — append, never insert. Name stays first because it is the default and the only
  * one that reads the same on every device.
  */
-enum class AppsSort(@StringRes val labelRes: Int) {
+enum class AppsSort(@param:StringRes val labelRes: Int) {
 	Name(R.string.sort_by_name),
 	RecentlyUpdated(R.string.sort_recently_updated),
 	RecentlyInstalled(R.string.sort_recently_installed);

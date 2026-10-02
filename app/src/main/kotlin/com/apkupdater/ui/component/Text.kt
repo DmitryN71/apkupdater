@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.dp
 import com.apkupdater.prefs.Prefs
 import kotlinx.coroutines.delay
-import org.koin.androidx.compose.get
+import org.koin.compose.koinInject
 
 
 @Composable
@@ -122,7 +122,7 @@ fun ScrollableText(
     val inner = remember { mutableStateOf(IntSize.Zero) }
     val outer = remember { mutableStateOf(IntSize.Zero) }
 
-    if (get<Prefs>().playTextAnimations.get()) {
+    if (koinInject<Prefs>().playTextAnimations.get()) {
         LaunchedEffect(Unit) {
             // Wait for layout measurement and skip items that scroll past quickly
             delay(500)
@@ -155,10 +155,22 @@ fun ScrollableText(
     }
 }
 
+/**
+ * A tab's badge. [alert] keeps Material's red for what waits for the user — the updates, or "!"
+ * when a tab failed to load; anything else is a plain count and is drawn in a quiet neutral, so
+ * the 900-odd installed apps on the Apps tab stop reading as an alarm (build 179).
+ */
 @Composable
-fun BadgeText(number: String) {
+fun BadgeText(number: String, alert: Boolean = true) {
     if (number.isNotEmpty()) {
-        Badge {
+        Badge(
+            // secondary, not surfaceVariant: on the light theme that almost vanished into the
+            // panel. Not secondaryContainer either — that is the selected tab's pill, under it.
+            containerColor = if (alert) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.secondary,
+            contentColor = if (alert) MaterialTheme.colorScheme.onError
+                else MaterialTheme.colorScheme.onSecondary
+        ) {
             Text(number)
         }
     }

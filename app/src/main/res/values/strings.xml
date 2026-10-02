@@ -70,7 +70,7 @@
     <string name="settings_landscape_columns">Landscape Columns</string>
     <string name="play_text_animations">Play Text Animations</string>
     <string name="settings_sources">Sources</string>
-    <string name="settings_ui">UI</string>
+    <string name="settings_ui">Appearance</string>
     <string name="settings_alarm">Auto-Check</string>
     <string name="settings_options">Options</string>
     <string name="settings_updates">Update Checks</string>
@@ -80,7 +80,7 @@
     <string name="install_standard">Standard installer</string>
     <string name="settings_sources_summary">%1$d of %2$d enabled</string>
     <string name="settings_repos_summary">Added: %1$d</string>
-    <string name="settings_utils">Utils</string>
+    <string name="settings_utils">Backup and tools</string>
     <string name="settings_hour">Check Hour</string>
     <string name="settings_alarm_daily">Daily</string>
     <string name="settings_alarm_3day">Every 3 Days</string>
@@ -156,9 +156,9 @@
     <string name="config_exported">Configuration exported successfully</string>
     <string name="config_imported">Configuration imported successfully</string>
     <string name="config_import_failed">Failed to import configuration</string>
-    <string name="clear_ignored_versions">Clear Ignored Versions (%1$d)</string>
-    <string name="ignored_versions_cleared">Ignored versions cleared</string>
-    <string name="no_ignored_versions">No ignored versions</string>
+    <string name="clear_ignored_versions">Clear skipped versions (%1$d)</string>
+    <string name="ignored_versions_cleared">Skipped versions cleared</string>
+    <string name="no_ignored_versions">No skipped versions</string>
 
     // Notifications
     <string name="notification_channel_name">Updates</string>
@@ -240,4 +240,10 @@
     <string name="download_progress">%1$s of %2$s</string>
     <string name="download_preparing">Preparing…</string>
     <string name="go_home_cd">Back to the start screen</string>
+    <string name="show_skipped">Show skipped (%1$d)</string>
+    <string name="hide_skipped">Hide skipped</string>
+    <string name="unskip_cd">Unskip</string>
+    <string name="settings_utils_summary">Export, import, logs</string>
+    <string name="settings_code_hosting">Code hosting</string>
+    <string name="settings_stores">Stores</string>
 </resources>

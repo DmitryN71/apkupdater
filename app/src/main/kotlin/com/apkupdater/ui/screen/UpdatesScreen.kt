@@ -36,6 +36,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -153,6 +155,7 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Col
 		Unit
 	}
 
+	val showSkipped = viewModel.showSkipped.collectAsStateWithLifecycle().value
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
 		UpdatesScreenLoading()
 	}.onIdle {
@@ -164,7 +167,8 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Col
 	}.onSuccess {
 		UpdatesScreenSuccess(
 			viewModel, it.updates, onRefresh, firstItemFocus, isTv, notificationPermission,
-			only = it.only, onCheck = onCheck, onCheckOnly = onCheckOnly, refreshFocus = refreshFocus
+			only = it.only, onCheck = onCheck, onCheckOnly = onCheckOnly, refreshFocus = refreshFocus,
+			skipped = if (showSkipped) it.skipped else emptyList()
 		)
 	}
 }
@@ -244,8 +248,10 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
 		// worse than none.
 		val state = viewModel.state().collectAsStateWithLifecycle().value
 		val checking = viewModel.isChecking.collectAsStateWithLifecycle().value
+		val showSkipped = viewModel.showSkipped.collectAsStateWithLifecycle().value
 		val canGoHome = !checking && state is UpdatesUiState.Success &&
-			state.updates.isNotEmpty() && state.updates.none { it.isInstalling }
+			(state.updates.isNotEmpty() || (showSkipped && state.skipped.isNotEmpty())) &&
+			state.updates.none { it.isInstalling }
 		if (canGoHome) {
 			val isTv = LocalContext.current.isAndroidTv()
 			TvIconButton(onClick = {
@@ -280,6 +286,8 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
 fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
 	var open by remember { mutableStateOf(false) }
 	val switching by viewModel.switchingPlayAccount.collectAsStateWithLifecycle()
+	val skippedCount = viewModel.state().collectAsStateWithLifecycle().value.skipped().size
+	val showSkipped by viewModel.showSkipped.collectAsStateWithLifecycle()
 	Box {
 		TvIconButton(onClick = { open = true }) {
 			Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options_cd))
@@ -344,6 +352,30 @@ fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
 					// PlayRepository, so a running check finishes on the session it started with
 					// and the next check gets the new account.
 					enabled = !switching
+				)
+			}
+			// Only when the last check found something skipped: the skip list itself holds
+			// hashes, not names, so there is nothing to show before a check has met the cards.
+			if (skippedCount > 0) {
+				HorizontalDivider(Modifier.padding(vertical = 4.dp))
+				DropdownMenuItem(
+					text = {
+						Text(
+							if (showSkipped) stringResource(R.string.hide_skipped)
+							else stringResource(R.string.show_skipped, skippedCount)
+						)
+					},
+					onClick = {
+						open = false
+						viewModel.toggleShowSkipped()
+					},
+					leadingIcon = {
+						Icon(
+							if (showSkipped) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+							null,
+							Modifier.size(20.dp)
+						)
+					}
 				)
 			}
 		}
@@ -552,7 +584,9 @@ fun ColumnScope.UpdatesScreenSuccess(
 	only: Source? = null,
 	onCheck: () -> Unit = {},
 	onCheckOnly: (Source) -> Unit = {},
-	refreshFocus: FocusRequester? = null
+	refreshFocus: FocusRequester? = null,
+	/** Drawn after [updates], dimmed, with Unskip as their one button. Empty unless ⋮ → "Show skipped". */
+	skipped: List<AppUpdate> = emptyList()
 ) {
 	val handler = LocalUriHandler.current
 	val context = LocalContext.current
@@ -573,7 +607,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 	// by Dmitry from his own TV, in compact mode, where the whole list fits and so EVERY
 	// focus move is such a remainder.
 	val pullEnabled = !isTv
-	if (updates.isEmpty()) {
+	if (updates.isEmpty() && skipped.isEmpty()) {
 		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
 			// The start screen again, headed by the result: nothing to list means nothing in the
 			// way of the big button and the tiles. "All up to date" only when every source was
@@ -603,12 +637,21 @@ fun ColumnScope.UpdatesScreenSuccess(
 			else PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
 		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
-			TvEqualRows(updates, itemKey = { it.id }, contentPadding = gridPadding) { update, cardModifier ->
+			// The skipped cards last, so the ones that need doing keep their places at the top.
+			val skippedIds = skipped.mapTo(HashSet()) { it.id }
+			TvEqualRows(updates + skipped, itemKey = { it.id }, contentPadding = gridPadding) { update, cardModifier ->
+					val isSkipped = update.id in skippedIds
 					TvUpdateItem(
 						update,
 						modifier = cardModifier,
 						{ viewModel.install(update, handler, notificationPermission) },
-						{ viewModel.ignoreVersion(update.id) },
+						{
+							// Skip and Unskip both move the card to the other pile, which TvEqualRows
+							// builds as another row: the focused button is disposed and the D-pad
+							// falls to the bottom bar (build 137). The top bar is always there.
+							if (isTv) refreshFocus?.let { runCatching { it.requestFocus() } }
+							viewModel.ignoreVersion(update.id, skip = !isSkipped)
+						},
 						onOpen = { packageName ->
 							context.launchIntentFor(packageName)?.let {
 								context.startActivity(it)
@@ -618,7 +661,8 @@ fun ColumnScope.UpdatesScreenSuccess(
 						onSourceClick = if (update.sourceUrl.isNotEmpty()) {{ handler.openUri(update.sourceUrl) }} else null,
 						onDownload = { viewModel.downloadToFolder(it) },
 						onCancel = { viewModel.userCancelInstall(it) },
-						firstItemFocus = if (isTv && update.id == firstId) firstItemFocus else null
+						firstItemFocus = if (isTv && update.id == firstId) firstItemFocus else null,
+						skipped = isSkipped
 					)
 			}
 			if (showFab) {

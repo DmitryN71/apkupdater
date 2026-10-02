@@ -42,7 +42,7 @@ import com.apkupdater.prefs.Prefs
 import com.apkupdater.ui.theme.Design
 import com.apkupdater.util.formatBytes
 import com.apkupdater.util.getAppName
-import org.koin.androidx.compose.get
+import org.koin.compose.koinInject
 
 
 /**
@@ -77,9 +77,9 @@ fun UpdateCardHeader(
 	chipRightFocus: FocusRequester?,
 	modifier: Modifier = Modifier
 ) {
-	// Read once, unconditionally — get<Prefs>() is @Composable and must not be called behind a
+	// Read once, unconditionally — koinInject<Prefs>() is @Composable and must not be called behind a
 	// short-circuit (overflow flips 0→N after layout measures).
-	val animateText = get<Prefs>().playTextAnimations.get()
+	val animateText = koinInject<Prefs>().playTextAnimations.get()
 	Row(modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
 		// 52 dp of box with a 2 dp inset leaves 48 dp of icon — launcher-sized.
 		if (uri == null) {

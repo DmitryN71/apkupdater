@@ -21,8 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.debugInspectorInfo
-import androidx.compose.ui.platform.inspectable
 
 /**
  * A modifier for translating the position and scaling the size of a pull-to-refresh indicator
@@ -37,11 +35,7 @@ import androidx.compose.ui.platform.inspectable
 fun Modifier.pullRefreshIndicatorTransform(
     state: PullRefreshState,
     scale: Boolean = false,
-) = inspectable(inspectorInfo = debugInspectorInfo {
-    name = "pullRefreshIndicatorTransform"
-    properties["state"] = state
-    properties["scale"] = scale
-}) {
+) = this.then(
     Modifier
         // Essentially we only want to clip the at the top, so the indicator will not appear when
         // the position is 0. It is preferable to clip the indicator as opposed to the layout that
@@ -70,4 +64,4 @@ fun Modifier.pullRefreshIndicatorTransform(
                 scaleY = scaleFraction
             }
         }
-}
+)
