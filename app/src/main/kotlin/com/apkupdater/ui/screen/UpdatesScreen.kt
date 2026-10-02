@@ -10,9 +10,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.apkupdater.ui.component.ActionTile
+import com.apkupdater.ui.theme.Design
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -78,7 +85,6 @@ import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.data.ui.Source
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.ui.component.DefaultErrorScreen
-import com.apkupdater.ui.component.EmptyGrid
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.RefreshIcon
 import com.apkupdater.ui.component.RequestInitialTvFocus
@@ -137,17 +143,27 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Col
 		viewModel.refresh()
 		Unit
 	}
+	// The start screen's source tiles. Same hand-over of the D-pad as onCheck: the tile pressed
+	// is about to be replaced by the shimmer, and a disposed focused node drops focus to the
+	// bottom bar.
+	val onCheckOnly = { source: Source ->
+		if (isTv) runCatching { refreshFocus.requestFocus() }
+		viewModel.refresh(only = source)
+		Unit
+	}
 
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
 		UpdatesScreenLoading()
 	}.onIdle {
-		UpdatesScreenIdle(onRefresh, onCheck, isTv)
+		// Read each time, like the ⋮ menu does: a source switched on or off in Settings a
+		// moment ago is already right when the tab is opened again.
+		UpdatesScreenIdle(onRefresh, onCheck, onCheckOnly, viewModel.enabledSources(), isTv)
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
 		UpdatesScreenSuccess(
 			viewModel, it.updates, onRefresh, firstItemFocus, isTv, notificationPermission,
-			only = it.only, onCheck = onCheck, refreshFocus = refreshFocus
+			only = it.only, onCheck = onCheck, onCheckOnly = onCheckOnly, refreshFocus = refreshFocus
 		)
 	}
 }
@@ -318,15 +334,17 @@ fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ColumnScope.UpdatesScreenIdle(onRefresh: () -> Unit, onCheck: () -> Unit, isTv: Boolean) {
+fun ColumnScope.UpdatesScreenIdle(
+	onRefresh: () -> Unit,
+	onCheck: () -> Unit,
+	onCheckOnly: (Source) -> Unit,
+	sources: List<Source>,
+	isTv: Boolean
+) {
 	val pullState = rememberPullRefreshState(refreshing = false, onRefresh = onRefresh)
 	val pullEnabled = !isTv
 	Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
-		CheckPrompt(
-			title = stringResource(R.string.check_prompt),
-			hint = stringResource(R.string.check_prompt_hint),
-			onCheck = onCheck
-		)
+		StartScreen(sources, onCheck, onCheckOnly)
 		if (pullEnabled) PullRefreshIndicator(
 			false, pullState,
 			Modifier.align(Alignment.TopCenter),
@@ -336,9 +354,9 @@ fun ColumnScope.UpdatesScreenIdle(onRefresh: () -> Unit, onCheck: () -> Unit, is
 }
 
 /**
- * A big round Check button in the middle of an empty screen, with a line saying what it is for.
+ * The big round Check button in the middle of [StartScreen].
  *
- * It duplicates the top-bar button on purpose. With checking at launch now off by default, the
+ * It duplicates the top-bar button on purpose. With checking at launch off by default, the
  * Updates tab opens empty, and a small icon in a corner is not an answer to "why is there
  * nothing here?" — this is. On a TV it takes the D-pad as soon as it appears, so a single OK
  * starts the check.
@@ -349,48 +367,121 @@ fun ColumnScope.UpdatesScreenIdle(onRefresh: () -> Unit, onCheck: () -> Unit, is
  * around it.
  */
 @Composable
-fun CheckPrompt(title: String, hint: String, onCheck: () -> Unit) = Box(Modifier.fillMaxSize()) {
-	// An empty scrollable underneath gives pull-to-refresh something to pull, as in EmptyGrid.
-	LazyColumn(Modifier.fillMaxSize()) {}
+fun BigCheckButton(contentDescription: String, onCheck: () -> Unit) {
 	val focus = remember { FocusRequester() }
 	RequestInitialTvFocus(focus)
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
+	Surface(
+		onClick = onCheck,
+		modifier = Modifier.size(96.dp).focusRequester(focus),
+		shape = CircleShape,
+		color = MaterialTheme.colorScheme.primaryContainer,
+		contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+		// Thicker than the usual frame: it goes round a 96 dp circle, alone on the screen.
+		border = if (focused) BorderStroke(3.dp, TvFocus.frame) else null,
+		interactionSource = interaction
+	) {
+		Box(contentAlignment = Alignment.Center) {
+			Icon(
+				painterResource(R.drawable.ic_refresh),
+				contentDescription = contentDescription,
+				modifier = Modifier.size(44.dp)
+			)
+		}
+	}
+}
+
+/**
+ * The Updates tab whenever there is no list to show (build 177, the first screen of the
+ * redesign — see ui/theme/Design): the big button checks every source, and under it a tile per
+ * enabled source checks only that one. That used to live in the ⋮ menu alone, where few people
+ * found it.
+ *
+ * Before the first check [title] asks for one. After a check that found nothing it says so —
+ * "GitHub: no updates", or "All apps are up to date!" — and [hint] says what the big button does
+ * now. The screen stays the same otherwise, so the tiles are still there after a check of one
+ * source; with only the old prompt there, the way back to them was to swipe the app away.
+ *
+ * Columns follow the width: two on a phone, up to five on a TV or a tablet, so ten sources fit
+ * a phone without scrolling and take two rows on a TV. It is centred when it fits and scrolls
+ * when it does not (a phone in landscape); the scroll also gives pull-to-refresh something to
+ * pull, which an empty LazyColumn did before.
+ *
+ * With one source or none the tiles would only repeat the big button, so they are left out.
+ * D-pad: the big button has focus first, DOWN enters the tiles, and the grid is plain rows, so
+ * the geometric search moves through it the way it looks.
+ */
+@Composable
+fun StartScreen(
+	sources: List<Source>,
+	onCheck: () -> Unit,
+	onCheckOnly: (Source) -> Unit,
+	title: String = stringResource(R.string.check_prompt),
+	hint: String? = null
+) = BoxWithConstraints(Modifier.fillMaxSize()) {
+	val columns = ((maxWidth - Design.ScreenPadding * 2) / (Design.TileMinWidth + Design.Gap))
+		.toInt()
+		.coerceIn(2, 5)
+	val screenHeight = maxHeight
 	Column(
-		Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+		Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
 		horizontalAlignment = Alignment.CenterHorizontally
 	) {
-		Surface(
-			onClick = onCheck,
-			modifier = Modifier.size(96.dp).focusRequester(focus),
-			shape = CircleShape,
-			color = MaterialTheme.colorScheme.primaryContainer,
-			contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-			// Thicker than the usual frame: it goes round a 96 dp circle, alone on the screen.
-			border = if (focused) BorderStroke(3.dp, TvFocus.frame) else null,
-			interactionSource = interaction
+		Column(
+			Modifier
+				.widthIn(max = Design.ContentMaxWidth)
+				.fillMaxWidth()
+				.heightIn(min = screenHeight)
+				.padding(Design.ScreenPadding),
+			verticalArrangement = Arrangement.Center,
+			horizontalAlignment = Alignment.CenterHorizontally
 		) {
-			Box(contentAlignment = Alignment.Center) {
-				Icon(
-					painterResource(R.drawable.ic_refresh),
-					contentDescription = title,
-					modifier = Modifier.size(44.dp)
+			// Named for what it does, not by the title: after a check the title is a result.
+			BigCheckButton(stringResource(R.string.refresh_updates), onCheck)
+			Spacer(Modifier.height(20.dp))
+			Text(
+				title,
+				style = MaterialTheme.typography.titleMedium,
+				textAlign = TextAlign.Center
+			)
+			if (hint != null) {
+				Spacer(Modifier.height(6.dp))
+				Text(
+					hint,
+					style = MaterialTheme.typography.bodyMedium,
+					color = MaterialTheme.colorScheme.onSurfaceVariant,
+					textAlign = TextAlign.Center
 				)
 			}
+			if (sources.size > 1) {
+				Spacer(Modifier.height(6.dp))
+				Text(
+					stringResource(R.string.check_prompt_hint),
+					style = MaterialTheme.typography.bodyMedium,
+					color = MaterialTheme.colorScheme.onSurfaceVariant,
+					textAlign = TextAlign.Center
+				)
+				Spacer(Modifier.height(20.dp))
+				sources.chunked(columns).forEach { row ->
+					Row(
+						Modifier.fillMaxWidth().padding(bottom = Design.Gap),
+						horizontalArrangement = Arrangement.spacedBy(Design.Gap)
+					) {
+						row.forEach { source ->
+							ActionTile(
+								icon = source.resourceId,
+								label = source.name,
+								onClick = { onCheckOnly(source) },
+								modifier = Modifier.weight(1f)
+							)
+						}
+						// Keeps a short last row in the same columns as the rows above it.
+						repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+					}
+				}
+			}
 		}
-		Spacer(Modifier.height(20.dp))
-		Text(
-			title,
-			style = MaterialTheme.typography.titleMedium,
-			textAlign = TextAlign.Center
-		)
-		Spacer(Modifier.height(6.dp))
-		Text(
-			hint,
-			style = MaterialTheme.typography.bodyMedium,
-			color = MaterialTheme.colorScheme.onSurfaceVariant,
-			textAlign = TextAlign.Center
-		)
 	}
 }
 
@@ -437,6 +528,7 @@ fun ColumnScope.UpdatesScreenSuccess(
 	notificationPermission: ManagedActivityResultLauncher<String, Boolean>? = null,
 	only: Source? = null,
 	onCheck: () -> Unit = {},
+	onCheckOnly: (Source) -> Unit = {},
 	refreshFocus: FocusRequester? = null
 ) {
 	val handler = LocalUriHandler.current
@@ -460,14 +552,18 @@ fun ColumnScope.UpdatesScreenSuccess(
 	val pullEnabled = !isTv
 	if (updates.isEmpty()) {
 		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
-			// "All up to date" only when every source was asked. After a check of one source it
-			// would be a claim about all the sources that were not checked, so the screen names
-			// the one that was and offers the full check right there.
-			if (only != null) CheckPrompt(
-				title = stringResource(R.string.source_no_updates, only.name),
-				hint = stringResource(R.string.check_all_prompt),
-				onCheck = onCheck
-			) else EmptyGrid()
+			// The start screen again, headed by the result: nothing to list means nothing in the
+			// way of the big button and the tiles. "All up to date" only when every source was
+			// asked. After a check of one source it would be a claim about all the sources that
+			// were not checked, so the title names the one that was.
+			StartScreen(
+				sources = viewModel.enabledSources(),
+				onCheck = onCheck,
+				onCheckOnly = onCheckOnly,
+				title = if (only != null) stringResource(R.string.source_no_updates, only.name)
+					else stringResource(R.string.all_up_to_date),
+				hint = stringResource(R.string.check_all_prompt)
+			)
 			if (pullEnabled) PullRefreshIndicator(
 				false, pullState,
 				Modifier.align(Alignment.TopCenter),

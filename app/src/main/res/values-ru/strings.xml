@@ -209,7 +209,7 @@
     <string name="check_only">Проверить только</string>
     <string name="check_on_launch">Проверять при запуске</string>
     <string name="check_prompt">Нажмите, чтобы проверить обновления</string>
-    <string name="check_prompt_hint">или выберите один источник в меню ⋮</string>
+    <string name="check_prompt_hint">или проверьте только один источник:</string>
     <string name="check_all_prompt">Нажмите, чтобы проверить все источники</string>
     <string name="source_no_updates">%1$s: обновлений нет</string>
     <string name="play_switch_account">Сменить аккаунт Google Play</string>

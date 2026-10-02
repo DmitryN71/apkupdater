@@ -210,7 +210,7 @@
     <string name="check_only">Check only</string>
     <string name="check_on_launch">Check on Launch</string>
     <string name="check_prompt">Press to check for updates</string>
-    <string name="check_prompt_hint">or pick a single source from the ⋮ menu</string>
+    <string name="check_prompt_hint">or check just one source:</string>
     <string name="check_all_prompt">Press to check every source</string>
     <string name="source_no_updates">%1$s: no updates</string>
     <string name="play_switch_account">Switch Google Play account</string>
