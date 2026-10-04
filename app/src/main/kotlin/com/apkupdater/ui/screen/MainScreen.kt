@@ -481,7 +481,17 @@ fun NavHost(
 		}
 	}
 	composable(Screen.Search.route) { SearchScreen(searchViewModel) }
-	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, onRefresh) }
+	composable(Screen.Updates.route) {
+		UpdatesScreen(
+			updatesViewModel,
+			onRefresh,
+			// The start screen's ⋮ → "Sources settings": straight to the page that switches them.
+			onOpenSourcesSettings = {
+				settingsViewModel.setSources()
+				mainViewModel.navigateTo(navController, Screen.Settings.route)
+			}
+		)
+	}
 	composable(Screen.Settings.route) { SettingsScreen(settingsViewModel) }
 }
 

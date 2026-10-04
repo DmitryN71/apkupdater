@@ -194,6 +194,9 @@ class UpdatesViewModel(
 
 	fun toggleShowSkipped() {
 		_showSkipped.value = !_showSkipped.value
+		// The skipped cards replace the start screen, editor and all; Back must not stay with an
+		// editor nobody can see, nor bring it back after "Hide skipped".
+		_editingOrder.value = false
 	}
 
 	private val _cacheSize = MutableStateFlow(0L)
@@ -236,6 +239,9 @@ class UpdatesViewModel(
 		// Returning the running job also keeps MainViewModel's invokeOnCompletion honest.
 		// Safe without locking: every caller reaches this on the main thread.
 		refreshJob?.takeIf { it.isActive }?.let { return it }
+		// A check replaces the start screen, editor and all; coming back to it should not find
+		// the editor still open.
+		_editingOrder.value = false
 		runningOnly = only
 		// Here, on the main thread, rather than inside the job: a Stop tapped before the job got
 		// as far as clearing them would have republished the previous check's results.
@@ -800,8 +806,78 @@ class UpdatesViewModel(
 		snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.rustore_device_switched)))
 	}
 
-	/** What the "check only" menu offers: the sources switched on in Settings. */
-	fun enabledSources(): List<Source> = updatesRepository.enabledSources()
+	/**
+	 * The user's order of the sources (build 180), as Source names. A flow so the start screen
+	 * redraws the moment a tile is moved; pass its value to [enabledSources] from composition.
+	 */
+	private val _sourceOrder = MutableStateFlow(prefs.sourceOrder.get())
+	val sourceOrder: StateFlow<List<String>> = _sourceOrder
+
+	/** Every source in the user's order: the ones the stored list names, then the rest as before. */
+	private fun orderedSources(order: List<String>): List<Source> {
+		val all = updatesRepository.allSources()
+		val byName = all.associateBy { it.name }
+		val named = order.mapNotNull { byName[it] }.distinct()
+		return named + all.filter { it !in named }
+	}
+
+	/**
+	 * What the start screen's tiles and the "check only" menu offer: the sources switched on in
+	 * Settings, in the user's order. Read each time rather than cached, so a source switched on
+	 * or off a moment ago is already right.
+	 */
+	fun enabledSources(order: List<String> = _sourceOrder.value): List<Source> {
+		val enabled = updatesRepository.enabledSources().toSet()
+		return orderedSources(order).filter { it in enabled }
+	}
+
+	/**
+	 * Moves [source] one place earlier ([delta] -1) or later (+1) among the enabled sources. It
+	 * swaps places with its enabled neighbour in the full list, so the sources switched off keep
+	 * where they were for the day they are switched back on. At either end it does nothing.
+	 */
+	fun moveSource(source: Source, delta: Int) {
+		val enabled = enabledSources()
+		val from = enabled.indexOf(source)
+		val to = from + delta
+		if (from < 0 || to !in enabled.indices) return
+		val other = enabled[to]
+		val names = orderedSources(_sourceOrder.value).map { it.name }.toMutableList()
+		val a = names.indexOf(source.name)
+		val b = names.indexOf(other.name)
+		names[a] = other.name
+		names[b] = source.name
+		saveSourceOrder(names)
+	}
+
+	/** The "A–Z" button of the order editor: every source by name. */
+	fun sortSourcesByName() =
+		saveSourceOrder(orderedSources(_sourceOrder.value).sortedBy { it.name.lowercase() }.map { it.name })
+
+	/**
+	 * Picks up an order written behind this ViewModel's back — Settings' config import. Called
+	 * whenever the Updates tab is opened; without it the imported order showed only after a
+	 * restart, and the first move or A–Z wrote the old one back over it.
+	 */
+	fun reloadSourceOrder() {
+		_sourceOrder.value = prefs.sourceOrder.get()
+	}
+
+	private fun saveSourceOrder(names: List<String>) {
+		prefs.sourceOrder.put(names)
+		_sourceOrder.value = names
+	}
+
+	/**
+	 * The start screen is showing the order editor instead of the big button and the tiles
+	 * (⋮ → "Order of sources"). Left by its Done button, by Back, and by any check starting.
+	 */
+	private val _editingOrder = MutableStateFlow(false)
+	val editingOrder: StateFlow<Boolean> = _editingOrder
+
+	fun setEditingOrder(on: Boolean) {
+		_editingOrder.value = on
+	}
 
 	private val _switchingPlayAccount = MutableStateFlow(false)
 	/** True while a manual switch of the Play account is under way; its menu item waits. */

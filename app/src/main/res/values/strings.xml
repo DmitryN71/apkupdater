@@ -246,4 +246,13 @@
     <string name="settings_utils_summary">Export, import, logs</string>
     <string name="settings_code_hosting">Code hosting</string>
     <string name="settings_stores">Stores</string>
+    <string name="source_order">Order of sources</string>
+    <string name="source_order_hint">The tiles follow this order, left to right.</string>
+    <string name="source_order_az">A–Z</string>
+    <string name="done">Done</string>
+    <string name="move_up_cd">Move up</string>
+    <string name="move_down_cd">Move down</string>
+    <string name="sources_settings">Sources settings</string>
+    <string name="play_switch_account_short">Switch account</string>
+    <string name="rustore_switch_device_short">New device</string>
 </resources>

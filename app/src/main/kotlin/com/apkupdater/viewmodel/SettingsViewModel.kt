@@ -376,6 +376,7 @@ class SettingsViewModel(
 			addProperty("notifyOnInstall", prefs.notifyOnInstall.get())
 			addProperty("githubToken", prefs.githubToken.get())
 			add("ignoredApps", gson.toJsonTree(prefs.ignoredApps.get()))
+			add("sourceOrder", gson.toJsonTree(prefs.sourceOrder.get()))
 			add("customGitRepos", gson.toJsonTree(prefs.customGitRepos.get()))
 		}
 		return gson.toJson(config)
@@ -429,6 +430,9 @@ class SettingsViewModel(
 		obj.get("githubToken")?.asString?.let { prefs.githubToken.put(it) }
 		obj.get("ignoredApps")?.let {
 			prefs.ignoredApps.put(gson.fromJson(it, Array<String>::class.java).toList())
+		}
+		obj.get("sourceOrder")?.let {
+			prefs.sourceOrder.put(gson.fromJson(it, Array<String>::class.java).toList())
 		}
 		obj.get("customGitRepos")?.let {
 			prefs.customGitRepos.put(gson.fromJson(it, Array<CustomGitRepo>::class.java).toList())

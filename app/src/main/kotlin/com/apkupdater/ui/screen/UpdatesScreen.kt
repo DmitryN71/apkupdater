@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.apkupdater.ui.component.ActionTile
+import com.apkupdater.ui.component.SettingsContentRow
+import com.apkupdater.ui.component.SettingsGroup
+import com.apkupdater.ui.component.IconChip
+import com.apkupdater.ui.component.SourceActionChip
 import com.apkupdater.ui.theme.Design
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -32,6 +36,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
@@ -101,7 +118,11 @@ import com.apkupdater.viewmodel.UpdatesViewModel
 
 
 @Composable
-fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Column {
+fun UpdatesScreen(
+	viewModel: UpdatesViewModel,
+	onRefresh: () -> Unit = {},
+	onOpenSourcesSettings: () -> Unit = {}
+) = Column {
 	// The top bar is built ONCE here, outside the state branches. It used to be repeated inside
 	// UpdatesScreenLoading and UpdatesScreenSuccess — two different call sites, so every switch
 	// between "checking" and "done" DISPOSED the Refresh button the user had just pressed. With
@@ -114,7 +135,7 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Col
 	// disposed drops focus to the bottom bar (build 137). The top-bar button stays put, turns
 	// into the Stop ring, and is exactly where the user wants to be during a check.
 	val refreshFocus = remember { FocusRequester() }
-	UpdatesTopBar(viewModel, refreshFocus)
+	UpdatesTopBar(viewModel, refreshFocus, onOpenSourcesSettings)
 	ProgressBanner(viewModel.refreshProgress.collectAsStateWithLifecycle().value)
 
 	// Placed once per visit to the tab, not once per refresh. UpdatesScreen survives the state
@@ -156,26 +177,41 @@ fun UpdatesScreen(viewModel: UpdatesViewModel, onRefresh: () -> Unit = {}) = Col
 	}
 
 	val showSkipped = viewModel.showSkipped.collectAsStateWithLifecycle().value
+	// Read here, and handed down, so that moving a source redraws the tiles at once. Reloaded on
+	// each visit, for an order that came in with a config import.
+	LaunchedEffect(Unit) { viewModel.reloadSourceOrder() }
+	val sourceOrder = viewModel.sourceOrder.collectAsStateWithLifecycle().value
+	// Back leaves the order editor before it leaves the app — while the editor is really on
+	// screen: with one source left there are no tiles to order, and StartScreen shows none.
+	val editingOrder = viewModel.editingOrder.collectAsStateWithLifecycle().value
+	BackHandler(enabled = editingOrder && viewModel.enabledSources(sourceOrder).size > 1) {
+		viewModel.setEditingOrder(false)
+	}
 	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
 		UpdatesScreenLoading()
 	}.onIdle {
 		// Read each time, like the ⋮ menu does: a source switched on or off in Settings a
 		// moment ago is already right when the tab is opened again.
-		UpdatesScreenIdle(onRefresh, onCheck, onCheckOnly, viewModel.enabledSources(), isTv)
+		UpdatesScreenIdle(viewModel, onRefresh, onCheck, onCheckOnly, viewModel.enabledSources(sourceOrder), isTv)
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
 		UpdatesScreenSuccess(
 			viewModel, it.updates, onRefresh, firstItemFocus, isTv, notificationPermission,
 			only = it.only, onCheck = onCheck, onCheckOnly = onCheckOnly, refreshFocus = refreshFocus,
-			skipped = if (showSkipped) it.skipped else emptyList()
+			skipped = if (showSkipped) it.skipped else emptyList(),
+			sources = viewModel.enabledSources(sourceOrder)
 		)
 	}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = TopAppBar(
+fun UpdatesTopBar(
+	viewModel: UpdatesViewModel,
+	refreshFocus: FocusRequester,
+	onOpenSourcesSettings: () -> Unit = {}
+) = TopAppBar(
 	// One line, ellipsised: with the cache chip, Refresh and ⋮ all showing, a narrow phone has
 	// little room left, and a two-line title in a one-line bar is cut off mid-word.
 	title = { Text(stringResource(R.string.tab_updates), maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -239,7 +275,7 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
 				RefreshIcon(stringResource(R.string.refresh_updates))
 			}
 		}
-		UpdatesMoreAction(viewModel, checking)
+		UpdatesMoreAction(viewModel, checking, onOpenSourcesSettings)
 	},
 	navigationIcon = {
 		// Home, where the app's own icon sits, whenever there is a list to leave: one tap back
@@ -273,8 +309,9 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
 )
 
 /**
- * The ⋮ menu: check one source by itself, and — when Play is switched on — swap its anonymous
- * account for a fresh one.
+ * The ⋮ menu. With a list on screen: check one source by itself, Play's and RuStore's own actions,
+ * and the skipped versions. On the start screen, whose tiles already offer all that (build 180):
+ * the order of the tiles, a way to Settings › Sources, and the skipped versions.
  *
  * During a check the source items are disabled, never the button. Disabling the button would remove a
  * D-pad stop the moment a check began, and after picking a source from this very menu the focus
@@ -283,11 +320,23 @@ fun UpdatesTopBar(viewModel: UpdatesViewModel, refreshFocus: FocusRequester) = T
  * out, the item says so instead.
  */
 @Composable
-fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
+fun UpdatesMoreAction(
+	viewModel: UpdatesViewModel,
+	checking: Boolean,
+	onOpenSourcesSettings: () -> Unit = {}
+) {
 	var open by remember { mutableStateOf(false) }
 	val switching by viewModel.switchingPlayAccount.collectAsStateWithLifecycle()
-	val skippedCount = viewModel.state().collectAsStateWithLifecycle().value.skipped().size
+	val state = viewModel.state().collectAsStateWithLifecycle().value
+	val skippedCount = state.skipped().size
 	val showSkipped by viewModel.showSkipped.collectAsStateWithLifecycle()
+	val editingOrder by viewModel.editingOrder.collectAsStateWithLifecycle()
+	val sourceOrder by viewModel.sourceOrder.collectAsStateWithLifecycle()
+	// The start screen is up, and its tiles already offer every source and Play's and RuStore's
+	// actions — so the menu does not repeat them there (build 180). With a list on screen the
+	// tiles are gone and the menu is the only way to them, so there it stays as it was.
+	val onStartScreen = state is UpdatesUiState.Idle || (state is UpdatesUiState.Success &&
+		state.updates.isEmpty() && !(showSkipped && state.skipped.isNotEmpty()))
 	Box {
 		TvIconButton(onClick = { open = true }) {
 			Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options_cd))
@@ -295,64 +344,89 @@ fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
 		DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
 			// Read each time the menu opens, so a source switched on or off in Settings a moment
 			// ago is already right. Only the enabled ones: a source is off for a reason.
-			val sources = viewModel.enabledSources()
-			Text(
-				stringResource(R.string.check_only),
-				Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-				style = MaterialTheme.typography.labelMedium,
-				color = MaterialTheme.colorScheme.onSurfaceVariant
-			)
-			sources.forEach { source ->
+			val sources = viewModel.enabledSources(sourceOrder)
+			if (onStartScreen) {
+				if (sources.size > 1 && !editingOrder) {
+					DropdownMenuItem(
+						text = { Text(stringResource(R.string.source_order)) },
+						onClick = {
+							open = false
+							viewModel.setEditingOrder(true)
+						},
+						leadingIcon = { Icon(Icons.Outlined.SwapVert, null, Modifier.size(20.dp)) }
+					)
+				}
 				DropdownMenuItem(
-					text = { Text(source.name) },
+					text = { Text(stringResource(R.string.sources_settings)) },
 					onClick = {
 						open = false
-						// Through the shimmer, like the Refresh button. Keeping the list live during
-						// the check was tried first and was worse: the result re-sorts the list,
-						// and TvEqualRows keys each row by its first card, so one card more or less
-						// rebuilds every row below it — disposing whichever card held the D-pad and
-						// dropping focus to the bottom bar. And taps on a live card during a check
-						// queue behind the check's lock, so Skip or Hide seemed to do nothing.
-						viewModel.refresh(only = source)
+						onOpenSourcesSettings()
 					},
-					leadingIcon = {
-						Icon(painterResource(source.resourceId), null, Modifier.size(20.dp))
-					},
-					enabled = !checking
+					leadingIcon = { Icon(Icons.Outlined.Settings, null, Modifier.size(20.dp)) }
 				)
-			}
-			if (PlaySource in sources || RuStoreSource in sources) {
-				HorizontalDivider(Modifier.padding(vertical = 4.dp))
-			}
-			if (RuStoreSource in sources) {
-				DropdownMenuItem(
-					text = { Text(stringResource(R.string.rustore_switch_device)) },
-					onClick = {
-						open = false
-						viewModel.switchRuStoreDevice()
-					},
-					leadingIcon = {
-						Icon(painterResource(R.drawable.ic_rustore), null, Modifier.size(20.dp))
-					},
-					// Nothing disables it: there is no network call and no limit behind it, and
-					// the new device is only introduced on the NEXT check anyway.
+			} else {
+				Text(
+					stringResource(R.string.check_only),
+					Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+					style = MaterialTheme.typography.labelMedium,
+					color = MaterialTheme.colorScheme.onSurfaceVariant
 				)
+				sources.forEach { source ->
+					DropdownMenuItem(
+						text = { Text(source.name) },
+						onClick = {
+							open = false
+							// Through the shimmer, like the Refresh button. Keeping the list live during
+							// the check was tried first and was worse: the result re-sorts the list,
+							// and TvEqualRows keys each row by its first card, so one card more or less
+							// rebuilds every row below it — disposing whichever card held the D-pad and
+							// dropping focus to the bottom bar. And taps on a live card during a check
+							// queue behind the check's lock, so Skip or Hide seemed to do nothing.
+							viewModel.refresh(only = source)
+						},
+						leadingIcon = {
+							Icon(painterResource(source.resourceId), null, Modifier.size(20.dp))
+						},
+						enabled = !checking
+					)
+				}
 			}
-			if (PlaySource in sources) {
-				DropdownMenuItem(
-					text = { Text(stringResource(R.string.play_switch_account)) },
-					onClick = {
-						open = false
-						viewModel.switchPlayAccount()
-					},
-					leadingIcon = {
-						Icon(painterResource(R.drawable.ic_play), null, Modifier.size(20.dp))
-					},
-					// Allowed during a check. Sign-ins and session reads share one lock in
-					// PlayRepository, so a running check finishes on the session it started with
-					// and the next check gets the new account.
-					enabled = !switching
-				)
+			// Play's and RuStore's own actions, wherever there are no tiles to carry them: with a
+			// list on screen, and on a start screen of one source, which shows no tiles at all.
+			if (!(onStartScreen && sources.size > 1)) {
+				if (PlaySource in sources || RuStoreSource in sources) {
+					HorizontalDivider(Modifier.padding(vertical = 4.dp))
+				}
+				if (RuStoreSource in sources) {
+					DropdownMenuItem(
+						text = { Text(stringResource(R.string.rustore_switch_device)) },
+						onClick = {
+							open = false
+							viewModel.switchRuStoreDevice()
+						},
+						leadingIcon = {
+							Icon(painterResource(R.drawable.ic_rustore), null, Modifier.size(20.dp))
+						},
+						// Nothing disables it: there is no network call and no limit behind it, and
+						// the new device is only introduced on the NEXT check anyway.
+					)
+				}
+				if (PlaySource in sources) {
+					DropdownMenuItem(
+						text = { Text(stringResource(R.string.play_switch_account)) },
+						onClick = {
+							open = false
+							viewModel.switchPlayAccount()
+						},
+						leadingIcon = {
+							Icon(painterResource(R.drawable.ic_play), null, Modifier.size(20.dp))
+						},
+						// Allowed during a check. Sign-ins and session reads share one lock in
+						// PlayRepository, so a running check finishes on the session it started with
+						// and the next check gets the new account.
+						enabled = !switching
+					)
+				}
 			}
 			// Only when the last check found something skipped: the skip list itself holds
 			// hashes, not names, so there is nothing to show before a check has met the cards.
@@ -390,6 +464,7 @@ fun UpdatesMoreAction(viewModel: UpdatesViewModel, checking: Boolean) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ColumnScope.UpdatesScreenIdle(
+	viewModel: UpdatesViewModel,
 	onRefresh: () -> Unit,
 	onCheck: () -> Unit,
 	onCheckOnly: (Source) -> Unit,
@@ -397,9 +472,11 @@ fun ColumnScope.UpdatesScreenIdle(
 	isTv: Boolean
 ) {
 	val pullState = rememberPullRefreshState(refreshing = false, onRefresh = onRefresh)
-	val pullEnabled = !isTv
+	// Not inside the order editor either: a pull there started a full check and closed it.
+	val editingOrder by viewModel.editingOrder.collectAsStateWithLifecycle()
+	val pullEnabled = !isTv && !editingOrder
 	Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
-		StartScreen(sources, onCheck, onCheckOnly)
+		StartScreen(viewModel, sources, onCheck, onCheckOnly)
 		if (pullEnabled) PullRefreshIndicator(
 			false, pullState,
 			Modifier.align(Alignment.TopCenter),
@@ -458,6 +535,10 @@ fun BigCheckButton(contentDescription: String, onCheck: () -> Unit) {
  * now. The screen stays the same otherwise, so the tiles are still there after a check of one
  * source; with only the old prompt there, the way back to them was to swipe the app away.
  *
+ * The tiles come in the user's order (build 180, ⋮ → "Order of sources", which turns this screen
+ * into [SourceOrderEditor]). Under them, a row with Play's "Switch account" and RuStore's "New
+ * device", which until then lived only in the ⋮ menu.
+ *
  * Columns follow the width: two on a phone, up to five on a TV or a tablet, so ten sources fit
  * a phone without scrolling and take two rows on a TV. It is centred when it fits and scrolls
  * when it does not (a phone in landscape); the scroll also gives pull-to-refresh something to
@@ -465,16 +546,19 @@ fun BigCheckButton(contentDescription: String, onCheck: () -> Unit) {
  *
  * With one source or none the tiles would only repeat the big button, so they are left out.
  * D-pad: the big button has focus first, DOWN enters the tiles, and the grid is plain rows, so
- * the geometric search moves through it the way it looks.
+ * the geometric search moves through it the way it looks; DOWN from the last row reaches the
+ * actions under it.
  */
 @Composable
 fun StartScreen(
+	viewModel: UpdatesViewModel,
 	sources: List<Source>,
 	onCheck: () -> Unit,
 	onCheckOnly: (Source) -> Unit,
 	title: String = stringResource(R.string.check_prompt),
 	hint: String? = null
 ) = BoxWithConstraints(Modifier.fillMaxSize()) {
+	val editing = viewModel.editingOrder.collectAsStateWithLifecycle().value && sources.size > 1
 	val columns = ((maxWidth - Design.ScreenPadding * 2) / (Design.TileMinWidth + Design.Gap))
 		.toInt()
 		.coerceIn(2, 5)
@@ -492,51 +576,186 @@ fun StartScreen(
 			verticalArrangement = Arrangement.Center,
 			horizontalAlignment = Alignment.CenterHorizontally
 		) {
-			// Named for what it does, not by the title: after a check the title is a result.
-			BigCheckButton(stringResource(R.string.refresh_updates), onCheck)
-			Spacer(Modifier.height(20.dp))
-			Text(
-				title,
-				style = MaterialTheme.typography.titleMedium,
-				textAlign = TextAlign.Center
-			)
-			if (hint != null) {
-				Spacer(Modifier.height(6.dp))
-				Text(
-					hint,
-					style = MaterialTheme.typography.bodyMedium,
-					color = MaterialTheme.colorScheme.onSurfaceVariant,
-					textAlign = TextAlign.Center
-				)
-			}
-			if (sources.size > 1) {
-				Spacer(Modifier.height(6.dp))
-				Text(
-					stringResource(R.string.check_prompt_hint),
-					style = MaterialTheme.typography.bodyMedium,
-					color = MaterialTheme.colorScheme.onSurfaceVariant,
-					textAlign = TextAlign.Center
-				)
+			if (editing) {
+				SourceOrderEditor(viewModel, sources)
+			} else {
+				// Named for what it does, not by the title: after a check the title is a result.
+				BigCheckButton(stringResource(R.string.refresh_updates), onCheck)
 				Spacer(Modifier.height(20.dp))
-				sources.chunked(columns).forEach { row ->
-					Row(
-						Modifier.fillMaxWidth().padding(bottom = Design.Gap),
-						horizontalArrangement = Arrangement.spacedBy(Design.Gap)
-					) {
-						row.forEach { source ->
-							ActionTile(
-								icon = source.resourceId,
-								label = source.name,
-								onClick = { onCheckOnly(source) },
-								modifier = Modifier.weight(1f)
-							)
+				Text(
+					title,
+					style = MaterialTheme.typography.titleMedium,
+					textAlign = TextAlign.Center
+				)
+				if (hint != null) {
+					Spacer(Modifier.height(6.dp))
+					Text(
+						hint,
+						style = MaterialTheme.typography.bodyMedium,
+						color = MaterialTheme.colorScheme.onSurfaceVariant,
+						textAlign = TextAlign.Center
+					)
+				}
+				if (sources.size > 1) {
+					Spacer(Modifier.height(6.dp))
+					Text(
+						stringResource(R.string.check_prompt_hint),
+						style = MaterialTheme.typography.bodyMedium,
+						color = MaterialTheme.colorScheme.onSurfaceVariant,
+						textAlign = TextAlign.Center
+					)
+					Spacer(Modifier.height(20.dp))
+					sources.chunked(columns).forEach { row ->
+						Row(
+							Modifier.fillMaxWidth().padding(bottom = Design.Gap),
+							horizontalArrangement = Arrangement.spacedBy(Design.Gap)
+						) {
+							row.forEach { source ->
+								ActionTile(
+									icon = source.resourceId,
+									label = source.name,
+									onClick = { onCheckOnly(source) },
+									modifier = Modifier.weight(1f)
+								)
+							}
+							// Keeps a short last row in the same columns as the rows above it.
+							repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
 						}
-						// Keeps a short last row in the same columns as the rows above it.
-						repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+					}
+					// Play's and RuStore's own actions, in one quiet row under the grid, in the
+					// order their sources have. They first sat under their tiles, which left a hole
+					// beside each and broke the grid apart whenever the two were not neighbours
+					// (Dmitry, on his phone and TV) — so here the source's icon says whose action
+					// it is, and the grid stays whole. Guarded in the ViewModel: a second press while
+					// an account switch is under way is ignored, and its progress shows in the banner.
+					val withActions = sources.filter { it == PlaySource || it == RuStoreSource }
+					if (withActions.isNotEmpty()) {
+						Row(
+							Modifier.fillMaxWidth().padding(top = 8.dp),
+							horizontalArrangement = Arrangement.spacedBy(Design.Gap, Alignment.CenterHorizontally)
+						) {
+							withActions.forEach { source ->
+								if (source == PlaySource) {
+									SourceActionChip(
+										source.resourceId,
+										stringResource(R.string.play_switch_account_short),
+										onClick = { viewModel.switchPlayAccount() }
+									)
+								} else {
+									SourceActionChip(
+										source.resourceId,
+										stringResource(R.string.rustore_switch_device_short),
+										onClick = { viewModel.switchRuStoreDevice() }
+									)
+								}
+							}
+						}
 					}
 				}
 			}
 		}
+	}
+}
+
+/**
+ * The start screen while the user puts the sources in order (⋮ → "Order of sources", build 180):
+ * one row per enabled source with an up and a down arrow, then "A–Z" and "Done". The tiles follow
+ * this list left to right, row by row.
+ *
+ * A list rather than the grid with sideways arrows of the first sketch, for the TV. The rows are
+ * a SettingsGroup, which composes each under its source's key in a single column, so a moved row
+ * keeps its node — and the D-pad stays on the arrow just pressed, moving with it. In the grid a
+ * tile that changed rows was a different node, and the focus fell to the bottom bar each time.
+ * Arrows rather than dragging, because a remote cannot drag.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SourceOrderEditor(viewModel: UpdatesViewModel, sources: List<Source>) {
+	val firstFocus = remember { FocusRequester() }
+	RequestInitialTvFocus(firstFocus)
+	Text(
+		stringResource(R.string.source_order),
+		style = MaterialTheme.typography.titleMedium,
+		textAlign = TextAlign.Center
+	)
+	Spacer(Modifier.height(6.dp))
+	Text(
+		stringResource(R.string.source_order_hint),
+		style = MaterialTheme.typography.bodyMedium,
+		color = MaterialTheme.colorScheme.onSurfaceVariant,
+		textAlign = TextAlign.Center
+	)
+	Spacer(Modifier.height(16.dp))
+	SettingsGroup(Modifier.widthIn(max = 520.dp)) {
+		sources.forEachIndexed { index, source ->
+			row(source.name) {
+				// The D-pad stays on the arrow as its row moves, but Compose scrolls a control into
+				// view only when it GAINS focus — so on a TV, a few presses of "down" walked the
+				// focused row off the bottom of the screen. Each move brings it back into view.
+				val bring = remember { BringIntoViewRequester() }
+				var holdsFocus by remember { mutableStateOf(false) }
+				LaunchedEffect(index) {
+					if (holdsFocus) {
+						withFrameNanos { }
+						bring.bringIntoView()
+					}
+				}
+				Box(Modifier.bringIntoViewRequester(bring).onFocusChanged { holdsFocus = it.hasFocus }) {
+					SettingsContentRow {
+						Row(verticalAlignment = Alignment.CenterVertically) {
+							IconChip(source.resourceId)
+							Spacer(Modifier.width(14.dp))
+							Text(source.name, Modifier.weight(1f))
+							// Both arrows always there and always enabled, the end ones doing nothing:
+							// an arrow that vanished or greyed out under the D-pad would drop it.
+							TvIconButton(onClick = { viewModel.moveSource(source, -1) }) {
+								Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.move_up_cd))
+							}
+							TvIconButton(
+								onClick = { viewModel.moveSource(source, 1) },
+								modifier = if (index == 0) Modifier.focusRequester(firstFocus) else Modifier
+							) {
+								Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.move_down_cd))
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	Spacer(Modifier.height(16.dp))
+	Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+		EditorButton(stringResource(R.string.source_order_az), filled = false) { viewModel.sortSourcesByName() }
+		EditorButton(stringResource(R.string.done), filled = true) { viewModel.setEditingOrder(false) }
+	}
+}
+
+/**
+ * The editor's two buttons, with a focus a TV viewer can see: filled with the accent colour, as
+ * the card buttons are — a plain Material button marks focus with a faint tint.
+ */
+@Composable
+private fun EditorButton(text: String, filled: Boolean, onClick: () -> Unit) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	FilledTonalButton(
+		onClick = onClick,
+		interactionSource = interaction,
+		colors = ButtonDefaults.filledTonalButtonColors(
+			containerColor = when {
+				focused -> MaterialTheme.colorScheme.primary
+				filled -> MaterialTheme.colorScheme.primaryContainer
+				else -> Color.Transparent
+			},
+			contentColor = when {
+				focused -> MaterialTheme.colorScheme.onPrimary
+				filled -> MaterialTheme.colorScheme.onPrimaryContainer
+				else -> MaterialTheme.colorScheme.primary
+			}
+		),
+		border = if (!filled && !focused) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null
+	) {
+		Text(text)
 	}
 }
 
@@ -586,7 +805,9 @@ fun ColumnScope.UpdatesScreenSuccess(
 	onCheckOnly: (Source) -> Unit = {},
 	refreshFocus: FocusRequester? = null,
 	/** Drawn after [updates], dimmed, with Unskip as their one button. Empty unless ⋮ → "Show skipped". */
-	skipped: List<AppUpdate> = emptyList()
+	skipped: List<AppUpdate> = emptyList(),
+	/** The start screen's tiles, in the user's order — a parameter so a reorder reaches it. */
+	sources: List<Source> = emptyList()
 ) {
 	val handler = LocalUriHandler.current
 	val context = LocalContext.current
@@ -608,13 +829,15 @@ fun ColumnScope.UpdatesScreenSuccess(
 	// focus move is such a remainder.
 	val pullEnabled = !isTv
 	if (updates.isEmpty() && skipped.isEmpty()) {
-		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled)) {
+		val editingOrder by viewModel.editingOrder.collectAsStateWithLifecycle()
+		Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = pullEnabled && !editingOrder)) {
 			// The start screen again, headed by the result: nothing to list means nothing in the
 			// way of the big button and the tiles. "All up to date" only when every source was
 			// asked. After a check of one source it would be a claim about all the sources that
 			// were not checked, so the title names the one that was.
 			StartScreen(
-				sources = viewModel.enabledSources(),
+				viewModel = viewModel,
+				sources = sources,
 				onCheck = onCheck,
 				onCheckOnly = onCheckOnly,
 				title = if (only != null) stringResource(R.string.source_no_updates, only.name)

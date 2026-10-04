@@ -1,7 +1,9 @@
 package com.apkupdater.ui.component
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
@@ -50,6 +52,50 @@ fun IconChip(
 		Modifier.size(Design.ChipIconSize),
 		tint = MaterialTheme.colorScheme.onSecondaryContainer
 	)
+}
+
+/**
+ * A small action that belongs to one source but is not a check — Play's "Switch account",
+ * RuStore's "New device" (build 180) — in the row under the start screen's tiles. The source's
+ * own icon says whose action it is, so the label leaves the name out. Outlined and lighter than
+ * a tile, so it is not taken for one.
+ *
+ * Never disabled. A disabled Surface takes no focus, and a button that greys itself out the
+ * moment it is pressed on a TV would drop the D-pad to the bottom bar (the disposed-focus trap
+ * of build 137); what it starts guards itself against a second press instead.
+ */
+@Composable
+fun SourceActionChip(
+	@DrawableRes icon: Int,
+	label: String,
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier
+) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	Surface(
+		onClick = onClick,
+		modifier = modifier.heightIn(min = 36.dp),
+		shape = Design.ChipShape,
+		color = if (focused) TvFocus.fill else Color.Transparent,
+		contentColor = MaterialTheme.colorScheme.primary,
+		border = if (focused) TvFocus.stroke else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+		interactionSource = interaction
+	) {
+		Row(
+			Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+			verticalAlignment = Alignment.CenterVertically
+		) {
+			Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(16.dp))
+			Spacer(Modifier.width(8.dp))
+			Text(
+				label,
+				style = MaterialTheme.typography.labelLarge,
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis
+			)
+		}
+	}
 }
 
 /**

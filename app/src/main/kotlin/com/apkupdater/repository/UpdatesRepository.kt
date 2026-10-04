@@ -61,8 +61,14 @@ class UpdatesRepository(
         else -> false
     }
 
-    /** The sources switched on in Settings — what the "check only" menu offers. */
+    /**
+     * The sources switched on in Settings, in the default order. The start screen and the ⋮ menu show
+     * them in the user's order — see UpdatesViewModel.enabledSources (build 180).
+     */
     fun enabledSources(): List<Source> = allSources.filter { isEnabled(it) }
+
+    /** Every source, switched on or not, in the default order. */
+    fun allSources(): List<Source> = allSources
 
     /**
      * @param only check this one source and no other. Null checks every enabled source. A

@@ -245,4 +245,13 @@
     <string name="settings_utils_summary">Экспорт, импорт, логи</string>
     <string name="settings_code_hosting">Хостинг кода</string>
     <string name="settings_stores">Магазины</string>
+    <string name="source_order">Порядок источников</string>
+    <string name="source_order_hint">Плитки на главной идут в этом порядке, слева направо.</string>
+    <string name="source_order_az">По алфавиту</string>
+    <string name="done">Готово</string>
+    <string name="move_up_cd">Выше</string>
+    <string name="move_down_cd">Ниже</string>
+    <string name="sources_settings">Настройки источников</string>
+    <string name="play_switch_account_short">Сменить аккаунт</string>
+    <string name="rustore_switch_device_short">Новое устройство</string>
 </resources>
