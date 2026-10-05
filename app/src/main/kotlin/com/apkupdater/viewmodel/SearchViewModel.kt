@@ -165,6 +165,22 @@ class SearchViewModel(
         ))
     }
 
+    private val _searchAll = MutableStateFlow(prefs.searchAllSources.get())
+    /** Whether a search asks every source, not only those switched on in Settings (build 181). */
+    val searchAll: StateFlow<Boolean> = _searchAll
+
+    /**
+     * Flips [searchAll] and remembers it. The results on screen answered the other question, so
+     * the last query is asked again rather than left there looking like the answer to this one.
+     */
+    fun toggleSearchAll() {
+        val on = !_searchAll.value
+        prefs.searchAllSources.put(on)
+        _searchAll.value = on
+        val last = _query.value
+        if (last.length >= 3) search(last)
+    }
+
     fun toggleSourceFilter(name: String) = _sourceFilter.update {
         if (it.contains(name)) it - name else it + name
     }

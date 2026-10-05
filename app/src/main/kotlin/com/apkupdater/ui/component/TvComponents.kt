@@ -374,7 +374,12 @@ fun TvInstallButton(
 				!isUpToDate -> onInstall(app.packageName)
 			}
 		},
-		enabled = !isUpToDate,
+		// Cancel stays pressable whatever the version says. A search result for the version already
+		// installed shows a disabled "Installed" — nothing to install — but its Download button
+		// still saves the file; while that ran, the button turned into Cancel and stayed disabled,
+		// so the download could not be stopped (arhitr0n on 4PDA, 3.9.1; the condition dates
+		// from build 76).
+		enabled = app.isInstalling || !isUpToDate,
 		interactionSource = interaction,
 		colors = ButtonDefaults.filledTonalButtonColors(
 			containerColor = container,

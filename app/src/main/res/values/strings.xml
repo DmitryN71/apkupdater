@@ -255,4 +255,7 @@
     <string name="sources_settings">Sources settings</string>
     <string name="play_switch_account_short">Switch account</string>
     <string name="rustore_switch_device_short">New device</string>
+    <string name="search_all_sources">All sources</string>
+    <string name="search_all_sources_off">Only the sources switched on in Settings</string>
+    <string name="search_all_sources_on">Including the ones switched off in Settings</string>
 </resources>

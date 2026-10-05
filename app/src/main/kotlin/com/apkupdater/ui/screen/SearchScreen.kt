@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -92,6 +93,7 @@ fun SearchScreen(
 	// shimmer grid only ever showed while the list was still completely empty.
 	val searching by viewModel.searching.collectAsStateWithLifecycle()
 	if (searching) LinearProgressIndicator(Modifier.fillMaxWidth())
+	SearchScopeRow(viewModel)
 	val state = viewModel.state().collectAsStateWithLifecycle().value
 	val selectedSources by viewModel.sourceFilter.collectAsStateWithLifecycle()
 	// Above the results rather than inside them, so it keeps its own height and the grid keeps
@@ -272,6 +274,61 @@ fun SourceFilterRow(
 		sources.forEach { source ->
 			SourceFilterChip(source, selected.contains(source.name)) { onToggle(source.name) }
 		}
+	}
+}
+
+/**
+ * Which sources a search asks (build 181): the ones switched on in Settings, or — with the chip on
+ * — all of them, and the filter row over the results narrows what came back. Asked for by
+ * WhitezRUS on 4PDA. Its own row above everything else and always there, before a search as much
+ * as after, because it decides what the NEXT search asks; the line beside the chip says in words
+ * which way it is set. Turning it over asks the last query again.
+ *
+ * A row of its own rather than a chip in the source filter row: those chips narrow results that
+ * are already here, this one changes which sources are asked — two kinds of filter in one row is
+ * what made the Apps tab's chips misread (Dmitry, 2026-10-03).
+ */
+@Composable
+fun SearchScopeRow(viewModel: SearchViewModel) {
+	val all by viewModel.searchAll.collectAsStateWithLifecycle()
+	Row(
+		Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		ToggleChip(stringResource(R.string.search_all_sources), all) { viewModel.toggleSearchAll() }
+		Spacer(Modifier.width(10.dp))
+		Text(
+			stringResource(if (all) R.string.search_all_sources_on else R.string.search_all_sources_off),
+			style = MaterialTheme.typography.bodySmall,
+			color = MaterialTheme.colorScheme.onSurfaceVariant,
+			maxLines = 2
+		)
+	}
+}
+
+/** A chip that is on or off, drawn like [SourceFilterChip], with a check while it is on. */
+@Composable
+private fun ToggleChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val chipBackground = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+		else MaterialTheme.colorScheme.surfaceVariant
+	val chipContent = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+		else MaterialTheme.colorScheme.onSurfaceVariant
+	Row(
+		Modifier
+			.clip(RoundedCornerShape(50))
+			.background(chipBackground)
+			.then(if (focused) Modifier.border(TvFocus.stroke, RoundedCornerShape(50)) else Modifier)
+			.clickable(interactionSource = interaction, indication = null) { onClick() }
+			.padding(horizontal = 12.dp, vertical = 6.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		if (isSelected) {
+			Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = chipContent)
+			Spacer(Modifier.width(6.dp))
+		}
+		Text(label, style = MaterialTheme.typography.labelMedium, color = chipContent, maxLines = 1)
 	}
 }
 

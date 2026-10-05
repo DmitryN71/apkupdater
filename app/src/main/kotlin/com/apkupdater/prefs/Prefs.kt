@@ -20,6 +20,13 @@ class Prefs(
 	 * added in a later version simply appears at the end.
 	 */
 	val sourceOrder = json("sourceOrder", emptyList<String>(), true)
+	/**
+	 * Search asks every source, whether or not it is switched on in Settings (build 181, asked for
+	 * by WhitezRUS on 4PDA). Off by default: a source is often off for a reason — APKMirror's site
+	 * search can be stopped by Cloudflare, Play signs in from a pool shared with every Aurora user
+	 * — and a search of ten sources takes longer than one of four.
+	 */
+	val searchAllSources = boolean("searchAllSources", defValue = false, backed = true)
 	val excludeSystem = boolean("excludeSystem", defValue = true, backed = true)
 	val excludeDisabled = boolean("excludeDisabled", defValue = true, backed = true)
 	val excludeStore = boolean("excludeStore", defValue = false, backed = true)

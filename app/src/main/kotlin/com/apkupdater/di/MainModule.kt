@@ -213,7 +213,17 @@ val mainModule = module {
 		Downloader(client, apkPureClient, auroraClient, dir)
 	}
 
-	single { ApkMirrorRepository(get(), get(), androidContext().packageManager) }
+	single {
+		ApkMirrorRepository(
+			get(), get(), androidContext().packageManager,
+			// Search reads APKMirror's site pages, under a name of its own (build 181): the API's
+			// "APKUpdater-v" and the downloads' "APKUpdater-Download-v" stay apart, so a block on
+			// one leaves the others standing. Added after the shared client's own name, so it wins.
+			get<OkHttpClient>().newBuilder()
+				.addUserAgentInterceptor("APKUpdater-Search-v" + BuildConfig.VERSION_NAME)
+				.build()
+		)
+	}
 
 	// APKMirror's download chain (util/ApkMirrorDownload.kt): its own client, because download.php
 	// must be read as a redirect rather than followed, and the shared one caches pages that are

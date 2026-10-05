@@ -26,12 +26,18 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import org.jsoup.Jsoup
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.IOException
 
 
 class ApkMirrorRepository(
     private val service: ApkMirrorService,
     private val prefs: Prefs,
-    packageManager: PackageManager
+    packageManager: PackageManager,
+    /** For the site's search page, under a name of its own — see [search]. */
+    private val searchClient: OkHttpClient
 ) {
 
     private val arch = when {
@@ -65,31 +71,44 @@ class ApkMirrorRepository(
         tally.throwIfAllFailed(chunks.size, "APKMirror")
     }
 
+    /**
+     * APKMirror's own app search, read from its result page.
+     *
+     * Asked under our own name through [searchClient] — "APKUpdater-Search-v…" (build 181). Until
+     * then it went out through Jsoup with Jsoup's default User-Agent, a desktop Chrome that is not
+     * Chrome, and Cloudflare answered every time with its challenge, so APKMirror never had a
+     * single result in Search. Measured 2026-10-05: that agent 403 with "Just a moment" and
+     * cf-mitigated, our own names 200 with the results. A name of its own rather than the API's
+     * or the downloads', so a block on one of the three leaves the others standing.
+     *
+     * Read row by row. The old parser took titles, developers and icons as three separate lists
+     * and dropped "the first" developer and icon — a leftover of an older page — so the best
+     * match was lost and every other title was paired with its neighbour's developer. Only rows
+     * with a developer link are results: the page also lists the latest uploads of unrelated apps.
+     */
     suspend fun search(text: String) = flow {
-        val baseUrl = "https://www.apkmirror.com"
-        val searchQuery = "/?post_type=app_release&searchtype=app&s="
-        val doc = Jsoup.connect("$baseUrl$searchQuery$text").get()
-        val row = doc.select("div.appRow")
-        val a = row.select("a.byDeveloper")
-        val h5 = row.select("h5.appRowTitle").take(a.size)
-        val img = row.select("img")
-        // No results is an answer, not a failure. The page always carries other rows (the
-        // sidebar's latest uploads), but a search that matches nothing has no developer links
-        // at all — and dropping the first of an empty list threw, so an ordinary miss such as
-        // «лэтуаль» was reported as "APKMirror did not answer". Measured on 2026-09-29: 10
-        // developer links for "telegram", none for «лэтуаль».
-        if (a.isEmpty()) {
-            emit(Result.success(emptyList()))
-            return@flow
+        val url = BASE.toHttpUrl().newBuilder()
+            .addQueryParameter("post_type", "app_release")
+            .addQueryParameter("searchtype", "app")
+            .addQueryParameter("s", text)
+            .build()
+        val html = searchClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("APKMirror search: HTTP ${response.code}")
+            response.body.string()
         }
-        a.removeAt(0)
-        if (img.isNotEmpty()) img.removeAt(0)
-        val result = (0 until a.size).map {
-            val releaseUrl = "$baseUrl${h5[it].selectFirst("a")?.attr("href")}"
+        val result = Jsoup.parse(html, BASE).select("div.appRow").mapNotNull { row ->
+            // No developer link, no result — see above. A search that matches nothing has none at
+            // all, which is an answer ("nothing found"), not a failure.
+            val developer = row.selectFirst("a.byDeveloper") ?: return@mapNotNull null
+            val title = row.selectFirst("h5.appRowTitle") ?: return@mapNotNull null
+            val page = title.selectFirst("a")?.attr("abs:href").orEmpty()
+            if (page.isEmpty()) return@mapNotNull null
+            // The row's 32 px thumbnail, asked for at 128 from the same resizer.
+            val icon = row.selectFirst("img")?.attr("abs:src").orEmpty().replace("w=32&h=32", "w=128&h=128")
             AppUpdate(
-                name = h5[it].attr("title"),
-                link = Link.Url(releaseUrl),
-                iconUri = Uri.parse("$baseUrl${img[it].attr("src")}".replace("=32", "=128")),
+                name = title.attr("title").ifEmpty { title.text() },
+                link = Link.Url(page),
+                iconUri = if (icon.isEmpty()) Uri.EMPTY else Uri.parse(icon),
                 version = "?",
                 oldVersion = "?",
                 versionCode = 0L,
@@ -97,13 +116,12 @@ class ApkMirrorRepository(
                 source = ApkMirrorSource,
                 // NB this is the DEVELOPER, not a package name — a search row on ApkMirror
                 // carries no package id at all.
-                packageName = a[it].text(),
-                sourceUrl = releaseUrl,
-                // Hence the default id ("ApkMirror.<developer>.0.?") is IDENTICAL for every row
-                // by the same developer. That is what made the results grid throw
-                // "Key ... was already used" and kill the app while scrolling a long search.
-                // The release URL is the only thing unique per row.
-                id = "ApkMirror.$releaseUrl".hashCode()
+                packageName = developer.text().removePrefix("by ").trim(),
+                sourceUrl = page,
+                // Hence the default id ("ApkMirror.<developer>.0.?") would be IDENTICAL for every
+                // row by the same developer — what once made the results grid throw "Key ... was
+                // already used" while scrolling. The page is the only thing unique per row.
+                id = "ApkMirror.$page".hashCode()
             )
         }
         emit(Result.success(result))
@@ -209,6 +227,8 @@ class ApkMirrorRepository(
     }
 
     companion object {
+        private const val BASE = "https://www.apkmirror.com"
+
         /** The densities APKMirror lists variants by; 213 is tvdpi. */
         private val DPI_BUCKETS = listOf(120, 160, 213, 240, 320, 480, 640)
     }

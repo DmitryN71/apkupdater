@@ -254,4 +254,7 @@
     <string name="sources_settings">Настройки источников</string>
     <string name="play_switch_account_short">Сменить аккаунт</string>
     <string name="rustore_switch_device_short">Новое устройство</string>
+    <string name="search_all_sources">Все источники</string>
+    <string name="search_all_sources_off">Только источники, включённые в настройках</string>
+    <string name="search_all_sources_on">Включая выключенные в настройках</string>
 </resources>

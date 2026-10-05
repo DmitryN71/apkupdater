@@ -56,16 +56,20 @@ class SearchRepository(
                 }
             }
         } else {
-            if (prefs.useApkMirror.get()) sources.add(ApkMirrorSource.name to apkMirrorRepository.search(text))
-            if (prefs.useFdroid.get()) sources.add(FdroidSource.name to fdroidRepository.search(text))
-            if (prefs.useIzzy.get()) sources.add(IzzySource.name to izzyRepository.search(text))
-            if (prefs.useAptoide.get()) sources.add(AptoideSource.name to aptoideRepository.search(text))
-            if (prefs.useGitHub.get()) sources.add(GitHubSource.name to gitHubRepository.search(text))
-            if (prefs.useApkPure.get()) sources.add(ApkPureSource.name to apkPureRepository.search(text))
-            if (prefs.useGitLab.get()) sources.add(GitLabSource.name to gitLabRepository.search(text))
-            if (prefs.usePlay.get()) sources.add(PlaySource.name to playRepository.search(text))
-            if (prefs.useRuStore.get()) sources.add(RuStoreSource.name to ruStoreRepository.search(text))
-            if (prefs.useAppGallery.get()) sources.add(AppGallerySource.name to appGalleryRepository.search(text))
+            // The sources switched on in Settings — or all of them, when the user has asked the
+            // Search tab to look everywhere (build 181); the filter row over the results then
+            // narrows what came back.
+            val all = prefs.searchAllSources.get()
+            if (all || prefs.useApkMirror.get()) sources.add(ApkMirrorSource.name to apkMirrorRepository.search(text))
+            if (all || prefs.useFdroid.get()) sources.add(FdroidSource.name to fdroidRepository.search(text))
+            if (all || prefs.useIzzy.get()) sources.add(IzzySource.name to izzyRepository.search(text))
+            if (all || prefs.useAptoide.get()) sources.add(AptoideSource.name to aptoideRepository.search(text))
+            if (all || prefs.useGitHub.get()) sources.add(GitHubSource.name to gitHubRepository.search(text))
+            if (all || prefs.useApkPure.get()) sources.add(ApkPureSource.name to apkPureRepository.search(text))
+            if (all || prefs.useGitLab.get()) sources.add(GitLabSource.name to gitLabRepository.search(text))
+            if (all || prefs.usePlay.get()) sources.add(PlaySource.name to playRepository.search(text))
+            if (all || prefs.useRuStore.get()) sources.add(RuStoreSource.name to ruStoreRepository.search(text))
+            if (all || prefs.useAppGallery.get()) sources.add(AppGallerySource.name to appGalleryRepository.search(text))
         }
 
         if (sources.isNotEmpty()) {
