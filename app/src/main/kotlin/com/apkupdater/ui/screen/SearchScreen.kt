@@ -12,6 +12,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,23 +79,30 @@ import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvEqualRows
 import com.apkupdater.ui.component.TvSearchItem
 import com.apkupdater.ui.component.TvIconButton
+import com.apkupdater.ui.component.appTextFieldColors
 import com.apkupdater.ui.theme.statusBarColor
 import com.apkupdater.viewmodel.SearchViewModel
 import kotlinx.coroutines.delay
 import org.koin.androidx.compose.koinViewModel
 
 
+/**
+ * What a search shows: the scope chip, progress, the repository offer, the source filter and the
+ * results. Inside Home since 3.10.0, which draws the search field in its top bar ([SearchText]) and
+ * shows this while a search has something to show; it was the Search tab's body before.
+ */
 @Composable
-fun SearchScreen(
-	viewModel: SearchViewModel = koinViewModel()
-) = Column {
-	SearchTopBar(viewModel)
+fun ColumnScope.SearchContent(
+	viewModel: SearchViewModel,
+	/** Put on the "All sources" chip, for whoever must hand the D-pad to the search. */
+	scopeFocus: FocusRequester? = null
+) {
 	// Sources answer one at a time, so a filled list does not mean the search is over. This
 	// thin bar is the only visible difference between "still searching" and "done" — the
 	// shimmer grid only ever showed while the list was still completely empty.
 	val searching by viewModel.searching.collectAsStateWithLifecycle()
 	if (searching) LinearProgressIndicator(Modifier.fillMaxWidth())
-	SearchScopeRow(viewModel)
+	SearchScopeRow(viewModel, scopeFocus)
 	val state = viewModel.state().collectAsStateWithLifecycle().value
 	val selectedSources by viewModel.sourceFilter.collectAsStateWithLifecycle()
 	// Above the results rather than inside them, so it keeps its own height and the grid keeps
@@ -289,13 +298,17 @@ fun SourceFilterRow(
  * what made the Apps tab's chips misread (Dmitry, 2026-10-03).
  */
 @Composable
-fun SearchScopeRow(viewModel: SearchViewModel) {
+fun SearchScopeRow(viewModel: SearchViewModel, chipFocus: FocusRequester? = null) {
 	val all by viewModel.searchAll.collectAsStateWithLifecycle()
 	Row(
 		Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
 		verticalAlignment = Alignment.CenterVertically
 	) {
-		ToggleChip(stringResource(R.string.search_all_sources), all) { viewModel.toggleSearchAll() }
+		ToggleChip(
+			stringResource(R.string.search_all_sources),
+			all,
+			if (chipFocus != null) Modifier.focusRequester(chipFocus) else Modifier
+		) { viewModel.toggleSearchAll() }
 		Spacer(Modifier.width(10.dp))
 		Text(
 			stringResource(if (all) R.string.search_all_sources_on else R.string.search_all_sources_off),
@@ -308,7 +321,12 @@ fun SearchScopeRow(viewModel: SearchViewModel) {
 
 /** A chip that is on or off, drawn like [SourceFilterChip], with a check while it is on. */
 @Composable
-private fun ToggleChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+private fun ToggleChip(
+	label: String,
+	isSelected: Boolean,
+	modifier: Modifier = Modifier,
+	onClick: () -> Unit
+) {
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
 	val chipBackground = if (isSelected) MaterialTheme.colorScheme.primaryContainer
@@ -316,7 +334,7 @@ private fun ToggleChip(label: String, isSelected: Boolean, onClick: () -> Unit) 
 	val chipContent = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
 		else MaterialTheme.colorScheme.onSurfaceVariant
 	Row(
-		Modifier
+		modifier
 			.clip(RoundedCornerShape(50))
 			.background(chipBackground)
 			.then(if (focused) Modifier.border(TvFocus.stroke, RoundedCornerShape(50)) else Modifier)
@@ -377,20 +395,15 @@ fun SourceFilterChip(source: Source, isSelected: Boolean, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SearchTopBar(viewModel: SearchViewModel) = TopAppBar(
-	title = { SearchText(viewModel) },
-	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
-	actions = {},
-	navigationIcon = {
-		Box(Modifier.minimumInteractiveComponentSize().size(40.dp), Alignment.Center) {
-			Icon(Icons.Filled.Search, null)
-		}
-	}
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SearchText(viewModel: SearchViewModel) = Box {
+fun SearchText(
+	viewModel: SearchViewModel,
+	/**
+	 * Take the focus as the field appears — right for a tab that is only search, as the Search tab
+	 * was. Home passes false (3.10.0): a field focused on arrival opens the keyboard on a phone and
+	 * holds the D-pad on a TV, and Home is opened far more often to check than to search.
+	 */
+	autoFocus: Boolean = true
+) = Box {
 	val keyboardController = LocalSoftwareKeyboardController.current
 	val focusRequester = remember { FocusRequester() }
 	// rememberSaveable, not a StateFlow in the ViewModel: navigation saves and restores this
@@ -450,7 +463,12 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 				singleLine = true,
 				visualTransformation = VisualTransformation.None,
 				interactionSource = interactionSource,
-				placeholder = { Text(stringResource(R.string.tab_search)) },
+				placeholder = { Text(stringResource(R.string.search_hint)) },
+				// The magnifier and the strongest tonal surface (3.10.0): on Home's bar the field was
+				// a faint half-transparent pill, easy to take for decoration — Dmitry did not see it
+				// at all the first time. Material's search bar is exactly this: a filled pill with a
+				// leading search icon. The other fields share its colours (appTextFieldColors).
+				leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
 				trailingIcon = {
 					if (clearVisible) {
 						TvIconButton(
@@ -462,12 +480,7 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 					}
 				},
 				shape = RoundedCornerShape(28.dp),
-				colors = TextFieldDefaults.colors(
-					focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-					unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-					focusedIndicatorColor = Color.Transparent,
-					unfocusedIndicatorColor = Color.Transparent
-				),
+				colors = appTextFieldColors(),
 				// 12 dp instead of Material's 16, which is what buys the height back.
 				contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
 					top = 12.dp,
@@ -477,7 +490,16 @@ fun SearchText(viewModel: SearchViewModel) = Box {
 		}
 	)
 	LaunchedEffect(Unit) {
-		focusRequester.requestFocus()
+		if (autoFocus) focusRequester.requestFocus()
+	}
+	// Back clears the search before it leaves the screen — on Home, where the search took the
+	// tiles' place, that is the way back to them (3.10.0).
+	// Not while a result is downloading or installing: clearing would take its card — and the
+	// Cancel on it — away mid-download. Back then leaves Home, as it used to leave the Search tab.
+	val busy = viewModel.state().collectAsStateWithLifecycle().value.updates().any { it.isInstalling }
+	BackHandler(enabled = value.isNotEmpty() && !busy) {
+		value = ""
+		viewModel.clearSearch()
 	}
 	// Adopted rather than merged: whoever asked for this search wants exactly this text, and
 	// the search itself has already been started by searchFor, so the debounce below sees

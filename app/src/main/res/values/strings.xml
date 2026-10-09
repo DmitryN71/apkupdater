@@ -239,7 +239,6 @@
     <string name="version_code">Version code %1$s</string>
     <string name="download_progress">%1$s of %2$s</string>
     <string name="download_preparing">Preparing…</string>
-    <string name="go_home_cd">Back to the start screen</string>
     <string name="show_skipped">Show skipped (%1$d)</string>
     <string name="hide_skipped">Hide skipped</string>
     <string name="unskip_cd">Unskip</string>
@@ -258,4 +257,11 @@
     <string name="search_all_sources">All sources</string>
     <string name="search_all_sources_off">Only the sources switched on in Settings</string>
     <string name="search_all_sources_on">Including the ones switched off in Settings</string>
+    <string name="tab_home">Home</string>
+    <string name="home_last_check">Last check %1$s · updates: %2$d</string>
+    <string name="home_last_check_none">Last check %1$s · all up to date</string>
+    <string name="home_checking">Checking for updates…</string>
+    <string name="search_hint">Search apps</string>
+    <string name="updates_not_checked">Nothing checked yet</string>
+    <string name="updates_not_checked_hint">Press to check every source. One source at a time: on Home.</string>
 </resources>

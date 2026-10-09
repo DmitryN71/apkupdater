@@ -160,34 +160,19 @@ class UpdatesViewModel(
 	}
 
 	/**
-	 * Back to the start screen: the list goes, and the big Check button and the source tiles come
-	 * back, as if the app had just been opened. The top bar's Home button (build 178).
-	 *
-	 * Asked for by Dmitry. Since Android 12 a Back out of the app no longer ends it, so a list
-	 * stayed on screen, days old, until the app was swiped out of Recents or a full check ran.
-	 *
-	 * Refused while a check runs or any card is downloading or installing: those cards are where
-	 * the progress, Cancel and Open live, and dropping them mid-download was a bug once already
-	 * (see setSuccess). The screen hides the button in both cases, so this is the backstop.
+	 * When the last check that got an answer ended, and whether it covered one source (3.10.0).
+	 * Home's line under the big button reads it — "Last check 14:56 · updates: 2" — and links to
+	 * this tab. Kept in memory only: a new start of the app has no list to point at either.
 	 */
-	fun goHome() {
-		if (refreshJob?.isActive == true) return
-		var wentHome = false
-		state.update {
-			wentHome = it is UpdatesUiState.Success && it.updates.none { card -> card.isInstalling }
-			if (wentHome) UpdatesUiState.Idle else it
-		}
-		// The badge counted the cards just dropped; until the next check there is nothing to count.
-		if (wentHome) {
-			badger.changeUpdatesBadge("")
-			_showSkipped.value = false
-		}
-	}
+	data class LastCheck(val at: Long, val only: Source?)
+
+	private val _lastCheck = MutableStateFlow<LastCheck?>(null)
+	val lastCheck: StateFlow<LastCheck?> = _lastCheck
 
 	/**
 	 * Whether the skipped cards are drawn, dimmed, after the others (⋮ → "Show skipped", build
-	 * 179). Off whenever the app starts, and again after Home: the skipped cards are the ones the
-	 * user asked not to see, so showing them is a look, not a mode to live in.
+	 * 179). Off whenever the app starts: the skipped cards are the ones the user asked not to see,
+	 * so showing them is a look, not a mode to live in.
 	 */
 	private val _showSkipped = MutableStateFlow(false)
 	val showSkipped: StateFlow<Boolean> = _showSkipped
@@ -239,9 +224,13 @@ class UpdatesViewModel(
 		// Returning the running job also keeps MainViewModel's invokeOnCompletion honest.
 		// Safe without locking: every caller reaches this on the main thread.
 		refreshJob?.takeIf { it.isActive }?.let { return it }
-		// A check replaces the start screen, editor and all; coming back to it should not find
-		// the editor still open.
+		// A check started on Home should not find the order editor still open on the way back.
 		_editingOrder.value = false
+		// At once, not when the job gets the lock: Home opens the Updates tab right after this
+		// call, and that tab decides where the D-pad goes by whether a check is running. The job
+		// sets it again; a job cancelled before it starts is cancelled by cancelRefresh, which
+		// clears it itself.
+		_isChecking.value = true
 		runningOnly = only
 		// Here, on the main thread, rather than inside the job: a Stop tapped before the job got
 		// as far as clearing them would have republished the previous check's results.
@@ -787,6 +776,8 @@ class UpdatesViewModel(
 			)
 		}
 		badger.changeUpdatesBadge(merged.updates().badgeCount())
+		// A real check, not a republish of the list on screen.
+		if (answered != null) _lastCheck.value = LastCheck(System.currentTimeMillis(), only)
 		// Nothing left to show: the menu item goes, so the switch goes with it. Left on, the next
 		// Skip would leave its card on screen, dimmed, instead of taking it away.
 		if (merged.skipped().isEmpty()) _showSkipped.value = false

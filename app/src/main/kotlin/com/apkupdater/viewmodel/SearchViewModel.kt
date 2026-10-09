@@ -127,6 +127,10 @@ class SearchViewModel(
 
     fun searchFor(text: String) {
         _requestedQuery.value = text
+        // At once, not when the job gets to it: Home shows the search while a query is set, and a
+        // frame of tiles under a field already holding the package name looked like a glitch —
+        // and the field's own delay could fire the same search a second time.
+        _query.value = text
         search(text)
     }
 

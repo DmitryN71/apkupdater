@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Apps
@@ -142,6 +143,7 @@ fun AppsFilterBar(
 			value = query,
 			onValueChange = { viewModel.onQueryChange(it) },
 			placeholder = { Text(stringResource(R.string.filter_search_hint)) },
+			leadingIcon = Icons.Filled.Search,
 			modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
 		)
 	}

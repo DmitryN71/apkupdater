@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -317,6 +320,7 @@ fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = 
 						label = { Text(stringResource(R.string.github_token)) },
 						placeholder = { Text(stringResource(R.string.github_token_hint)) },
 						supportingText = { Text(stringResource(R.string.github_token_help)) },
+						leadingIcon = Icons.Outlined.Key,
 						modifier = Modifier.fillMaxWidth()
 					)
 				}
@@ -776,6 +780,7 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 			label = { Text(stringResource(R.string.custom_repo_hint)) },
 			isError = errorMsg != null,
 			supportingText = errorMsg?.let { msg -> { Text(msg) } },
+			leadingIcon = Icons.Outlined.Link,
 			modifier = Modifier.focusRequester(urlFocus).fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
 		)
 
@@ -789,6 +794,7 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 					appDropdownExpanded = it.length >= 2
 				},
 				label = { Text(stringResource(R.string.link_installed_app)) },
+				leadingIcon = Icons.Outlined.Apps,
 				modifier = Modifier.fillMaxWidth()
 			)
 			val filtered = if (appQuery.length >= 2) {

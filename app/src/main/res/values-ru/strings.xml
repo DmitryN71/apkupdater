@@ -238,7 +238,6 @@
     <string name="version_code">Код версии %1$s</string>
     <string name="download_progress">%1$s из %2$s</string>
     <string name="download_preparing">Подготовка…</string>
-    <string name="go_home_cd">На стартовый экран</string>
     <string name="show_skipped">Показать пропущенные (%1$d)</string>
     <string name="hide_skipped">Скрыть пропущенные</string>
     <string name="unskip_cd">Вернуть</string>
@@ -257,4 +256,11 @@
     <string name="search_all_sources">Все источники</string>
     <string name="search_all_sources_off">Только источники, включённые в настройках</string>
     <string name="search_all_sources_on">Включая выключенные в настройках</string>
+    <string name="tab_home">Главная</string>
+    <string name="home_last_check">Последняя проверка %1$s · обновлений: %2$d</string>
+    <string name="home_last_check_none">Последняя проверка %1$s · всё обновлено</string>
+    <string name="home_checking">Идёт проверка…</string>
+    <string name="search_hint">Поиск приложений</string>
+    <string name="updates_not_checked">Проверки ещё не было</string>
+    <string name="updates_not_checked_hint">Нажмите, чтобы проверить все источники. По одному – на главной.</string>
 </resources>

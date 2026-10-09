@@ -65,6 +65,7 @@ import android.content.BroadcastReceiver
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.key
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -89,6 +90,7 @@ import androidx.navigation.compose.rememberNavController
 import com.apkupdater.data.ui.Screen
 import com.apkupdater.ui.component.BadgeText
 import com.apkupdater.ui.theme.AppTheme
+import com.apkupdater.prefs.Prefs
 import com.apkupdater.util.Badger
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SnackBar
@@ -145,6 +147,15 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	// Theme
 	val theme = koinInject<Themer>().flow().collectAsStateWithLifecycle().value
 
+	// Read once and SAVED: the start destination must not change under a NavHost that restores
+	// its back stack. remember would work it out again after a rotation, and with "check on
+	// launch" switched since, the restored stack lacks the new start — every tab press then
+	// added a destination, and Back walked through all of them.
+	val prefs = koinInject<Prefs>()
+	val startRoute = rememberSaveable {
+		if (prefs.checkOnLaunch.get()) Screen.Updates.route else Screen.Home.route
+	}
+
 	// SnackBar
 	val snackBarHostState = handleSnackBar()
 
@@ -159,7 +170,8 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 			NavHost(
 				navController, padding, mainViewModel, appsViewModel,
 				updatesViewModel, searchViewModel, settingsViewModel,
-				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) }
+				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) },
+				startRoute = startRoute
 			)
 		}
 	}
@@ -462,13 +474,14 @@ fun NavHost(
 	updatesViewModel: UpdatesViewModel,
 	searchViewModel: SearchViewModel,
 	settingsViewModel: SettingsViewModel,
-	onRefresh: () -> Unit = {}
+	onRefresh: () -> Unit = {},
+	startRoute: String = Screen.Home.route
 ) = NavHost(
 	navController = navController,
-	// Always open on Updates. Remembering the last tab meant backing out of the app while on
-	// Search brought it back on Search — an updater should show updates when you open it. The
-	// tab still survives rotation, because rememberNavController saves the back stack itself.
-	startDestination = Screen.Updates.route,
+	// Home, or Updates when the app checks at launch — the check is running there (3.10.0). Not
+	// the last tab: remembering it meant backing out on Search brought the app back on Search.
+	// The tab still survives rotation, because rememberNavController saves the back stack itself.
+	startDestination = startRoute,
 	modifier = Modifier.padding(bottom = padding.calculateBottomPadding())
 ) {
 	composable(Screen.Apps.route) {
@@ -477,21 +490,22 @@ fun NavHost(
 			// straight to a by-package lookup instead of through search ranking — the exact
 			// question being asked here, "what do the sources have for THIS app".
 			searchViewModel.searchFor(app.packageName)
-			mainViewModel.navigateTo(navController, Screen.Search.route)
+			mainViewModel.navigateTo(navController, Screen.Home.route)
 		}
 	}
-	composable(Screen.Search.route) { SearchScreen(searchViewModel) }
-	composable(Screen.Updates.route) {
-		UpdatesScreen(
+	composable(Screen.Home.route) {
+		HomeScreen(
 			updatesViewModel,
-			onRefresh,
-			// The start screen's ⋮ → "Sources settings": straight to the page that switches them.
+			searchViewModel,
+			onOpenUpdates = { mainViewModel.navigateTo(navController, Screen.Updates.route) },
+			// Home's ⋮ → "Sources settings": straight to the page that switches them.
 			onOpenSourcesSettings = {
 				settingsViewModel.setSources()
 				mainViewModel.navigateTo(navController, Screen.Settings.route)
 			}
 		)
 	}
+	composable(Screen.Updates.route) { UpdatesScreen(updatesViewModel, onRefresh) }
 	composable(Screen.Settings.route) { SettingsScreen(settingsViewModel) }
 }
 
