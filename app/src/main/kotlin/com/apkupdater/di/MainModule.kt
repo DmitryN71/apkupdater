@@ -52,6 +52,7 @@ import com.kryptoprefs.preferences.KryptoBuilder
 import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.logging.HttpLoggingInterceptor
 import org.koin.android.ext.koin.androidContext
 import org.koin.androidx.viewmodel.dsl.viewModel
@@ -228,10 +229,15 @@ val mainModule = module {
 	// APKMirror's download chain (util/ApkMirrorDownload.kt): its own client, because download.php
 	// must be read as a redirect rather than followed, and the shared one caches pages that are
 	// single-use keys. The User-Agent is set per request there, and it is our own.
+	// HTTP/1.1 only (build 183): since 2026-10-11 Cloudflare answers APKMirror's app pages over
+	// HTTP/2 with its challenge for any client that is not a browser, and over HTTP/1.1 with the
+	// page — same address, same name, alternating requests (measured from the PC). Nothing is
+	// disguised: the request still says "APKUpdater-Download", so APKMirror can refuse it by name.
 	single {
 		ApkMirrorDownload(
 			OkHttpClient.Builder()
 				.connectionPool(get())
+				.protocols(listOf(Protocol.HTTP_1_1))
 				.followRedirects(false)
 				.followSslRedirects(false)
 				.connectTimeout(15, TimeUnit.SECONDS)

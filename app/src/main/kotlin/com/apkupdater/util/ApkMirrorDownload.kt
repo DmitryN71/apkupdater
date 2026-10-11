@@ -40,6 +40,9 @@ import java.io.IOException
  *   hands like Chrome looks like a bot in disguise; one that says what it is does not. So we say
  *   what we are. Build 171 on the same phone: Samsung Browser (a 317 MB APK) and Galaxy Buds
  *   resolved, downloaded and installed;
+ * - from 2026-10-11 the app pages draw the challenge over HTTP/2 even under our own name, and are
+ *   served over HTTP/1.1 — the same client, address and name, requests alternating. The search
+ *   page still passes over both. Hence the client is HTTP/1.1-only (MainModule, build 183);
  * - after two such chains in quick succession Cloudflare answered the third page with
  *   "Just a moment…" (403), and lifted it a few minutes later. Hence one chain at a time, the
  *   requests spaced [MIN_INTERVAL_MS] apart, and a refusal honoured: no retry, no "solving", and

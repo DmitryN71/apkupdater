@@ -575,6 +575,9 @@ class UpdatesViewModel(
 					cancelInstall(update.id)
 					return@runCatching
 				}
+				// Shizuku can go away while a download runs; the files then go to the standard
+				// installer rather than into the bin (build 183).
+				if (shizukuGoneAfterDownload(update.id, update.name, update.packageName, link, files)) return@runCatching
 				val error = when (link) {
 					is com.apkupdater.data.ui.Link.Xapk -> installer.shizukuInstallXapk(files.first(), fake)
 					is com.apkupdater.data.ui.Link.Play -> installer.shizukuInstallSplit(files, fake)

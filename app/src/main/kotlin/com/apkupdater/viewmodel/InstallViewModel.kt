@@ -2,6 +2,7 @@ package com.apkupdater.viewmodel
 
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.compose.ui.platform.UriHandler
@@ -115,10 +116,93 @@ abstract class InstallViewModel(
         if (prefs.rootInstall.get()) {
             downloadAndRootInstall(update)
         } else if (prefs.shizukuInstall.get()) {
-            downloadAndShizukuInstall(update)
+            installWithShizuku(update)
         } else {
             downloadAndInstall(update)
         }
+    }
+
+    /**
+     * Shizuku is asked whether it can install BEFORE anything is downloaded (build 183). When it
+     * cannot — not running, typically after a reboot, or its permission withdrawn — the update
+     * goes through Android's standard installer instead of failing after the whole download.
+     *
+     * Not with "Set Installer as Play Store" on: only Shizuku can record Play as the installer,
+     * and an app some user wants to look Play-installed must not quietly stop looking it. That
+     * case is refused, before any download, with a sentence saying why.
+     */
+    private fun installWithShizuku(update: AppUpdate) {
+        // The card takes its Cancel at the tap: a Shizuku that is down is given a moment to
+        // answer, and a second tap meanwhile would have started a second install of the app.
+        startDownloadProgress(update.id)
+        shizukuChecks += update.id
+        viewModelScope.launch {
+            val ready = installer.shizukuReady()
+            // Cancelled while Shizuku was being asked: userCancelInstall has reset the card.
+            if (!shizukuChecks.remove(update.id)) return@launch
+            when {
+                ready -> downloadAndShizukuInstall(update)
+                prefs.fakePlayStore.get() -> {
+                    finishDownloadProgress(update.id)
+                    noteShizukuOnce(R.string.shizuku_down_play_installer, SnackType.ERROR)
+                }
+                // checkPermission opens the "install unknown apps" screen when that is missing,
+                // which a Shizuku user may never have needed; the standard path asks it again,
+                // harmlessly, once it is granted.
+                !installer.checkPermission() -> finishDownloadProgress(update.id)
+                else -> {
+                    noteShizukuOnce(R.string.shizuku_fallback, SnackType.INFO)
+                    downloadAndInstall(update)
+                }
+            }
+        }
+    }
+
+    /**
+     * Cards whose Shizuku check is still running. Cancel pressed meanwhile has no download to
+     * stop yet — it takes the card out of here instead, and the check then ends without starting
+     * one. Without this, Cancel answered "too late to cancel" and the install went ahead.
+     */
+    private val shizukuChecks: MutableSet<Int> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * One message per batch, not one per card: "Update all" sends every card through here within
+     * a moment, and fifteen identical toasts would bury the Cancel buttons. Shared by both screens.
+     */
+    private fun noteShizukuOnce(text: Int, type: SnackType) {
+        val now = SystemClock.elapsedRealtime()
+        if (lastShizukuNote != 0L && now - lastShizukuNote < SHIZUKU_NOTE_GAP_MS) return
+        lastShizukuNote = now
+        snackBar.snackBar(viewModelScope, TextSnack(stringer.get(text), type = type))
+    }
+
+    /**
+     * The second half of the Shizuku fallback: Shizuku went away while [files] were downloading.
+     * Rather than throw the download away, the files go to the standard installer — whose result
+     * then arrives like any standard install's, through InstallReceiver. Returns true when the
+     * install was taken over or stopped here, and the caller must not go on to Shizuku.
+     */
+    protected suspend fun shizukuGoneAfterDownload(
+        id: Int,
+        name: String,
+        packageName: String,
+        link: Link,
+        files: List<File>
+    ): Boolean {
+        if (installer.shizukuReady()) return false
+        Log.w("InstallViewModel", "Shizuku went away during the download of $packageName")
+        if (prefs.fakePlayStore.get() || !installer.checkPermission()) {
+            files.forEach { it.delete() }
+            reportFailure(name, stringer.get(
+                if (prefs.fakePlayStore.get()) R.string.shizuku_down_play_installer else R.string.shizuku_fallback_permission
+            ), id)
+            installLog.emitProgress(AppInstallProgress(id, 0L))
+            cancelInstall(id)
+            return true
+        }
+        noteShizukuOnce(R.string.shizuku_fallback, SnackType.INFO)
+        installer.installDownloaded(id, packageName, files, archive = link is Link.Xapk)
+        return true
     }
 
     /**
@@ -302,7 +386,7 @@ abstract class InstallViewModel(
         cancelInstall(id)
     }
 
-    protected fun downloadAndShizukuInstall(id: Int, name: String, packageName: String, link: Link) = runCatching {
+    protected suspend fun downloadAndShizukuInstall(id: Int, name: String, packageName: String, link: Link) = runCatching {
         val fake = prefs.fakePlayStore.get()
         // Shizuku methods return null on success, or error message on failure
         val error: String? = when (link) {
@@ -312,6 +396,7 @@ abstract class InstallViewModel(
                 }
                 downloader.beginInstall(id)
                 if (rejectWrongPackage(file, packageName, id)) return@runCatching
+                if (shizukuGoneAfterDownload(id, name, packageName, link, listOf(file))) return@runCatching
                 installer.shizukuInstall(file, fake)
             }
             is Link.Play -> {
@@ -335,6 +420,7 @@ abstract class InstallViewModel(
                     file
                 }
                 downloader.beginInstall(id)
+                if (shizukuGoneAfterDownload(id, name, packageName, link, tempFiles)) return@runCatching
                 installer.shizukuInstallSplit(tempFiles, fake)
             }
             is Link.Xapk -> {
@@ -342,6 +428,7 @@ abstract class InstallViewModel(
                     installLog.emitProgress(AppInstallProgress(id, progress, total))
                 }
                 downloader.beginInstall(id)
+                if (shizukuGoneAfterDownload(id, name, packageName, link, listOf(file))) return@runCatching
                 installer.shizukuInstallXapk(file, fake)
             }
             else -> {
@@ -463,6 +550,11 @@ abstract class InstallViewModel(
      * .onFailure handlers, which call cancelInstall(id) to reset UI state.
      */
     fun userCancelInstall(id: Int) {
+        // Still waiting for Shizuku to answer: nothing has started, so nothing needs stopping.
+        if (shizukuChecks.remove(id)) {
+            finishDownloadProgress(id)
+            return
+        }
         // Once the installer has the file there is nothing left to abort: no HTTP call to
         // cancel, and pm/the session is already running. Pressing Cancel then used to do
         // NOTHING AT ALL — the button kept saying Cancel, the install went ahead — and worse,
@@ -774,6 +866,17 @@ abstract class InstallViewModel(
         else stringer.get(R.string.saved_to_downloads, saved.fileName),
         type = if (saved.usedFallback) SnackType.ERROR else SnackType.SUCCESS
     )
+
+    companion object {
+        /** When [noteShizukuOnce] last spoke, on elapsedRealtime. In here so both screens share it. */
+        @Volatile private var lastShizukuNote = 0L
+
+        /**
+         * Long enough to cover one "Update all" — its cards all ask Shizuku at once, and wait at
+         * most 1.5 s — and short enough that a later tap, a new action, is told again.
+         */
+        private const val SHIZUKU_NOTE_GAP_MS = 5_000L
+    }
 
     protected abstract fun downloadAndInstall(update: AppUpdate): Job
     protected abstract fun downloadAndRootInstall(update: AppUpdate): Job

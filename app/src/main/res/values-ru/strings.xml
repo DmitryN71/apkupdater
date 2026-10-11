@@ -263,4 +263,7 @@
     <string name="search_hint">Поиск приложений</string>
     <string name="updates_not_checked">Проверки ещё не было</string>
     <string name="updates_not_checked_hint">Нажмите, чтобы проверить все источники. По одному – на главной.</string>
+    <string name="shizuku_fallback">Shizuku недоступен – устанавливаю стандартным установщиком Android. Запустите Shizuku, чтобы снова обновлять без подтверждений.</string>
+    <string name="shizuku_down_play_installer">Shizuku недоступен. Запустите его и повторите: без Shizuku настройка «Установщик — Play Store» не сработает.</string>
+    <string name="shizuku_fallback_permission">Shizuku стал недоступен во время загрузки, а стандартному установщику нужно разрешение на установку приложений. Дайте его и повторите.</string>
 </resources>

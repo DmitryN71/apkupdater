@@ -5,6 +5,7 @@ import android.app.PendingIntent.FLAG_MUTABLE
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES
@@ -17,6 +18,7 @@ import rikka.shizuku.Shizuku
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.zip.ZipFile
@@ -44,6 +46,9 @@ class SessionInstaller(
          * `finally { background.end(id) }`.
          */
         private const val COMMIT_LOCK_TIMEOUT_MS = 5 * 60 * 1000L
+
+        /** How long [shizukuReady] waits for Shizuku's binder to reach a freshly started process. */
+        private const val SHIZUKU_BINDER_WAIT_MS = 1_500L
     }
 
     private val installMutex = Mutex()
@@ -184,6 +189,45 @@ class SessionInstaller(
         return parseInstallError(output)
     }
 
+    /**
+     * Whether Shizuku can install right now: its service answers and we hold its permission.
+     *
+     * Asked before every Shizuku install since build 183, and again once the download is done.
+     * Until then the switch in Settings was the only check, made once when it was turned on —
+     * and Shizuku started over wireless debugging does not survive a reboot. After one, the app
+     * downloaded the whole update, then failed with "unexpected error" and deleted the file.
+     *
+     * Shizuku hands its binder to our process a moment after it comes to the foreground, so a
+     * missing one is given [SHIZUKU_BINDER_WAIT_MS] to arrive before Shizuku is written off — an
+     * Update tapped right after launch must not be taken for Shizuku being down.
+     */
+    suspend fun shizukuReady(): Boolean {
+        if (!shizukuAlive()) {
+            val received = CompletableDeferred<Unit>()
+            val listener = Shizuku.OnBinderReceivedListener { received.complete(Unit) }
+            runCatching { Shizuku.addBinderReceivedListenerSticky(listener) }
+            try {
+                withTimeoutOrNull(SHIZUKU_BINDER_WAIT_MS) { received.await() }
+            } finally {
+                runCatching { Shizuku.removeBinderReceivedListener(listener) }
+            }
+            if (!shizukuAlive()) return false
+        }
+        return runCatching {
+            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        }.getOrDefault(false)
+    }
+
+    private fun shizukuAlive() = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+
+    /**
+     * Why a Shizuku install threw. A call into a Shizuku that has gone away fails with no message
+     * at all, which the error table could only call "unexpected error"; say what happened instead.
+     */
+    private fun shizukuFailure(e: Exception): String =
+        if (!shizukuAlive()) context.getString(R.string.shizuku_not_running)
+        else parseInstallError(e.message.orEmpty())
+
     private fun shizukuProcess(args: Array<String>): Process {
         val method = Shizuku::class.java.getDeclaredMethod(
             "newProcess",
@@ -227,7 +271,7 @@ class SessionInstaller(
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku install failed", e)
             file.delete()
-            parseInstallError(e.message.orEmpty())
+            shizukuFailure(e)
         }
     }
 
@@ -281,7 +325,7 @@ class SessionInstaller(
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku split install failed", e)
             files.forEach { it.delete() }
-            parseInstallError(e.message.orEmpty())
+            shizukuFailure(e)
         }
     }
 
@@ -307,7 +351,7 @@ class SessionInstaller(
         } catch (e: Exception) {
             Log.e("SessionInstaller", "Shizuku XAPK install failed", e)
             xapkFile.delete()
-            parseInstallError(e.message.orEmpty())
+            shizukuFailure(e)
         }
     }
 
@@ -356,7 +400,10 @@ class SessionInstaller(
                 val uri = Uri.parse("package:${BuildConfig.APPLICATION_ID}")
                 val intent = Intent(ACTION_MANAGE_UNKNOWN_APP_SOURCES, uri)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(intent)
+                // Some TV boxes have no such screen, and the ActivityNotFoundException would
+                // crash the app: every caller runs in a scope with no exception handler.
+                runCatching { context.startActivity(intent) }
+                    .onFailure { Log.e("SessionInstaller", "No screen to allow installing apps", it) }
                 return false
             }
         }
@@ -370,7 +417,6 @@ class SessionInstaller(
         // so anything thrown below used to strand a file the size of the whole XAPK, plus an
         // open ZipFile. Hence the finally.
         val file = File(context.cacheDir, randomUUID())
-        var zip: ZipFile? = null
         try {
             file.outputStream().use { output ->
                 var bytesCopied = 0L
@@ -386,21 +432,45 @@ class SessionInstaller(
                 }
             }
             stream.close()
-
-            // Get entries
-            zip = ZipFile(file)
-            val entries = zip.entries().toList()
-
-            // Install the apks this device needs (skip progress tracking — download phase already
-            // tracked). See selectSplitEntries for which ones.
             // TODO: Add root install support
+            installArchive(id, packageName, file)
+        } finally {
+            runCatching { stream.close() }
+            file.delete()
+        }
+    }
+
+    /**
+     * Installs the APKs of a split archive already on disk (XAPK, APKMirror's .apkm): the ones
+     * this device needs, see [selectSplitEntries]. Progress is not tracked — the download was.
+     */
+    private suspend fun installArchive(id: Int, packageName: String, file: File) {
+        ZipFile(file).use { zip ->
+            val entries = zip.entries().toList()
             val wanted = selectSplitEntries(entries.map { it.name }).toSet()
             val apks = entries.filter { it.name in wanted }.map { zip.getInputStream(it) }
             install(id, packageName, apks, trackProgress = false)
+        }
+    }
+
+    /**
+     * Gives files the Shizuku path has already downloaded to the standard installer — for when
+     * Shizuku went away while they were downloading (build 183), so the download is not thrown
+     * away. [archive] means one split archive (XAPK, .apkm); otherwise the files are the APKs
+     * themselves, a single one or Play's splits. The files are deleted whatever happens.
+     */
+    suspend fun installDownloaded(id: Int, packageName: String, files: List<File>, archive: Boolean) {
+        val streams = mutableListOf<InputStream>()
+        try {
+            if (archive) {
+                installArchive(id, packageName, files.single())
+            } else {
+                files.forEach { streams += it.inputStream() }
+                install(id, packageName, streams, trackProgress = false)
+            }
         } finally {
-            runCatching { stream.close() }
-            runCatching { zip?.close() }
-            file.delete()
+            streams.forEach { runCatching { it.close() } }
+            files.forEach { it.delete() }
         }
     }
 

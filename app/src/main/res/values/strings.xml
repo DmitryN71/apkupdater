@@ -264,4 +264,7 @@
     <string name="search_hint">Search apps</string>
     <string name="updates_not_checked">Nothing checked yet</string>
     <string name="updates_not_checked_hint">Press to check every source. One source at a time: on Home.</string>
+    <string name="shizuku_fallback">Shizuku is not available, so Android\'s standard installer is used. Start Shizuku to update without confirmations again.</string>
+    <string name="shizuku_down_play_installer">Shizuku is not available. Start it and try again: without Shizuku, Play Store cannot be set as the installer, and your settings ask for that.</string>
+    <string name="shizuku_fallback_permission">Shizuku became unavailable during the download, and the standard installer needs permission to install apps. Allow it and try again.</string>
 </resources>
