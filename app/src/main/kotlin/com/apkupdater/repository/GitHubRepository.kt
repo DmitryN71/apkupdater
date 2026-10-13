@@ -21,10 +21,9 @@ import com.apkupdater.service.GitHubService
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
 import com.apkupdater.util.combine
-import com.apkupdater.util.filterVersionTag
+import com.apkupdater.util.compareVersionNames
 import com.apkupdater.util.formatIsoDate
 import retrofit2.HttpException
-import io.github.g00fy2.versioncompare.Version
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -227,7 +226,7 @@ class GitHubRepository(
         // release was drafted or published" — so a release cut from an older commit, or drafted
         // weeks before it was published, sorts into the middle of the list. Taking [0] was
         // trusting an order that was never promised.
-        val newest = releases.maxByOrNull { Version(filterVersionTag(it.tag_name)) }
+        val newest = releases.maxWithOrNull { a, b -> compareVersionNames(a.tag_name, b.tag_name) }
 
         // One line per repository, so that `Copy App Logs` answers "why does it still show the
         // old version?" outright. Without it, 154 could only be diagnosed by reading the source.
@@ -241,9 +240,8 @@ class GitHubRepository(
         // version library reads a string that does not start with a digit as no version at all,
         // so an app whose versionName is "v1.4.2" lost to the tag "v1.4.2" and was offered its
         // own version for ever.
-        if (newest != null &&
-            Version(filterVersionTag(newest.tag_name)) > Version(filterVersionTag(currentVersion))
-        ) {
+        // compareVersionNames, not Version alone, since build 184: see there for 2.4.0-261013.
+        if (newest != null && compareVersionNames(newest.tag_name, currentVersion) > 0) {
             val app = apps?.getApp(packageName)
             emit(listOf(AppUpdate(
                 name = repo,

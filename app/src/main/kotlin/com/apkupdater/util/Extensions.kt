@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.content.ContextCompat
 import com.apkupdater.R
+import io.github.g00fy2.versioncompare.Version
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -219,6 +220,37 @@ fun OkHttpClient.Builder.addUserAgentInterceptor(agent: String) = addNetworkInte
 fun filterVersionTag(version: String) = version
 	.replace(Regex("^\\D*"), "")
 	//.replace(Regex("\\D+\$"), "") // In case we want to remove non-numeric at end too
+
+/**
+ * Compares two version names — a release tag and an installed versionName — with both put
+ * through [filterVersionTag]. Negative, zero or positive, like any comparator.
+ *
+ * [Version] decides first. It reads `2.4.0-261013` as 2.4.0 plus a suffix, and a suffix that is
+ * not alpha/beta/rc/… is ignored, so `2.4.0-261013` and `2.4.0-260818` came out EQUAL and the
+ * newer one was never offered. Reported by Maximoff (2026-10-12) for his Apktool M, whose tags
+ * and versionNames have that shape since he switched them to suit Obtainium; checked against the
+ * library itself. So when [Version] calls two names equal and BOTH carry a plain number after
+ * the dash, that number decides.
+ *
+ * Both, not either: a tag `1.5.0-2` against an installed `1.5.0` stays equal. An app whose
+ * versionName never carries the build number would otherwise be offered the same release for
+ * ever, because installing it would not change what the app reports.
+ */
+fun compareVersionNames(a: String, b: String): Int {
+	val va = Version(filterVersionTag(a))
+	val vb = Version(filterVersionTag(b))
+	val byLibrary = va.compareTo(vb)
+	if (byLibrary != 0) return byLibrary
+	val sa = numericSuffix(va.suffix) ?: return 0
+	val sb = numericSuffix(vb.suffix) ?: return 0
+	return sa.compareTo(sb)
+}
+
+/** `-261013`, `.7`, `+42` or `_3` → the number; anything else, including no suffix, → null. */
+private fun numericSuffix(suffix: String?): Long? =
+	NUMERIC_SUFFIX.matchEntire(suffix.orEmpty())?.groupValues?.get(1)?.toLongOrNull()
+
+private val NUMERIC_SUFFIX = Regex("[-+._]?(\\d+)")
 
 fun Float.to2f() = String
 	.format("%.2f", this)

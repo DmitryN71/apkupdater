@@ -105,7 +105,9 @@ abstract class InstallViewModel(
         }
         // APKMirror opens its page in the browser unless the user switched on in-app downloads,
         // and even then only for a variant page — see isApkMirrorDirect.
-        if (update.source == ApkMirrorSource && !isApkMirrorDirect(update)) {
+        // Also when APKMirror has just refused this app's pages (build 184): asking again would
+        // only be refused again, and in the browser the person can pass the check themselves.
+        if (update.source == ApkMirrorSource && (!isApkMirrorDirect(update) || isApkMirrorPaused(update))) {
             uriHandler.openUri((update.link as Link.Url).link)
             return
         }
@@ -213,6 +215,10 @@ abstract class InstallViewModel(
     fun isApkMirrorDirect(update: AppUpdate): Boolean = update.source == ApkMirrorSource &&
         prefs.apkMirrorDirect.get() &&
         (update.link as? Link.Url)?.link?.let { ApkMirrorDownload.isVariantPage(it) } == true
+
+    /** A direct APKMirror download whose app APKMirror refused moments ago. See ApkMirrorDownload. */
+    fun isApkMirrorPaused(update: AppUpdate): Boolean = isApkMirrorDirect(update) &&
+        apkMirror.isAppPaused((update.link as Link.Url).link)
 
     fun getInstalledVersionCode(packageName: String): Long = runCatching {
         if (Build.VERSION.SDK_INT >= 28) {

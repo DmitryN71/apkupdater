@@ -231,6 +231,7 @@
     <string name="apkmirror_not_published">Проверка обновлений APKMirror уже видит эту версию, но её страницы на сайте пока нет. Попробуйте позже или откройте страницу в браузере.</string>
     <string name="apkmirror_page_changed">На странице APKMirror не нашлась ссылка на файл – похоже, сайт изменился. Откройте страницу в браузере.</string>
     <string name="apkmirror_failed">APKMirror не отдал файл. Откройте страницу в браузере.</string>
+    <string name="apkmirror_app_blocked">APKMirror требует проверку в браузере для страниц этого приложения. Нажмите «Обновить» ещё раз – страница откроется в браузере. Остальных загрузок с APKMirror это не касается.</string>
     <string name="whats_new">Что нового</string>
     <string name="card_details">Подробности</string>
     <string name="show_more_cd">Показать полностью</string>

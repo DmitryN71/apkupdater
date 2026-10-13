@@ -654,7 +654,10 @@ class UpdatesViewModel(
 
 	/** Shared with the screen, which shows "Update all" only when there is something for it. */
 	fun isBatchInstallable(update: AppUpdate) =
-		update.source != com.apkupdater.data.ui.ApkMirrorSource || isApkMirrorDirect(update)
+		update.source != com.apkupdater.data.ui.ApkMirrorSource ||
+			// Not an app APKMirror just refused: Update on it opens the browser, and "Update all"
+			// opening a browser tab in the middle of a batch is what this filter exists to prevent.
+			(isApkMirrorDirect(update) && !isApkMirrorPaused(update))
 
 	override fun startDownloadProgress(id: Int) {
 		state.update { it.withUpdates(it.mutableUpdates().setIsInstalling(id, true)) }

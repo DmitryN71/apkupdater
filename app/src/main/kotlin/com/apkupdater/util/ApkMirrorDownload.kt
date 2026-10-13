@@ -11,12 +11,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 
 
 /**
@@ -47,7 +49,14 @@ import java.io.IOException
  *   "Just a moment…" (403), and lifted it a few minutes later. Hence one chain at a time, the
  *   requests spaced [MIN_INTERVAL_MS] apart, and a refusal honoured: no retry, no "solving", and
  *   no further request for [BLOCK_PAUSE_MS] — the rest of an "Update all" queue fails at once
- *   instead of walking into the same challenge one card after another.
+ *   instead of walking into the same challenge one card after another;
+ * - from 2026-10-13 EVERY page under `/apk/discord/` draws the challenge — developer, app,
+ *   release and variant pages, from any address — while Telegram, WeChat or Android Auto, asked
+ *   the same minute from the same address, are served. A refusal can therefore be one app's
+ *   rather than the whole site's. Until build 184 any refusal paused everything, so one tap on
+ *   Discord failed every other APKMirror download for ten minutes, and Dmitry took three good
+ *   VPN servers for blocked ones. So a refusal now pauses that app alone ([appBlockedUntil]),
+ *   and the whole site only when a SECOND app is refused inside the same window, or on a 429.
  */
 class ApkMirrorDownload(private val client: OkHttpClient) {
 
@@ -69,8 +78,20 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 	@Volatile
 	private var lastRequestAt = 0L
 
+	/** Until when nothing at all goes to APKMirror: the site refused us, not one page. */
 	@Volatile
 	private var blockedUntil = 0L
+
+	/** Apps ([appKey]) whose pages were refused, and until when they are left alone. */
+	private val appBlockedUntil = ConcurrentHashMap<String, Long>()
+
+	/**
+	 * Whether the app behind this page was refused within the last [BLOCK_PAUSE_MS]. The screens
+	 * open such a page in the browser on Update, where the person passes the check themselves,
+	 * and leave it out of "Update all".
+	 */
+	fun isAppPaused(pageUrl: String): Boolean =
+		(appBlockedUntil[appKey(pageUrl)] ?: 0L) > SystemClock.elapsedRealtime()
 
 	/**
 	 * [shouldStop] is asked before every request. A chain queued behind others can wait minutes
@@ -79,7 +100,10 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 	 */
 	suspend fun resolve(pageUrl: String, shouldStop: () -> Boolean = { false }): Resolved = mutex.withLock {
 		withContext(Dispatchers.IO) {
-			val page = html(pageUrl, "$BASE/", shouldStop)
+			// Every step is charged to the app the chain started from: download.php lives outside
+			// the app's path, and a refusal there is still a refusal of this app's download.
+			val app = appKey(pageUrl)
+			val page = html(pageUrl, "$BASE/", app, shouldStop)
 			val button = page.selectFirst("a.downloadButton[href*=/download/?key=]")
 				?: page.selectFirst("a[href*=/download/?key=]")
 				?: throw Failure(R.string.apkmirror_page_changed, "No download button on $pageUrl")
@@ -87,13 +111,13 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 				throw Failure(R.string.apkmirror_page_changed, "Empty download button on $pageUrl")
 			}
 
-			val thanks = html(keyUrl, pageUrl, shouldStop)
+			val thanks = html(keyUrl, pageUrl, app, shouldStop)
 			val phpUrl = (thanks.selectFirst("#download-link[href]") ?: thanks.selectFirst("a[href*=download.php?id=]"))
 				?.absUrl("href")
 				?.takeIf { it.isNotBlank() }
 				?: throw Failure(R.string.apkmirror_page_changed, "No download.php link on $keyUrl")
 
-			val file = redirect(phpUrl, keyUrl, shouldStop)
+			val file = redirect(phpUrl, keyUrl, app, shouldStop)
 			// The button's words first; the file's own name as a second opinion, so a relabelled
 			// button cannot send a zip of splits to an installer expecting one APK.
 			val bundle = button.text().contains("bundle", ignoreCase = true) ||
@@ -103,9 +127,9 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 		}
 	}
 
-	private suspend fun html(url: String, referer: String, shouldStop: () -> Boolean): Document {
-		val body = call(url, referer, ACCEPT_HTML, shouldStop) { response ->
-			if (!response.isSuccessful) throw failureFor(response, url)
+	private suspend fun html(url: String, referer: String, app: String, shouldStop: () -> Boolean): Document {
+		val body = call(url, referer, ACCEPT_HTML, app, shouldStop) { response ->
+			if (!response.isSuccessful) throw failureFor(response, url, app)
 			response.body.string()
 		}
 		return Jsoup.parse(body, url)
@@ -116,8 +140,8 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 	 * A redirect back onto apkmirror.com is a page, not the file — an expired key or a challenge —
 	 * and following it would download HTML and hand it to the installer.
 	 */
-	private suspend fun redirect(url: String, referer: String, shouldStop: () -> Boolean): HttpUrl =
-		call(url, referer, "*/*", shouldStop) { response ->
+	private suspend fun redirect(url: String, referer: String, app: String, shouldStop: () -> Boolean): HttpUrl =
+		call(url, referer, "*/*", app, shouldStop) { response ->
 			val location = response.header("Location")
 			if (response.code in 300..399 && !location.isNullOrBlank()) {
 				val target = response.request.url.resolve(location)
@@ -128,7 +152,7 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 			} else if (response.isSuccessful) {
 				throw Failure(R.string.apkmirror_page_changed, "download.php answered ${response.code} instead of a redirect")
 			} else {
-				throw failureFor(response, url)
+				throw failureFor(response, url, app)
 			}
 		}
 
@@ -136,11 +160,16 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 		url: String,
 		referer: String,
 		accept: String,
+		app: String,
 		shouldStop: () -> Boolean,
 		read: (Response) -> T
 	): T {
-		if (SystemClock.elapsedRealtime() < blockedUntil) {
+		val now = SystemClock.elapsedRealtime()
+		if (now < blockedUntil) {
 			throw Failure(R.string.apkmirror_blocked, "APKMirror refused recently; not asking again yet")
+		}
+		if (now < (appBlockedUntil[app] ?: 0L)) {
+			throw Failure(R.string.apkmirror_app_blocked, "APKMirror refused $app recently; not asking again yet")
 		}
 		// Measured from the END of the previous request, so a slow page does not eat the gap.
 		val wait = (lastRequestAt + MIN_INTERVAL_MS - SystemClock.elapsedRealtime()).coerceAtMost(MIN_INTERVAL_MS)
@@ -159,7 +188,7 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 		}
 	}
 
-	private fun failureFor(response: Response, url: String): Failure {
+	private fun failureFor(response: Response, url: String, app: String): Failure {
 		val challenge = response.header("cf-mitigated")
 		Log.w(TAG, "APKMirror answered ${response.code} (cf-mitigated=$challenge) for $url")
 		// Only Cloudflare's own refusals pause the queue: a challenge ("Just a moment…", marked
@@ -169,8 +198,17 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 		// (MAX 26.34.0 on 2026-09-30, the same for every User-Agent). That showed "limiting access"
 		// for an hour and paused every other APKMirror download ten minutes per retry.
 		if (challenge != null || response.code == 403 || response.code == 429) {
-			blockedUntil = SystemClock.elapsedRealtime() + BLOCK_PAUSE_MS
-			return Failure(R.string.apkmirror_blocked, "APKMirror ${response.code} for $url")
+			val now = SystemClock.elapsedRealtime()
+			// Since build 184 a refusal pauses this app first — see the class notes on Discord. A
+			// second app refused inside the window means the site is refusing us, whatever the
+			// page; and a 429 says outright that it is about our rate, not about a page.
+			val othersRefused = appBlockedUntil.any { (key, until) -> key != app && until > now }
+			appBlockedUntil[app] = now + BLOCK_PAUSE_MS
+			if (othersRefused || response.code == 429) {
+				blockedUntil = now + BLOCK_PAUSE_MS
+				return Failure(R.string.apkmirror_blocked, "APKMirror ${response.code} for $url")
+			}
+			return Failure(R.string.apkmirror_app_blocked, "APKMirror ${response.code} for $app: $url")
 		}
 		// The page's <title> sits about 20 KB in; peek, so nothing else of the body is consumed.
 		val notPublished = response.code == 404 || runCatching {
@@ -211,6 +249,20 @@ class ApkMirrorDownload(private val client: OkHttpClient) {
 		 * cannot pass for one.
 		 */
 		fun isVariantPage(url: String) = url.startsWith(BASE) && url.trimEnd('/').endsWith("-apk-download")
+
+		/**
+		 * The app a page belongs to: `discord/discord-chat-for-gamers` for any page under
+		 * `/apk/discord/discord-chat-for-gamers/`, whatever release or variant. Anything that does
+		 * not have that shape is its own key.
+		 */
+		fun appKey(url: String): String {
+			val segments = url.toHttpUrlOrNull()?.pathSegments ?: return url
+			return if (segments.size >= 3 && segments[0] == "apk" && segments[1].isNotEmpty() && segments[2].isNotEmpty()) {
+				"${segments[1]}/${segments[2]}"
+			} else {
+				url
+			}
+		}
 	}
 
 }

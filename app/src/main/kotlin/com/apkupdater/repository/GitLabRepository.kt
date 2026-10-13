@@ -15,9 +15,8 @@ import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.GitLabService
 import com.apkupdater.util.combine
-import com.apkupdater.util.filterVersionTag
+import com.apkupdater.util.compareVersionNames
 import com.apkupdater.util.formatIsoDate
-import io.github.g00fy2.versioncompare.Version
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -79,7 +78,7 @@ class GitLabRepository(
     ) = flow {
         // The installed side through filterVersionTag too — see GitHubRepository.checkApp.
         val releases = service.getReleases(user, repo)
-            .filter { Version(filterVersionTag(it.tag_name)) > Version(filterVersionTag(currentVersion)) }
+            .filter { compareVersionNames(it.tag_name, currentVersion) > 0 }
 
         if (releases.isNotEmpty()) {
             val app = apps?.getApp(packageName)
