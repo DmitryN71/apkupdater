@@ -24,14 +24,37 @@ class MainActivity : ComponentActivity() {
 		setContent { MainScreen() }
 	}
 
+	/**
+	 * "On screen" means VISIBLE (started), not merely in front (resumed) — since build 185.
+	 *
+	 * It used to follow onResume/onPause, and anything that pauses a still-visible window — a
+	 * vendor's install scan, a system overlay, split screen, the notification-permission prompt —
+	 * made the app count as gone. When Android then asked to confirm an install, InstallReceiver
+	 * posted a notification instead of opening the dialog, the card sat on Cancel, and the
+	 * install looked failed; the next attempt showed the dialog and went through. A 4PDA user
+	 * reported exactly that — "the first attempt always fails" — and that APKUpdater OSS, which
+	 * always opens the dialog, does not do it. Android lets an app with a visible window open an
+	 * activity, so visible is the right test for the dialog, and for every other "would the
+	 * user see an in-app message?" question this flag answers.
+	 */
+	override fun onStart() {
+		super.onStart()
+		AppVisibility.foreground = true
+	}
+
+	override fun onStop() {
+		AppVisibility.foreground = false
+		super.onStop()
+	}
+
 	override fun onResume() {
 		super.onResume()
-		AppVisibility.foreground = true
+		AppVisibility.resumed = true
 		showPendingInstallConfirmations()
 	}
 
 	override fun onPause() {
-		AppVisibility.foreground = false
+		AppVisibility.resumed = false
 		super.onPause()
 	}
 

@@ -233,6 +233,7 @@
     <string name="apkmirror_page_changed">The file link was not found on the APKMirror page – the site seems to have changed. Open the page in the browser.</string>
     <string name="apkmirror_failed">APKMirror did not hand out the file. Open the page in the browser.</string>
     <string name="apkmirror_app_blocked">APKMirror asks for a browser check on this app\'s pages. Tap Update again to open the page in the browser; other APKMirror downloads are not affected.</string>
+    <string name="sources_not_checked">Could not check: %1$s</string>
     <string name="whats_new">What\'s new</string>
     <string name="card_details">Details</string>
     <string name="show_more_cd">Show more</string>

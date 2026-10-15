@@ -76,7 +76,8 @@ class UpdatesRepository(
      * and the menu that passes this only offers the enabled ones anyway.
      */
     fun updates(
-        onSourceError: ((Int, Int) -> Unit)? = null,
+        /** The names of the sources that failed, and how many were asked (build 185: names, not a count). */
+        onSourceError: ((List<String>, Int) -> Unit)? = null,
         onSourceComplete: ((Int, Int, List<String>) -> Unit)? = null,
         onSourceAnswered: ((Source) -> Unit)? = null,
         only: Source? = null
@@ -101,7 +102,7 @@ class UpdatesRepository(
 
                 val totalSources = sourceFlows.size
                 if (totalSources > 0) {
-                    val errorCount = AtomicInteger(0)
+                    val failed = java.util.Collections.synchronizedList(mutableListOf<String>())
                     val completedCount = AtomicInteger(0)
                     val remaining = sourceNames.toMutableList()
                     val lock = Any()
@@ -121,12 +122,12 @@ class UpdatesRepository(
                                 emit(result)
                             } else {
                                 Log.w("UpdatesRepository", "${sourceNames[index]} timed out after ${SOURCE_TIMEOUT_MS / 1000}s")
-                                errorCount.incrementAndGet()
+                                failed += sourceObjs[index].name
                                 emit(emptyList())
                             }
                         }.catch { e ->
                             Log.e("UpdatesRepository", "Source error", e)
-                            errorCount.incrementAndGet()
+                            failed += sourceObjs[index].name
                             emit(emptyList())
                         }.onCompletion {
                             // Reported INSIDE the lock, not after it. Sources finish on
@@ -167,8 +168,7 @@ class UpdatesRepository(
                         // favor of GitHub/F-Droid for direct install).
                         emit(found.filter { !isVersionDowngrade(it.oldVersion, it.version) })
                     }
-                    val errors = errorCount.get()
-                    if (errors > 0) onSourceError?.invoke(errors, totalSources)
+                    if (failed.isNotEmpty()) onSourceError?.invoke(failed.toList(), totalSources)
                 } else {
                     emit(emptyList())
                 }

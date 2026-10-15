@@ -54,6 +54,15 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 if (AppVisibility.foreground) {
                     runCatching { context.startActivity(confirm) }
+                        .onSuccess {
+                            // Visible but not in front (build 185): an overlay, split screen, or
+                            // the moment after Home before onStop arrives. Android may refuse the
+                            // launch in that last case without an exception, which would leave
+                            // the card on Cancel and the commit lock held — so the notification
+                            // goes up too. The result cancels it either way. Not remembered for
+                            // onResume: that would open the dialog a second time.
+                            if (!AppVisibility.resumed) notification.showConfirmInstallNotification(confirm, id)
+                        }
                         .onFailure {
                             installLog.rememberConfirm(id, confirm)
                             notification.showConfirmInstallNotification(confirm, id)

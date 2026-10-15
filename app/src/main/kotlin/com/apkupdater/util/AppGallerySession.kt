@@ -2,7 +2,6 @@ package com.apkupdater.util
 
 import android.content.Context
 import android.os.Build
-import android.telephony.TelephonyManager
 import android.util.Log
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.AppGalleryService
@@ -113,13 +112,10 @@ class AppGallerySession(
 	 * Google Play. All three signals are logged, so the next report shows what the phone said.
 	 */
 	private fun deviceCountry(): String? {
-		val telephony = runCatching { context.getSystemService(TelephonyManager::class.java) }.getOrNull()
-		val sim = runCatching { telephony?.simCountryIso }.getOrNull().orEmpty().uppercase()
-		val network = runCatching { telephony?.networkCountryIso }.getOrNull().orEmpty().uppercase()
-		val locale = java.util.Locale.getDefault().country.orEmpty().uppercase()
-		val signals = listOf(sim, network, locale).filter { it.length == 2 }
-		val chosen = if ("RU" in signals) "RU" else signals.firstOrNull()
-		Log.i(TAG, "AppGallery country: sim=$sim network=$network locale=$locale -> ${chosen ?: "unknown"}")
+		// Read by util/DeviceCountry.kt since build 185, which RuStore's default shares.
+		val signals = context.countrySignals()
+		val chosen = if (signals.inRussia) "RU" else signals.known.firstOrNull()
+		Log.i(TAG, "AppGallery country: sim=${signals.sim} network=${signals.network} locale=${signals.locale} -> ${chosen ?: "unknown"}")
 		return chosen
 	}
 

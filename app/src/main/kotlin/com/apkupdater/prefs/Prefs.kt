@@ -10,7 +10,9 @@ import com.kryptoprefs.preferences.KryptoPrefs
 
 class Prefs(
 	prefs: KryptoPrefs,
-	isAndroidTv: Boolean
+	isAndroidTv: Boolean,
+	/** Whether the device is in Russia — see util/DeviceCountry.kt. Decides RuStore's default. */
+	inRussia: Boolean
 ): KryptoContext(prefs) {
 	val ignoredApps = json("ignoredApps", emptyList<String>(), true)
 	val ignoredVersions = json("ignoredVersions", emptyList<Int>(), true)
@@ -53,7 +55,25 @@ class Prefs(
 	val useAptoide = boolean("useAptoide", defValue = true, backed = true)
 	val useApkPure = boolean("useApkPure", defValue = true, backed = true)
 	val usePlay = boolean("usePlay", defValue = true, backed = true)
-	val useRuStore = boolean("useRuStore", defValue = false, backed = true)
+	// On by default on a device in Russia since build 185 (util/DeviceCountry.kt), off elsewhere.
+	// It was off for everyone, and a newcomer on 4PDA found no Yota, Spar or VK Messenger — all
+	// in RuStore — and took the app for broken. Only the default moved: whoever switched it off
+	// keeps it off, but whoever never touched it finds it on after updating, which the release
+	// post says.
+	val useRuStore = boolean("useRuStore", defValue = inRussia, backed = true)
+	/** Set once [useRuStore]'s default has been written down — see the init block below. */
+	private val ruStoreDefaultWritten = boolean("ruStoreDefaultWritten", defValue = false, backed = true)
+
+	init {
+		// The default is decided once, on the first launch of 185, and then kept. Read live it
+		// could flip from one launch to the next — the mobile network's country is one of the
+		// signals, and it changes when roaming — switching a source on and off under the user.
+		// An explicit choice is already stored, so writing its own value back changes nothing.
+		if (!ruStoreDefaultWritten.get()) {
+			useRuStore.put(useRuStore.get())
+			ruStoreDefaultWritten.put(true)
+		}
+	}
 	// Off by default, like every source that is not on for everyone: it carries Russian
 	// banking and state apps that left Play, and nothing at all for most other people.
 	val useAppGallery = boolean("useAppGallery", defValue = false, backed = true)

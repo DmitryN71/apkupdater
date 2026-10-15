@@ -275,9 +275,15 @@ class UpdatesViewModel(
 				_refreshProgress.value = stringer.get(R.string.checking_updates)
 				badger.changeUpdatesBadge("")
 				updatesRepository.updates(
-					onSourceError = { errors, total ->
+					onSourceError = { failed, _ ->
 						if (refreshGeneration.get() == mine) {
-							snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.source_errors, errors, total)))
+							// By name and held longer (build 185). "1 of 10 sources failed" went by
+							// in a moment and named nothing, so a source refusing us — APKMirror
+							// behind Cloudflare on 2026-10-12 — read as "no updates there".
+							snackBar.snackBar(viewModelScope, TextSnack(
+								stringer.get(R.string.sources_not_checked, failed.joinToString()),
+								duration = androidx.compose.material3.SnackbarDuration.Long
+							))
 						}
 					},
 					onSourceComplete = { completed, total, remaining ->

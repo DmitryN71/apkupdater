@@ -158,7 +158,18 @@ class RuStoreRepository(
 			}
 		}
 
-		val updates = processAppsWithRateLimiting(found.values.toList()) { entry, markRateLimit ->
+		// Details cost two requests per app, and the store answers a query with up to forty apps
+		// (twenty per device kind) of which Search then keeps a handful — «вк мессенджер» fetched
+		// 32 to show 2, about forty seconds behind a VPN (build 185). So only the ones Search
+		// would keep: those matching the query, and the store's own first answer, which Search
+		// keeps regardless (SearchRepository.STORE_SEARCH). Order is kept, so that first answer
+		// is still first.
+		val matcher = SearchRepository.QueryMatcher(text)
+		val firstPackage = found.keys.firstOrNull()
+		val wanted = found.values.filter { (app, _) ->
+			app.packageName == firstPackage || matcher.matches(app.appName, app.packageName)
+		}
+		val updates = processAppsWithRateLimiting(wanted) { entry, markRateLimit ->
 			val (searchApp, deviceType) = entry
 			retryOnRateLimit {
 				var hitRateLimit = false

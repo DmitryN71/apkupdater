@@ -40,6 +40,7 @@ import com.apkupdater.util.Stringer
 import com.apkupdater.util.Themer
 import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.addUserAgentInterceptor
+import com.apkupdater.util.countrySignals
 import com.apkupdater.util.isAndroidTv
 import com.apkupdater.util.play.PlayHttpClient
 import com.apkupdater.viewmodel.AppsViewModel
@@ -293,7 +294,7 @@ val mainModule = module {
 
 	single { KryptoBuilder.nocrypt(get(), androidContext().getString(R.string.app_name)) }
 
-	single { Prefs(get(), androidContext().isAndroidTv()) }
+	single { Prefs(get(), androidContext().isAndroidTv(), androidContext().countrySignals().inRussia) }
 
 	single { UpdatesNotification(get()) }
 
