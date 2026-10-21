@@ -74,6 +74,13 @@ import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.Source
 import com.apkupdater.util.launchIntentFor
+import com.apkupdater.util.isAndroidTv
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.TvEqualRows
@@ -432,6 +439,27 @@ fun SearchText(
 	// on a card uses. Only while the button exists: an unattached FocusRequester throws.
 	val clearFocus = remember { FocusRequester() }
 	val clearVisible = value.isNotEmpty()
+	// On a TV the field opens the keyboard only on OK (build 186), the way TvTextField's fields
+	// have since build 179. A focused text field shows the keyboard at once, and the field sits
+	// at the top of Home — one D-pad UP too many, and the keyboard covered the screen (Dmitry).
+	// Until OK the field is disabled, so the clickable wrapper is the one thing the D-pad lands
+	// on; OK enables it and hands it the focus; Back, or the focus leaving, ends it.
+	val isTv = LocalContext.current.isAndroidTv()
+	var editing by remember { mutableStateOf(false) }
+	val wrapperInteraction = remember { MutableInteractionSource() }
+	val wrapperFocused by wrapperInteraction.collectIsFocusedAsState()
+	val wrapperFocus = remember { FocusRequester() }
+	// Back to the wrapper when Back ended the editing, so the D-pad stays on the field rather
+	// than falling to the bottom bar; not when the focus left by itself — it went somewhere.
+	var refocusWrapper by remember { mutableStateOf(false) }
+	LaunchedEffect(editing) {
+		if (editing) runCatching { focusRequester.requestFocus() }
+		else if (refocusWrapper) {
+			refocusWrapper = false
+			runCatching { wrapperFocus.requestFocus() }
+		}
+	}
+	val fieldShape = RoundedCornerShape(28.dp)
 	BasicTextField(
 		value = value,
 		onValueChange = {
@@ -441,12 +469,35 @@ fun SearchText(
 			// leave them sitting under an empty field.
 			if (it.length < 3) viewModel.clearSearch()
 		},
+		enabled = !isTv || editing,
 		modifier = Modifier
 			.fillMaxWidth()
 			.padding(end = 8.dp)
 			.height(48.dp)
 			.then(if (clearVisible) Modifier.focusProperties { right = clearFocus } else Modifier)
-			.focusRequester(focusRequester),
+			.then(
+				if (isTv && !editing) {
+					Modifier
+						.focusRequester(wrapperFocus)
+						.then(if (wrapperFocused) Modifier.border(TvFocus.stroke, fieldShape) else Modifier)
+						.clickable(interactionSource = wrapperInteraction, indication = null) { editing = true }
+				} else {
+					Modifier
+				}
+			)
+			.focusRequester(focusRequester)
+			// Back always ends editing, whatever the keyboard did with the focus.
+			.onPreviewKeyEvent { event ->
+				if (isTv && editing && event.type == KeyEventType.KeyUp && event.key == Key.Back) {
+					refocusWrapper = true
+					editing = false
+					keyboardController?.hide()
+					true
+				} else {
+					false
+				}
+			}
+			.onFocusChanged { if (isTv && editing && !it.isFocused) editing = false },
 		textStyle = MaterialTheme.typography.bodyLarge.copy(
 			color = MaterialTheme.colorScheme.onSurface
 		),
@@ -479,7 +530,7 @@ fun SearchText(
 						}
 					}
 				},
-				shape = RoundedCornerShape(28.dp),
+				shape = fieldShape,
 				colors = appTextFieldColors(),
 				// 12 dp instead of Material's 16, which is what buys the height back.
 				contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
@@ -490,7 +541,10 @@ fun SearchText(
 		}
 	)
 	LaunchedEffect(Unit) {
-		if (autoFocus) focusRequester.requestFocus()
+		// On a TV, focusing the field is opening the keyboard: that goes through editing.
+		if (autoFocus) {
+			if (isTv) editing = true else focusRequester.requestFocus()
+		}
 	}
 	// Back clears the search before it leaves the screen — on Home, where the search took the
 	// tiles' place, that is the way back to them (3.10.0).

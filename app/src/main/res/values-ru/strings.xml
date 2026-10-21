@@ -233,6 +233,14 @@
     <string name="apkmirror_failed">APKMirror не отдал файл. Откройте страницу в браузере.</string>
     <string name="apkmirror_app_blocked">APKMirror требует проверку в браузере для страниц этого приложения. Нажмите «Обновить» ещё раз – страница откроется в браузере. Остальных загрузок с APKMirror это не касается.</string>
     <string name="sources_not_checked">Не удалось проверить: %1$s</string>
+    <string name="rustore_device_pool">Проверять как 4 устройства: постепенные обновления приходят раньше</string>
+    <string name="repos_export">Экспорт списка</string>
+    <string name="repos_import">Импорт списка (добавит недостающие)</string>
+    <string name="repos_exported">Сохранено репозиториев: %1$d</string>
+    <string name="repos_export_failed">Не удалось сохранить список</string>
+    <string name="repos_imported">Добавлено: %1$d, уже были в списке: %2$d</string>
+    <string name="repos_import_failed">В файле не нашлось репозиториев</string>
+    <string name="no_file_picker">На этом устройстве нет системного выбора файлов.</string>
     <string name="whats_new">Что нового</string>
     <string name="card_details">Подробности</string>
     <string name="show_more_cd">Показать полностью</string>

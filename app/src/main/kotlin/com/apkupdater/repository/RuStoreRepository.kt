@@ -15,6 +15,7 @@ import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.prefs.RuStore404Entry
 import com.apkupdater.service.RuStoreService
+import com.apkupdater.util.AppJournal
 import com.apkupdater.util.RuStoreSession
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -46,6 +47,9 @@ class RuStoreRepository(
 		private const val RUSTORE_404_TTL_MS = 6 * 60 * 60 * 1000L
 	}
 
+	/** One package's update as the check found it: which device kind and which device slot saw it. */
+	private data class Found(val app: RuStoreBatchApp, val deviceType: String, val slot: Int)
+
 	@Volatile
 	private var currentBatchDelayMs = MIN_BATCH_DELAY_MS
 	@Volatile
@@ -70,25 +74,39 @@ class RuStoreRepository(
 		// The batch is a single request per kind regardless of how many packages it carries, so
 		// this costs one extra request in total. Remember which kind found each app: the detail
 		// and download calls below have to ask the same way or they answer 404.
-		val appsWithUpdates = LinkedHashMap<String, Pair<RuStoreBatchApp, String>>()
+		//
+		// And once per DEVICE as well, since build 186 — see RuStoreSession.POOL_SIZE. RuStore rolls
+		// a new version out to a share of device ids, so each extra id can be offered what the
+		// first is not yet. Every slot's answer is kept per package, newest first, so step 2 can
+		// fall back to an older one when the newest cannot be had (its details fail, its link is
+		// empty, or it is a beta the user filters out). Within one slot the first kind to answer
+		// keeps the package, as before 186 — phone ahead of TV — and on equal versions the earlier
+		// slot comes first, so with the pool off, or nothing mid-rollout, nothing changes.
+		val appsWithUpdates = LinkedHashMap<String, MutableList<Found>>()
 		val batchFailures = FailureTally()
-		RuStoreSession.DEVICE_TYPES.forEach { deviceType ->
-			runCatching { service.getBatchUpdates(batchRequest, deviceType).body.content }
-				.onFailure {
-					Log.e("RuStoreRepository", "Batch check failed for $deviceType", it)
-					batchFailures.record(it)
-				}
-				.getOrDefault(emptyList())
-				.forEach { app ->
-					if (!appsWithUpdates.containsKey(app.packageName)) {
-						appsWithUpdates[app.packageName] = app to deviceType
+		val slots = RuStoreSession.poolSize(prefs)
+		for (slot in 0 until slots) {
+			RuStoreSession.DEVICE_TYPES.forEach { deviceType ->
+				runCatching { service.getBatchUpdates(batchRequest, deviceType, slot).body.content }
+					.onFailure {
+						Log.e("RuStoreRepository", "Batch check failed for $deviceType, device $slot", it)
+						batchFailures.record(it)
 					}
-				}
+					.getOrDefault(emptyList())
+					.forEach { app ->
+						val candidates = appsWithUpdates.getOrPut(app.packageName) { mutableListOf() }
+						if (candidates.none { it.slot == slot }) candidates += Found(app, deviceType, slot)
+					}
+			}
 		}
+		// Stable: equal versions keep slot order.
+		appsWithUpdates.values.forEach { it.sortByDescending { found -> found.app.versionCode } }
+		val byExtraDevices = appsWithUpdates.values.count { it.first().slot > 0 }
+		AppJournal.add("RuStoreRepository", "RuStore: ${appsWithUpdates.size} update(s) over $slots device(s), $byExtraDevices newest only on the extra ones.")
 
-		// Neither kind answered: RuStore was not reached at all, which is not the same as "no
-		// updates". One kind failing alone still leaves the other's answer worth showing.
-		batchFailures.throwIfAllFailed(RuStoreSession.DEVICE_TYPES.size, "RuStore")
+		// Nothing answered: RuStore was not reached at all, which is not the same as "no
+		// updates". One kind or device failing alone still leaves the others' answers.
+		batchFailures.throwIfAllFailed(slots * RuStoreSession.DEVICE_TYPES.size, "RuStore")
 
 		if (appsWithUpdates.isEmpty()) {
 			emit(emptyList())
@@ -96,40 +114,9 @@ class RuStoreRepository(
 		}
 
 		// Step 2: For each app with an update, fetch details + download link with rate limiting
-		val updates = processAppsWithRateLimiting(appsWithUpdates.values.toList()) { entry, markRateLimit ->
-			val (batchApp, deviceType) = entry
-			retryOnRateLimit {
-				var hitRateLimit = false
-				val result = runCatching {
-					val detailResponse = service.getAppInfo(batchApp.packageName, deviceType)
-					if (detailResponse.code != "OK" || detailResponse.body.appId == 0L) return@runCatching null
-
-					val ruStoreApp = detailResponse.body
-					clearRuStore404(batchApp.packageName)
-					if (!filterAlpha(ruStoreApp.versionName) || !filterBeta(ruStoreApp.versionName)) return@runCatching null
-
-					val downloadUrl = getDownloadUrl(ruStoreApp.appId, deviceType)
-					if (downloadUrl.isEmpty()) return@runCatching null
-
-					val app = apps.getApp(batchApp.packageName)
-					ruStoreApp.toAppUpdate(app, downloadUrl)
-				}.onFailure { exception ->
-					when {
-						exception is HttpException && exception.code() == 429 -> {
-							hitRateLimit = true
-							Log.w("RuStoreRepository", "Rate limit hit for ${batchApp.packageName}")
-							markRateLimit()
-						}
-						exception is HttpException && exception.code() == 404 -> {
-							markRuStore404(batchApp.packageName)
-							Log.w("RuStoreRepository", "404 for ${batchApp.packageName}, caching")
-						}
-						else -> Log.e("RuStoreRepository", "Error checking ${batchApp.packageName}", exception)
-					}
-				}.getOrNull()
-
-				AttemptResult(result, hitRateLimit)
-			}
+		val updates = processAppsWithRateLimiting(appsWithUpdates.values.toList()) { candidates, markRateLimit ->
+			// Newest first; the next candidate only when this one could not be had.
+			candidates.firstNotNullOfOrNull { found -> details(found, apps, markRateLimit) }
 		}
 
 		emit(updates)
@@ -139,6 +126,50 @@ class RuStoreRepository(
 		// failed and keeps its earlier cards. An empty answer here read as "no updates" — with
 		// no network at all, a check of this one source said so on the screen.
 		throw it
+	}
+
+	/**
+	 * Details and the download link for one candidate of updates(), asked as the device and kind
+	 * that saw it — another device is offered another version. Null when it cannot be had.
+	 */
+	private suspend fun details(found: Found, apps: List<AppInstalled>, markRateLimit: () -> Unit): AppUpdate? {
+		val (batchApp, deviceType, slot) = found
+		return retryOnRateLimit {
+			var hitRateLimit = false
+			val result = runCatching {
+				val detailResponse = service.getAppInfo(batchApp.packageName, deviceType, slot)
+				if (detailResponse.code != "OK" || detailResponse.body.appId == 0L) return@runCatching null
+
+				val ruStoreApp = detailResponse.body
+				clearRuStore404(batchApp.packageName)
+				if (!filterAlpha(ruStoreApp.versionName) || !filterBeta(ruStoreApp.versionName)) return@runCatching null
+
+				val downloadUrl = getDownloadUrl(ruStoreApp.appId, deviceType, slot)
+				if (downloadUrl.isEmpty()) return@runCatching null
+
+				// Remembered, so the install fetches its file as that device too.
+				RuStoreSession.rememberSlot(batchApp.packageName, slot)
+				val app = apps.getApp(batchApp.packageName)
+				ruStoreApp.toAppUpdate(app, downloadUrl)
+			}.onFailure { exception ->
+				when {
+					exception is HttpException && exception.code() == 429 -> {
+						hitRateLimit = true
+						Log.w("RuStoreRepository", "Rate limit hit for ${batchApp.packageName}")
+						markRateLimit()
+					}
+					exception is HttpException && exception.code() == 404 -> {
+						// Only the usual device's 404 feeds the search cache: an extra device
+						// missing the card says nothing about whether RuStore has the app.
+						if (slot == 0) markRuStore404(batchApp.packageName)
+						Log.w("RuStoreRepository", "404 for ${batchApp.packageName} on device $slot")
+					}
+					else -> Log.e("RuStoreRepository", "Error checking ${batchApp.packageName}", exception)
+				}
+			}.getOrNull()
+
+			AttemptResult(result, hitRateLimit)
+		}
 	}
 
 	suspend fun search(text: String) = flow {
@@ -264,13 +295,13 @@ class RuStoreRepository(
 		}
 	}
 
-	private suspend fun getDownloadUrl(appId: Long, deviceType: String): String {
+	private suspend fun getDownloadUrl(appId: Long, deviceType: String, slot: Int = 0): String {
 		return retryOnRateLimit {
 			var hitRateLimit = false
 			val result = runCatching {
 				val request = RuStoreDownloadRequest(appId = appId)
 				// v3 carries no status field — a usable URL is the success signal.
-				val response = service.getDownloadLink(request, deviceType)
+				val response = service.getDownloadLink(request, deviceType, slot)
 				response.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl().orEmpty()
 			}.onFailure { exception ->
 				when {

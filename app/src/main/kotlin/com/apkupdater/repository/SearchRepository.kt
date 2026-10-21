@@ -147,7 +147,9 @@ class SearchRepository(
      * seconds behind a VPN.
      */
     class QueryMatcher(query: String) {
-        private val q = query.trim().lowercase()
+        // Ё read as Е on both sides (build 186): «пятерочка» is how people type «Пятёрочка», and
+        // without this it matched only through transliteration, behind every plain match.
+        private val q = query.trim().lowercase().replace('ё', 'е')
         private val words = q.split(" ").filter { it.isNotBlank() }
         private val foldedWords = words.map { fold(it) }.filter { it.isNotEmpty() }
 
@@ -155,7 +157,7 @@ class SearchRepository(
 
         /** 0 (the name IS the query) to 5 (matches across alphabets), or [NO_MATCH]. */
         fun tier(appName: String, packageName: String): Int {
-            val name = appName.lowercase()
+            val name = appName.lowercase().replace('ё', 'е')
             val pkg = packageName.lowercase()
             return when {
                 name == q -> 0

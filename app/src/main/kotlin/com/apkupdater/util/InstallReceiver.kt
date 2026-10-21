@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
-import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.apkupdater.R
 import com.apkupdater.data.ui.AppInstallStatus
@@ -47,11 +46,13 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                 if (confirm == null) {
                     // Used to `return` silently, leaving the card stuck on "installing" forever
                     // with no dialog and no error — report it instead.
-                    Log.e("InstallReceiver", "No confirmation intent in PENDING_USER_ACTION")
+                    AppJournal.add("InstallReceiver", "No confirmation intent in PENDING_USER_ACTION for #$id")
                     installLog.emitStatus(AppInstallStatus(false, id, reason = stringer.get(R.string.install_error_unknown)))
                     return
                 }
                 confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                AppJournal.add("InstallReceiver", "Confirmation asked for #$id: visible=${AppVisibility.foreground}, in front=${AppVisibility.resumed}" +
+                    if (AppVisibility.foreground) " -> dialog" else " -> notification")
                 if (AppVisibility.foreground) {
                     runCatching { context.startActivity(confirm) }
                         .onSuccess {
@@ -64,6 +65,7 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                             if (!AppVisibility.resumed) notification.showConfirmInstallNotification(confirm, id)
                         }
                         .onFailure {
+                            AppJournal.add("InstallReceiver", "Dialog for #$id could not be opened (${it.javaClass.simpleName}) -> notification")
                             installLog.rememberConfirm(id, confirm)
                             notification.showConfirmInstallNotification(confirm, id)
                         }
@@ -76,6 +78,7 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                 }
             }
             PackageInstaller.STATUS_SUCCESS -> {
+                AppJournal.add("InstallReceiver", "Installed #$id ${intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME).orEmpty()}")
                 installLog.forgetConfirm(id)
                 notification.cancelFailureFor(appLabel(context, intent))
                 notification.cancelConfirmInstallNotification(id)
@@ -107,7 +110,7 @@ class InstallReceiver : BroadcastReceiver(), KoinComponent {
                 if (!AppVisibility.foreground && label.isNotBlank()) {
                     notification.showInstallFailureNotification(label, reason, id)
                 }
-                Log.e("InstallReceiver", "Install failed (status $status): $rawMessage")
+                AppJournal.add("InstallReceiver", "Install #$id failed (status $status): $rawMessage")
             }
         }
     }

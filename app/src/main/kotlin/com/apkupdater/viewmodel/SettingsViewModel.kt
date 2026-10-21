@@ -9,6 +9,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkManager
 import com.apkupdater.R
 import com.apkupdater.data.github.CustomGitRepo
+import com.apkupdater.data.github.GitProvider
+import com.apkupdater.data.github.parseRepoQuery
 import com.apkupdater.data.github.parseRepoUrl
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
@@ -17,7 +19,11 @@ import com.apkupdater.data.ui.SettingsUiState
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.AppsRepository
 import com.apkupdater.ui.theme.isDarkTheme
+import com.apkupdater.util.AppJournal
 import com.apkupdater.util.Clipboard
+import com.apkupdater.util.isAndroidTv
+import android.os.Build
+import android.util.Log
 import com.apkupdater.util.CrashHandler
 import com.apkupdater.util.DownloadFolder
 import com.apkupdater.util.SnackBar
@@ -122,6 +128,10 @@ class SettingsViewModel(
 	fun setUseAppGallery(b: Boolean) = prefs.useAppGallery.put(b)
 	fun getUseAppGallery() = prefs.useAppGallery.get()
 	fun setUseRuStore(b: Boolean) = prefs.useRuStore.put(b)
+
+	fun getRuStoreDevicePool() = prefs.ruStoreDevicePool.get()
+
+	fun setRuStoreDevicePool(b: Boolean) = prefs.ruStoreDevicePool.put(b)
 	fun getAndroidTvUi() = prefs.androidTvUi.get()
 	fun setAndroidTvUi(b: Boolean) = prefs.androidTvUi.put(b)
 	fun getEnableAlarm() = prefs.enableAlarm.get()
@@ -181,6 +191,11 @@ class SettingsViewModel(
 
 	fun downloadFolderUnavailable() = snackBar.snackBar(viewModelScope, TextSnack(
 		stringer.get(R.string.download_folder_no_picker), type = SnackType.ERROR
+	))
+
+	/** The same for a file: settings and repository lists open and save through the system picker. */
+	fun filePickerUnavailable() = snackBar.snackBar(viewModelScope, TextSnack(
+		stringer.get(R.string.no_file_picker), type = SnackType.ERROR
 	))
 
 	fun getAlarmHour() = prefs.alarmHour.get()
@@ -302,9 +317,26 @@ class SettingsViewModel(
 		// did you install it from?" is the question every forum report starts with and the
 		// reporter usually cannot answer. Ahead of the log, which is long.
 		val records = prefs.installRecordsReport().ifEmpty { "(none)" }
+		// The device and how the app installs (build 186): every report had to ask for these.
+		val method = when {
+			prefs.rootInstall.get() -> "root"
+			prefs.shizukuInstall.get() -> "Shizuku (" + (if (runCatching { Shizuku.pingBinder() }.getOrDefault(false)) "running" else "not running") + ")"
+			else -> "standard installer"
+		}
+		val device = "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
+			"${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}${if (context.isAndroidTv()) ", TV" else ""}"
+		// The app's own journal, which does not depend on the ROM letting us read the system log
+		// — two reports came back with an empty one. See util/AppJournal.kt.
+		// Both tails only: the clipboard goes through a binder transaction that fails past about
+		// a megabyte, and a full journal plus a chatty system log reaches that.
+		val journal = AppJournal.read().takeLast(LOG_JOURNAL_CHARS).ifEmpty { "(empty)\n" }
+		val log = data.decodeToString().takeLast(LOG_SYSTEM_CHARS).ifBlank { "(empty: this ROM does not let apps read the system log)\n" }
 		val header = "APKUpdater ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n" +
-			"Installed by APKUpdater, newest first:\n$records\n\n"
-		clipboard.copy(header + data.decodeToString(), "App Logs")
+			"Device: $device\nInstalls with: $method\n\n" +
+			"Installed by APKUpdater, newest first:\n$records\n\n" +
+			"Journal:\n$journal\nSystem log:\n"
+		runCatching { clipboard.copy(header + log, "App Logs") }
+			.onFailure { Log.e("SettingsViewModel", "Copying the logs failed", it) }
 	}
 
 	// Crash report captured by CrashHandler on the previous run (see util/CrashHandler.kt).
@@ -320,6 +352,15 @@ class SettingsViewModel(
 	fun clearIgnoredVersions() = prefs.ignoredVersions.put(emptyList())
 
 	fun getCustomGitRepos(): List<CustomGitRepo> = prefs.customGitRepos.get()
+
+	private val _customReposRevision = MutableStateFlow(0)
+
+	/** Bumped when the stored list changes outside the screen's own edits — an import. */
+	val customReposRevision: StateFlow<Int> = _customReposRevision
+
+	fun refreshCustomRepos() {
+		_customReposRevision.value++
+	}
 
 	fun addCustomGitRepo(url: String, installedPkgName: String = ""): Boolean {
 		val repo = parseRepoUrl(url) ?: return false
@@ -379,6 +420,7 @@ class SettingsViewModel(
 			add("sourceOrder", gson.toJsonTree(prefs.sourceOrder.get()))
 			addProperty("searchAllSources", prefs.searchAllSources.get())
 			add("customGitRepos", gson.toJsonTree(prefs.customGitRepos.get()))
+			addProperty("ruStoreDevicePool", prefs.ruStoreDevicePool.get())
 		}
 		return gson.toJson(config)
 	}
@@ -436,10 +478,112 @@ class SettingsViewModel(
 		obj.get("sourceOrder")?.let {
 			prefs.sourceOrder.put(gson.fromJson(it, Array<String>::class.java).toList())
 		}
+		// Merged, not replaced (build 186): importing an older file used to drop every repository
+		// added since. Asked for on 4PDA.
 		obj.get("customGitRepos")?.let {
-			prefs.customGitRepos.put(gson.fromJson(it, Array<CustomGitRepo>::class.java).toList())
+			mergeCustomGitRepos(gson.fromJson(it, Array<CustomGitRepo?>::class.java).filterNotNull())
 		}
+		obj.get("ruStoreDevicePool")?.asBoolean?.let { prefs.ruStoreDevicePool.put(it) }
 		true
 	}.getOrElse { false }
+
+	/**
+	 * Adds [incoming] to the custom repositories and returns (added, already there). A repository
+	 * is already there when the host and owner/repo match, letter case aside; one of those keeps
+	 * its entry, and takes the file's linked app only when it had none of its own.
+	 */
+	fun mergeCustomGitRepos(incoming: List<CustomGitRepo>): Pair<Int, Int> {
+		val current = prefs.customGitRepos.get().toMutableList()
+		var added = 0
+		var known = 0
+		// Rebuilt field by field: Gson fills a field missing from the file with null whatever
+		// Kotlin's types say, and a hand-edited file may well lack some.
+		val clean = incoming.mapNotNull { raw ->
+			val user: String? = raw.user
+			val name: String? = raw.repo
+			val platform: GitProvider? = raw.platform
+			val app: String? = raw.installedPackageName
+			if (user.isNullOrBlank() || name.isNullOrBlank()) null
+			else CustomGitRepo(platform ?: GitProvider.GITHUB, user, name, "$user/$name", app.orEmpty())
+		}
+		clean.forEach { repo ->
+			val index = current.indexOfFirst {
+				it.platform == repo.platform && it.user.equals(repo.user, true) && it.repo.equals(repo.repo, true)
+			}
+			if (index >= 0) {
+				known++
+				val own: String? = current[index].installedPackageName
+				if (own.isNullOrEmpty() && repo.installedPackageName.isNotEmpty()) {
+					current[index] = current[index].copy(installedPackageName = repo.installedPackageName)
+				}
+			} else {
+				// A new id: one from another phone's file could collide with an entry here.
+				current += repo.copy(id = java.util.UUID.randomUUID().toString())
+				added++
+			}
+		}
+		prefs.customGitRepos.put(current)
+		return added to known
+	}
+
+	/**
+	 * The custom repositories as plain text (build 186): one link per line, then the linked app's
+	 * package if there is one. Readable, and pasteable into a forum post — which is how such
+	 * lists get shared — and read back by [importCustomReposFromUri].
+	 */
+	private fun customReposText(): String = prefs.customGitRepos.get().joinToString("") { repo ->
+		val host = if (repo.platform == GitProvider.GITHUB) "github.com" else "gitlab.com"
+		val app = if (repo.installedPackageName.isNotEmpty()) " ${repo.installedPackageName}" else ""
+		"https://$host/${repo.user}/${repo.repo}$app\n"
+	}
+
+	/** Writes [customReposText] to [uri]; the number written, or null when it failed. */
+	fun exportCustomReposToUri(uri: Uri): Int? = runCatching {
+		context.contentResolver.openOutputStream(uri)?.use { it.write(customReposText().toByteArray()) }
+			?: return null
+		prefs.customGitRepos.get().size
+	}.getOrNull()
+
+	/**
+	 * Adds the repositories in [uri] to the list — (added, already there), or null when nothing
+	 * in it could be read. Takes the list [exportCustomReposToUri] writes, any text with one link
+	 * or `owner/repo` per line, or a whole settings file, from which only the repositories are
+	 * taken; nothing else in it is touched.
+	 */
+	fun importCustomReposFromUri(uri: Uri): Pair<Int, Int>? = runCatching {
+		val text = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+			?: return null
+		val repos = parseCustomRepos(text)
+		if (repos.isEmpty()) null else mergeCustomGitRepos(repos)
+	}.getOrNull()
+
+	private fun parseCustomRepos(text: String): List<CustomGitRepo> {
+		val trimmed = text.removePrefix("\uFEFF").trim()
+		if (trimmed.startsWith("{")) {
+			val array = JsonParser.parseString(trimmed).asJsonObject.get("customGitRepos") ?: return emptyList()
+			return gson.fromJson(array, Array<CustomGitRepo?>::class.java).filterNotNull()
+		}
+		if (trimmed.startsWith("[")) {
+			// `null` elements are dropped: Gson keeps them, and the merge would trip on one.
+			return gson.fromJson(trimmed, Array<CustomGitRepo?>::class.java).filterNotNull()
+		}
+		return trimmed.lines().mapNotNull { line ->
+			val tokens = line.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+			val first = tokens.firstOrNull()?.takeUnless { it.startsWith("#") } ?: return@mapNotNull null
+			// A link, or a bare owner/repo, which is GitHub's (the first provider parseRepoQuery
+			// offers for it).
+			val repo = parseRepoQuery(first).firstOrNull() ?: return@mapNotNull null
+			// `github.com/owner` — an owner's page, no repository — reads as owner/repo too.
+			if (repo.user.lowercase().removePrefix("www.") in HOSTS) return@mapNotNull null
+			val app = tokens.getOrNull(1)?.takeIf { Regex("^[A-Za-z][\\w]*(\\.[A-Za-z][\\w]*)+$").matches(it) }
+			if (app != null) repo.copy(installedPackageName = app) else repo
+		}
+	}
+
+	private companion object {
+		const val LOG_JOURNAL_CHARS = 150_000
+		const val LOG_SYSTEM_CHARS = 200_000
+		val HOSTS = setOf("github.com", "gitlab.com")
+	}
 
 }

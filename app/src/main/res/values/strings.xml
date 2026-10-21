@@ -234,6 +234,14 @@
     <string name="apkmirror_failed">APKMirror did not hand out the file. Open the page in the browser.</string>
     <string name="apkmirror_app_blocked">APKMirror asks for a browser check on this app\'s pages. Tap Update again to open the page in the browser; other APKMirror downloads are not affected.</string>
     <string name="sources_not_checked">Could not check: %1$s</string>
+    <string name="rustore_device_pool">Check as 4 devices: catches staged rollouts sooner</string>
+    <string name="repos_export">Export the list</string>
+    <string name="repos_import">Import a list (adds missing ones)</string>
+    <string name="repos_exported">Repositories saved: %1$d</string>
+    <string name="repos_export_failed">Could not save the list</string>
+    <string name="repos_imported">Added: %1$d, already in the list: %2$d</string>
+    <string name="repos_import_failed">No repositories found in the file</string>
+    <string name="no_file_picker">This device has no file picker.</string>
     <string name="whats_new">What\'s new</string>
     <string name="card_details">Details</string>
     <string name="show_more_cd">Show more</string>

@@ -184,14 +184,19 @@ val mainModule = module {
 		val session: RuStoreSession = get()
 		val ruStoreClient = get<OkHttpClient>().newBuilder()
 			.addInterceptor { chain ->
-				fun sign(current: RuStoreSession.Session?) = chain.request().newBuilder()
+				// Which device the call is made as (build 186): slot 0 unless the call names one in
+				// the internal header, which is taken off before the request leaves.
+				val original = chain.request()
+				val slot = original.header(RuStoreSession.SLOT_HEADER)?.toIntOrNull() ?: 0
+				fun sign(current: RuStoreSession.Session?) = original.newBuilder()
+					.removeHeader(RuStoreSession.SLOT_HEADER)
 					.apply { session.headers(current).forEach { (k, v) -> header(k, v) } }
 					.build()
 
-				val response = chain.proceed(sign(session.current()))
+				val response = chain.proceed(sign(session.current(slot)))
 				if (response.code == 419) {
 					response.close()
-					chain.proceed(sign(session.refresh()))
+					chain.proceed(sign(session.refresh(slot)))
 				} else {
 					response
 				}

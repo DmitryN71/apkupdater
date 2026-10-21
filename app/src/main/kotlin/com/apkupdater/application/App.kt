@@ -4,6 +4,7 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import com.apkupdater.di.mainModule
+import com.apkupdater.util.AppJournal
 import com.apkupdater.util.CrashHandler
 import okhttp3.OkHttpClient
 import org.koin.android.ext.koin.androidContext
@@ -18,6 +19,7 @@ class App : Application(), ImageLoaderFactory, KoinComponent {
 		super.onCreate()
 
 		CrashHandler.install(this)
+		AppJournal.init(this)
 
 		startKoin {
 			androidLogger()

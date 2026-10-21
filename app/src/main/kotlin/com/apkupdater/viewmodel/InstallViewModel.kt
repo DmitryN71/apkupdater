@@ -22,6 +22,7 @@ import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.ApkMirrorDownload
+import com.apkupdater.util.AppJournal
 import com.apkupdater.util.RuStoreSession
 import com.apkupdater.util.AppVisibility
 import com.apkupdater.util.BackgroundInstaller
@@ -115,6 +116,12 @@ abstract class InstallViewModel(
             snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.already_up_to_date)))
             return
         }
+        val method = when {
+            prefs.rootInstall.get() -> "root"
+            prefs.shizukuInstall.get() -> "Shizuku"
+            else -> "standard installer"
+        }
+        AppJournal.add("Install", "${update.name} (${update.packageName}) ${update.oldVersion} -> ${update.version} from ${update.source.name}, $method")
         if (prefs.rootInstall.get()) {
             downloadAndRootInstall(update)
         } else if (prefs.shizukuInstall.get()) {
@@ -145,6 +152,7 @@ abstract class InstallViewModel(
             when {
                 ready -> downloadAndShizukuInstall(update)
                 prefs.fakePlayStore.get() -> {
+                    AppJournal.add("Install", "Shizuku not available, Play Store installer set: refused ${update.packageName}")
                     finishDownloadProgress(update.id)
                     noteShizukuOnce(R.string.shizuku_down_play_installer, SnackType.ERROR)
                 }
@@ -153,6 +161,7 @@ abstract class InstallViewModel(
                 // harmlessly, once it is granted.
                 !installer.checkPermission() -> finishDownloadProgress(update.id)
                 else -> {
+                    AppJournal.add("Install", "Shizuku not available: standard installer for ${update.packageName}")
                     noteShizukuOnce(R.string.shizuku_fallback, SnackType.INFO)
                     downloadAndInstall(update)
                 }
@@ -192,7 +201,7 @@ abstract class InstallViewModel(
         files: List<File>
     ): Boolean {
         if (installer.shizukuReady()) return false
-        Log.w("InstallViewModel", "Shizuku went away during the download of $packageName")
+        AppJournal.add("Install", "Shizuku went away during the download of $packageName")
         if (prefs.fakePlayStore.get() || !installer.checkPermission()) {
             files.forEach { it.delete() }
             reportFailure(name, stringer.get(
@@ -278,18 +287,28 @@ abstract class InstallViewModel(
         }
         if (update.source == RuStoreSource && update.link is Link.Url) {
             return runCatching {
+                // As the device that found this version (build 186): RuStore offers a version
+                // to some device ids only, and asked as another it would hand out the old one.
+                val slot = RuStoreSession.slotFor(update.packageName)
                 // RuStore answers for one device kind at a time, so try both: a TV app is a 404
                 // for a "mobile" request and a phone app is a 404 for a "tv" one.
                 val (appInfo, deviceType) = RuStoreSession.DEVICE_TYPES
                     .firstNotNullOfOrNull { type ->
-                        runCatching { ruStoreService.getAppInfo(update.packageName, type) }
+                        runCatching { ruStoreService.getAppInfo(update.packageName, type, slot) }
                             .getOrNull()
                             ?.takeIf { it.code == "OK" && it.body.appId != 0L }
                             ?.let { it to type }
                     } ?: (null to RuStoreSession.DEVICE_MOBILE)
 
+                // Older than the card says — the device the check used is gone (a re-roll since)
+                // or the rollout was pulled. The link the check fetched is for the card's version;
+                // a fresh one here would install something older than the card promised.
+                if (appInfo != null && update.versionCode > 0 && appInfo.body.versionCode < update.versionCode) {
+                    Log.w("InstallViewModel", "RuStore now offers ${appInfo.body.versionCode} of ${update.packageName}, the card ${update.versionCode}; keeping the check's link")
+                    return@runCatching update.link
+                }
                 if (appInfo != null) {
-                    val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId), deviceType)
+                    val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId), deviceType, slot)
                     // v3 carries no status field — a usable URL is the success signal.
                     val url = download.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl()
                     if (!url.isNullOrEmpty()) {
@@ -581,6 +600,7 @@ abstract class InstallViewModel(
      * backgrounded batch update used to report nothing at all for the ones that failed.
      */
     protected fun reportFailure(name: String, reason: String, id: Int?) {
+        AppJournal.add("Install", "Failed: $name: $reason")
         // Only skip the in-app message when the notification ACTUALLY went out. It is dropped
         // without a word when notifications are not permitted, and returning regardless left a
         // backgrounded failure completely silent for exactly the people who had denied that

@@ -143,6 +143,7 @@ class SessionInstaller(
                 try {
                     session.commit(pending.intentSender)
                     committed = true
+                    AppJournal.add("SessionInstaller", "Committed #$id $packageName")
                 } catch (t: Throwable) {
                     // Nothing will ever deliver a result for this session, so nothing would
                     // ever call finish() to release the lock we just took.

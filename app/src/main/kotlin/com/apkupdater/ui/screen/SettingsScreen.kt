@@ -300,6 +300,7 @@ fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = 
 		// Held here so the download switch below can follow it: with the source off there is
 		// nothing for it to act on, and going through its warning would change nothing visible.
 		var useApkMirror by remember { mutableStateOf(viewModel.getUseApkMirror()) }
+		var useRuStore by remember { mutableStateOf(viewModel.getUseRuStore()) }
 		SectionHeader(stringResource(R.string.settings_code_hosting))
 		SettingsGroup {
 			row("github") {
@@ -399,9 +400,21 @@ fun SourcesSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = 
 			}
 			row("rustore") {
 				SwitchSetting(
-					{ viewModel.getUseRuStore() },
-					{ viewModel.setUseRuStore(it) },
-					stringResource(R.string.source_rustore),
+					checked = useRuStore,
+					onCheckedChange = {
+						viewModel.setUseRuStore(it)
+						useRuStore = viewModel.getUseRuStore()
+					},
+					text = stringResource(R.string.source_rustore),
+					icon = R.drawable.ic_rustore
+				)
+			}
+			// Under RuStore and only while it is on, like APKMirror's own row (build 186).
+			if (useRuStore) row("rustore_devices") {
+				SwitchSetting(
+					{ viewModel.getRuStoreDevicePool() },
+					{ viewModel.setRuStoreDevicePool(it) },
+					stringResource(R.string.rustore_device_pool),
 					R.drawable.ic_rustore
 				)
 			}
@@ -685,7 +698,9 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = Pa
 			row("export") {
 				ButtonSetting(
 					stringResource(R.string.export_config),
-					{ exportLauncher.launch("apkupdater-config.json") },
+					// Guarded like the folder picker: a TV box without a documents provider
+					// throws ActivityNotFoundException from launch() (build 186).
+					{ runCatching { exportLauncher.launch("apkupdater-config.json") }.onFailure { viewModel.filePickerUnavailable() } },
 					R.drawable.ic_export,
 					R.drawable.ic_export,
 					modifier = Modifier.focusRequester(firstRowFocus)
@@ -694,7 +709,7 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = Pa
 			row("import") {
 				ButtonSetting(
 					stringResource(R.string.import_config),
-					{ importLauncher.launch(arrayOf("application/json")) },
+					{ runCatching { importLauncher.launch(arrayOf("application/json")) }.onFailure { viewModel.filePickerUnavailable() } },
 					R.drawable.ic_import,
 					R.drawable.ic_import
 				)
@@ -757,7 +772,9 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 	item {
 		var repoUrl by remember { mutableStateOf("") }
 		var errorMsg by remember { mutableStateOf<String?>(null) }
-		var repos by remember { mutableStateOf(viewModel.getCustomGitRepos()) }
+		// Re-read after an import from the top bar (build 186), which changes the stored list.
+		val reposRevision by viewModel.customReposRevision.collectAsStateWithLifecycle()
+		var repos by remember(reposRevision) { mutableStateOf(viewModel.getCustomGitRepos()) }
 		val invalidUrlMsg = stringResource(R.string.invalid_repo_url)
 		// Non-null while editing an existing repo (its id); null in add mode.
 		var editingId by remember { mutableStateOf<String?>(null) }
@@ -904,15 +921,51 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CustomReposTopBar(viewModel: SettingsViewModel) = TopAppBar(
-	title = { Text(stringResource(R.string.settings_custom_repos)) },
-	colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
-	navigationIcon = {
-		TvIconButton(onClick = { viewModel.setSettings() }) {
-			Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.tab_settings))
+fun CustomReposTopBar(viewModel: SettingsViewModel) {
+	val context = LocalContext.current
+	// The list on its own, as plain text with one link per line (build 186): shareable, and an
+	// import only ADDS what is missing — asked for on 4PDA. The settings export carries the list
+	// too; this is for moving or sharing it without everything else.
+	val exportLauncher = rememberLauncherForActivityResult(
+		ActivityResultContracts.CreateDocument("text/plain")
+	) { uri ->
+		if (uri != null) {
+			val count = viewModel.exportCustomReposToUri(uri)
+			val text = if (count != null) context.getString(R.string.repos_exported, count)
+				else context.getString(R.string.repos_export_failed)
+			Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
 		}
 	}
-)
+	val importLauncher = rememberLauncherForActivityResult(
+		ActivityResultContracts.OpenDocument()
+	) { uri ->
+		if (uri != null) {
+			val result = viewModel.importCustomReposFromUri(uri)
+			val text = if (result != null) context.getString(R.string.repos_imported, result.first, result.second)
+				else context.getString(R.string.repos_import_failed)
+			Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+			// The list on screen reads the stored one when this screen is composed afresh.
+			if (result != null) viewModel.refreshCustomRepos()
+		}
+	}
+	TopAppBar(
+		title = { Text(stringResource(R.string.settings_custom_repos)) },
+		colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.statusBarColor()),
+		navigationIcon = {
+			TvIconButton(onClick = { viewModel.setSettings() }) {
+				Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.tab_settings))
+			}
+		},
+		actions = {
+			TvIconButton(onClick = { runCatching { importLauncher.launch(arrayOf("*/*")) }.onFailure { viewModel.filePickerUnavailable() } }) {
+				Icon(painterResource(R.drawable.ic_import), stringResource(R.string.repos_import))
+			}
+			TvIconButton(onClick = { runCatching { exportLauncher.launch("apkupdater-repos.txt") }.onFailure { viewModel.filePickerUnavailable() } }) {
+				Icon(painterResource(R.drawable.ic_export), stringResource(R.string.repos_export))
+			}
+		}
+	)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -14,6 +14,7 @@ import com.apkupdater.data.ui.PlaySource
 import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.data.ui.Source
 import com.apkupdater.prefs.Prefs
+import com.apkupdater.util.AppJournal
 import com.apkupdater.util.isVersionDowngrade
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -121,12 +122,13 @@ class UpdatesRepository(
                                 onSourceAnswered?.invoke(sourceObjs[index])
                                 emit(result)
                             } else {
-                                Log.w("UpdatesRepository", "${sourceNames[index]} timed out after ${SOURCE_TIMEOUT_MS / 1000}s")
+                                AppJournal.add("Check", "${sourceNames[index]} timed out after ${SOURCE_TIMEOUT_MS / 1000}s")
                                 failed += sourceObjs[index].name
                                 emit(emptyList())
                             }
                         }.catch { e ->
                             Log.e("UpdatesRepository", "Source error", e)
+                            AppJournal.add("Check", "${sourceNames[index]} failed: ${e.javaClass.simpleName}: ${e.message}")
                             failed += sourceObjs[index].name
                             emit(emptyList())
                         }.onCompletion {

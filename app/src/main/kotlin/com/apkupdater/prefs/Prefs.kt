@@ -112,6 +112,13 @@ class Prefs(
 	// rollout bucket — see util/RuStoreSession.kt. Re-rolled from the ⋮ menu, never derived from
 	// anything real about the device.
 	val ruStoreDeviceId = string("ruStoreDeviceId", defValue = "", backed = true)
+	/**
+	 * The random halves of the extra devices a RuStore check also asks as (build 186), kept for the
+	 * same reason as [ruStoreDeviceId] and re-rolled with it — see util/RuStoreSession.kt.
+	 */
+	val ruStoreExtraDeviceIds = json("ruStoreExtraDeviceIds", emptyList<String>(), true)
+	/** Whether a RuStore check asks as several devices (build 186). On by default. */
+	val ruStoreDevicePool = boolean("ruStoreDevicePool", defValue = true, backed = true)
 	/** Kept for the same reason as [ruStoreDeviceId] — see util/AppGallerySession.kt. */
 	val appGalleryDeviceId = string("appGalleryDeviceId", defValue = "", backed = true)
 	val ruStore404Packages = json("ruStore404Packages", emptyList<RuStore404Entry>(), true)

@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import kotlin.random.Random
@@ -33,30 +34,37 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 
 	data class Session(val deviceId: String, val signature: String)
 
-	@Volatile
-	private var cached: Session? = null
+	/**
+	 * One session per device slot (build 186). Slot 0 is the device every call uses unless it
+	 * names another; the update check also asks as slots 1 until [poolSize] — see [POOL_SIZE].
+	 */
+	private val cached = ConcurrentHashMap<Int, Session>()
 
-	/** Cached session, created on first use. Null when the handshake failed. */
-	fun current(): Session? {
-		cached?.let { return it }
-		return synchronized(this) { cached ?: create().also { cached = it } }
+	/** Cached session of [slot], created on first use. Null when the handshake failed. */
+	fun current(slot: Int = 0): Session? {
+		cached[slot]?.let { return it }
+		return synchronized(this) { cached[slot] ?: create(slot)?.also { cached[slot] = it } }
 	}
 
-	/** Forces a new session — call after the API rejects the current one with 419. */
-	fun refresh(): Session? = synchronized(this) { create().also { cached = it } }
+	/** Forces a new session for [slot] — call after the API rejects the current one with 419. */
+	fun refresh(slot: Int = 0): Session? = synchronized(this) {
+		create(slot).also { if (it != null) cached[slot] = it else cached.remove(slot) }
+	}
 
 	/**
-	 * Draws a new device — the user asking, from the ⋮ menu, for another roll of RuStore's
-	 * staged rollout.
+	 * Draws new devices — the user asking, from the ⋮ menu, for another roll of RuStore's staged
+	 * rollout. Every slot is re-rolled, not just the first.
 	 *
 	 * RuStore hands a given id a fixed share of the rollout (measured: twelve fresh ids, nine
 	 * saw the old version and three the new one; one id repeated always answered the same), so
-	 * this is the only way to be offered a version the current id is not in line for. The next
-	 * check does the handshake again with the new id.
+	 * this is the only way to be offered a version none of the current ids is in line for. The
+	 * next check does the handshakes again with the new ids.
 	 */
 	fun newDevice() = synchronized(this) {
 		prefs.ruStoreDeviceId.put(randomHalf())
-		cached = null
+		prefs.ruStoreExtraDeviceIds.put(List(POOL_SIZE - 1) { randomHalf() })
+		cached.clear()
+		winners.clear()
 	}
 
 	/**
@@ -83,8 +91,8 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 		}
 	}
 
-	private fun create(): Session? = runCatching {
-		val deviceId = deviceId()
+	private fun create(slot: Int): Session? = runCatching {
+		val deviceId = deviceId(slot)
 		val nonce = fetchNonce(deviceId) ?: return null
 		Session(deviceId, sign(nonce))
 	}.getOrElse {
@@ -132,13 +140,26 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 	 * from another, which the old behaviour prevented. That is the trade the user was given a
 	 * button for.
 	 */
-	private fun deviceId(): String {
+	private fun deviceId(slot: Int): String {
 		val manufacturer = javaHash(Build.MANUFACTURER.orEmpty())
 		val model = javaHash(Build.MODEL.orEmpty())
 		val hardware = javaHash(Build.HARDWARE.orEmpty())
 		val suffix = ((manufacturer * 31 + model) * 31 + hardware) * 31 + hardware
-		val random = prefs.ruStoreDeviceId.get().ifEmpty { randomHalf().also { prefs.ruStoreDeviceId.put(it) } }
+		val random = if (slot == 0) {
+			prefs.ruStoreDeviceId.get().ifEmpty { randomHalf().also { prefs.ruStoreDeviceId.put(it) } }
+		} else {
+			extraHalf(slot)
+		}
 		return "$random-$suffix"
+	}
+
+	/** The kept random half of extra slot [slot] (1-based), drawn and saved the first time. */
+	private fun extraHalf(slot: Int): String {
+		val extras = prefs.ruStoreExtraDeviceIds.get()
+		if (extras.size >= slot) return extras[slot - 1]
+		val grown = extras + List(slot - extras.size) { randomHalf() }
+		prefs.ruStoreExtraDeviceIds.put(grown)
+		return grown[slot - 1]
 	}
 
 	private fun randomHalf() = (0 until 8).joinToString("") { "%02x".format(Random.nextInt(256)) }
@@ -153,6 +174,41 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 	}
 
 	companion object {
+		/**
+		 * How many devices an update check asks as, with [Prefs.ruStoreDevicePool] on (build 186).
+		 *
+		 * RuStore rolls a new version out to a share of device ids, so one id misses part of every
+		 * rollout. Measured on 2026-10-21 over Dmitry's 89 RuStore apps: 13 were mid-rollout, and
+		 * the newest version was seen by 1 id for 8 of them, by 2 ids for 10, 4 ids for 11, 8 ids
+		 * for all 13. Four: most of the gain for four times the batch requests — eight requests a
+		 * check instead of two, about a second — and a household's worth of phones rather than a
+		 * device farm in RuStore's eyes. The ids are KEPT, like slot 0's, so the answer is the
+		 * same from one check to the next instead of updates appearing and vanishing (build 158).
+		 */
+		const val POOL_SIZE = 4
+
+		/**
+		 * The internal request header naming the device slot a call is made as. Read and removed
+		 * by the signing interceptor in MainModule; never sent to RuStore.
+		 */
+		const val SLOT_HEADER = "X-APKUpdater-RuStore-Slot"
+
+		fun poolSize(prefs: Prefs) = if (prefs.ruStoreDevicePool.get()) POOL_SIZE else 1
+
+		/**
+		 * Which slot found each package's update, for the install. A version only some devices
+		 * are offered has to be fetched AS one of them: asked as slot 0, RuStore hands out the
+		 * version slot 0 is in line for, and the card's new version would install as the old one.
+		 * Process-wide and in memory, like the update list it belongs to.
+		 */
+		private val winners = ConcurrentHashMap<String, Int>()
+
+		fun rememberSlot(packageName: String, slot: Int) {
+			if (slot == 0) winners.remove(packageName) else winners[packageName] = slot
+		}
+
+		fun slotFor(packageName: String): Int = winners[packageName] ?: 0
+
 		const val DEVICE_MOBILE = "mobile"
 		const val DEVICE_TV = "tv"
 
