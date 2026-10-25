@@ -140,6 +140,8 @@ val GitHubApps = listOf(
     GitHubApp("su.happ.proxyutility", "Happ-proxy", "happ-android", notContains("_beta")),
     GitHubApp("com.anandnet.harmonymusic", "anandnet", "Harmony-Music"),
     GitHubApp("helium314.keyboard", "Helium314", "HeliBoard"),
+    // The plugins (mieru, hysteria2, shadowquic…) are released in the same repository.
+    GitHubApp("fr.husi", "xchacha20-poly1305", "husi", contains("/husi-")),
     GitHubApp("com.abrenoch.hyperiongrabber", "abrenoch", "hyperion-android-grabber"),
     GitHubApp("com.supersuman.hymn", "supersu-man", "hymn"),
     GitHubApp("io.github.forkmaintainers.iceraven", "fork-maintainers", "iceraven-browser"),

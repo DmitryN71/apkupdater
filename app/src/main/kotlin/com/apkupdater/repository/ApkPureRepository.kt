@@ -11,9 +11,12 @@ import com.apkupdater.data.ui.getApp
 import com.apkupdater.data.ui.getSignature
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.ApkPureService
+import com.apkupdater.util.AppJournal
 import com.google.gson.Gson
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
+import retrofit2.HttpException
 import java.util.Locale
 
 
@@ -22,6 +25,11 @@ class ApkPureRepository(
     private val service: ApkPureService,
     private val prefs: Prefs
 ) {
+
+    private companion object {
+        const val FREQUENCY_LIMIT = 555
+        val RETRY_DELAYS_MS = listOf(2_000L, 5_000L)
+    }
 
     private val header = gson.toJson(DeviceHeader())
 
@@ -59,7 +67,7 @@ class ApkPureRepository(
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
         val info = apps.map { AppInfoForUpdate(it.packageName, it.versionCode) }
-        val r = service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info))
+        val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
             .filter { filterSignature(it.sign, apps.getSignature(it.package_name)) }
             .filter { filterAlpha(it) }
@@ -75,13 +83,13 @@ class ApkPureRepository(
     }
 
     suspend fun search(text: String) = flow {
-        val response = service.search(header, acceptLanguage, hl, text)
+        val response = retryFrequencyLimit { service.search(header, acceptLanguage, hl, text) }
         val info = response.data.data.mapNotNull { d ->
             d.data.firstOrNull()?.takeIf { !it.ad }?.app_info?.let {
                 AppInfoForUpdate(it.package_name, 0L, false)
             }
         }
-        val r = service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info))
+        val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
@@ -90,6 +98,26 @@ class ApkPureRepository(
     }.catch {
         Log.e("ApkPureRepository", it.message, it)
         emit(Result.failure(it))
+    }
+
+    /**
+     * [call], asked again after a pause when APKPure answers HTTP 555 (build 187). That is their
+     * frequency limit, not a fault: the answer is empty and its headers say "reach interface
+     * frequecy limit". Measured from one address on 2026-10-23: about one long list in seven or
+     * eight was refused that way, small ones never, and the same request a second or two later
+     * passed — while the source had shown "Could not check: APKPure" for the whole check.
+     */
+    private suspend fun <T> retryFrequencyLimit(call: suspend () -> T): T {
+        RETRY_DELAYS_MS.forEach { pause ->
+            try {
+                return call()
+            } catch (e: HttpException) {
+                if (e.code() != FREQUENCY_LIMIT) throw e
+                AppJournal.add("ApkPureRepository", "APKPure: frequency limit (HTTP 555), asking again in ${pause / 1000}s")
+                delay(pause)
+            }
+        }
+        return call()
     }
 
     private fun filterAlpha(update: AppUpdateResponse) = when {

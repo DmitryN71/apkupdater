@@ -234,7 +234,7 @@
     <string name="apkmirror_failed">APKMirror did not hand out the file. Open the page in the browser.</string>
     <string name="apkmirror_app_blocked">APKMirror asks for a browser check on this app\'s pages. Tap Update again to open the page in the browser; other APKMirror downloads are not affected.</string>
     <string name="sources_not_checked">Could not check: %1$s</string>
-    <string name="rustore_device_pool">Check as 4 devices: catches staged rollouts sooner</string>
+    <string name="rustore_device_pool">Check as 16 devices: catches staged rollouts sooner</string>
     <string name="repos_export">Export the list</string>
     <string name="repos_import">Import a list (adds missing ones)</string>
     <string name="repos_exported">Repositories saved: %1$d</string>

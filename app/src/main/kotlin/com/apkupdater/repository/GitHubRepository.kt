@@ -54,9 +54,25 @@ class GitHubRepository(
     private val errorWarned = AtomicBoolean(false)
 
     private fun loadAllApps(): List<GitHubApp> {
+        // A custom repository the catalogue also knows takes the catalogue's file filter, and its
+        // package while the user has linked none (build 187). Without the filter, husi — added by
+        // hand — was offered its own plugins' APKs, which live in the same releases list. Where
+        // the catalogue has several apps in one repository (Arcticons has four), only the entry
+        // for the linked package can say which files are wanted; if none of them is linked, no
+        // filter is taken.
         val custom = prefs.customGitRepos.get()
             .filter { it.platform == GitProvider.GITHUB }
-            .map { GitHubApp(it.installedPackageName.ifEmpty { it.packageName }, it.user, it.repo) }
+            .map { repo ->
+                val known = GitHubApps
+                    .filter { it.user.equals(repo.user, true) && it.repo.equals(repo.repo, true) }
+                    .let { same -> same.find { it.packageName == repo.installedPackageName } ?: same.singleOrNull() }
+                GitHubApp(
+                    repo.installedPackageName.ifEmpty { known?.packageName ?: repo.packageName },
+                    repo.user,
+                    repo.repo,
+                    known?.extra
+                )
+            }
         // Custom repos override hardcoded entries with same user/repo to prevent duplicates
         val customKeys = custom.map { "${it.user}/${it.repo}".lowercase() }.toSet()
         val filtered = GitHubApps.filter { "${it.user}/${it.repo}".lowercase() !in customKeys }
@@ -315,6 +331,14 @@ class GitHubRepository(
         }
 
         // `latest` is by definition never a pre-release, so filterPreRelease keeps it either way.
+        //
+        // Not filtered by tag prefix, although a repository that releases several apps mixes
+        // them here (husi and its plugins: `plugin-mieru-v3.38.1-0` beat `v2.3.2`). Tried for 187
+        // and checked against every catalogued repository: holding the list to the prefix of
+        // `latest` changed the pick for 14 of 370, and for half of them for the worse — Aptoide's
+        // and ente Auth's `latest` is another of their apps, Nextcloud's release candidates
+        // (`rc-`) vanished, and Standard Notes, Notesnook and Tuta lost every update. Such a
+        // repository gets a file filter in the catalogue instead, as husi does.
         return (service.getReleases(user, repo) + listOfNotNull(latest))
             .distinctBy { it.tag_name }
             .filter { filterPreRelease(it) }

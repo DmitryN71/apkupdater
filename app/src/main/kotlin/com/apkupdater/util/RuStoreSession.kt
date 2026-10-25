@@ -40,14 +40,28 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 	 */
 	private val cached = ConcurrentHashMap<Int, Session>()
 
+	/**
+	 * One lock per slot (build 187): the check asks every slot at once, and under a single lock
+	 * sixteen handshakes would queue behind each other, about three seconds at every app start.
+	 */
+	private val slotLocks = ConcurrentHashMap<Int, Any>()
+
+	/** Guards the kept ids in [Prefs], which slots read and grow concurrently. */
+	private val idLock = Any()
+
+	private fun lockFor(slot: Int): Any {
+		val fresh = Any()
+		return slotLocks.putIfAbsent(slot, fresh) ?: fresh
+	}
+
 	/** Cached session of [slot], created on first use. Null when the handshake failed. */
 	fun current(slot: Int = 0): Session? {
 		cached[slot]?.let { return it }
-		return synchronized(this) { cached[slot] ?: create(slot)?.also { cached[slot] = it } }
+		return synchronized(lockFor(slot)) { cached[slot] ?: create(slot)?.also { cached[slot] = it } }
 	}
 
 	/** Forces a new session for [slot] — call after the API rejects the current one with 419. */
-	fun refresh(slot: Int = 0): Session? = synchronized(this) {
+	fun refresh(slot: Int = 0): Session? = synchronized(lockFor(slot)) {
 		create(slot).also { if (it != null) cached[slot] = it else cached.remove(slot) }
 	}
 
@@ -60,7 +74,7 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 	 * this is the only way to be offered a version none of the current ids is in line for. The
 	 * next check does the handshakes again with the new ids.
 	 */
-	fun newDevice() = synchronized(this) {
+	fun newDevice() = synchronized(idLock) {
 		prefs.ruStoreDeviceId.put(randomHalf())
 		prefs.ruStoreExtraDeviceIds.put(List(POOL_SIZE - 1) { randomHalf() })
 		cached.clear()
@@ -145,19 +159,27 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 		val model = javaHash(Build.MODEL.orEmpty())
 		val hardware = javaHash(Build.HARDWARE.orEmpty())
 		val suffix = ((manufacturer * 31 + model) * 31 + hardware) * 31 + hardware
-		val random = if (slot == 0) {
-			prefs.ruStoreDeviceId.get().ifEmpty { randomHalf().also { prefs.ruStoreDeviceId.put(it) } }
-		} else {
-			extraHalf(slot)
+		val random = synchronized(idLock) {
+			if (slot == 0) {
+				prefs.ruStoreDeviceId.get().ifEmpty { randomHalf().also { prefs.ruStoreDeviceId.put(it) } }
+			} else {
+				extraHalf(slot)
+			}
 		}
 		return "$random-$suffix"
 	}
 
-	/** The kept random half of extra slot [slot] (1-based), drawn and saved the first time. */
+	/**
+	 * The kept random half of extra slot [slot] (1-based), drawn and saved the first time. Grown to
+	 * the whole pool at once, so the existing ids are kept when [POOL_SIZE] grows (4 to 16 in 187).
+	 * Under [idLock]: two slots growing the list at the same moment would each save their own copy,
+	 * and one slot's id would change under a session already made with it.
+	 */
 	private fun extraHalf(slot: Int): String {
 		val extras = prefs.ruStoreExtraDeviceIds.get()
 		if (extras.size >= slot) return extras[slot - 1]
-		val grown = extras + List(slot - extras.size) { randomHalf() }
+		val size = maxOf(slot, POOL_SIZE - 1)
+		val grown = extras + List(size - extras.size) { randomHalf() }
 		prefs.ruStoreExtraDeviceIds.put(grown)
 		return grown[slot - 1]
 	}
@@ -180,12 +202,19 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 		 * RuStore rolls a new version out to a share of device ids, so one id misses part of every
 		 * rollout. Measured on 2026-10-21 over Dmitry's 89 RuStore apps: 13 were mid-rollout, and
 		 * the newest version was seen by 1 id for 8 of them, by 2 ids for 10, 4 ids for 11, 8 ids
-		 * for all 13. Four: most of the gain for four times the batch requests — eight requests a
-		 * check instead of two, about a second — and a household's worth of phones rather than a
-		 * device farm in RuStore's eyes. The ids are KEPT, like slot 0's, so the answer is the
-		 * same from one check to the next instead of updates appearing and vanishing (build 158).
+		 * for all 13. The ids are KEPT, like slot 0's, so the answer is the same from one check to
+		 * the next instead of updates appearing and vanishing (build 158).
+		 *
+		 * Four in 186, sixteen since 187. Dmitry still needed about eight "New device" presses to
+		 * see a Yandex Drive update, and measured on 2026-10-24 it was offered to 3 of 40 fresh ids
+		 * (7.5%), Avito to 5%, Беру to 7.5%. RuStore's choice is fixed per id — 16 ids asked three
+		 * times over, not one answer changed — so a kept pool only ever holds the tickets it drew:
+		 * at 7.5% four ids see the update 27% of the time, sixteen 71%. Sixteen batch calls
+		 * fired together came back in 0.16 s with no 429; the check asks them all at once (OkHttp
+		 * caps it at five per host). Thirty-two would reach 92%, at twice the requests from one
+		 * address, which is what a rate limit would be keyed on.
 		 */
-		const val POOL_SIZE = 4
+		const val POOL_SIZE = 16
 
 		/**
 		 * The internal request header naming the device slot a call is made as. Read and removed

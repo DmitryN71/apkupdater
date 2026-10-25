@@ -85,19 +85,30 @@ class RuStoreRepository(
 		val appsWithUpdates = LinkedHashMap<String, MutableList<Found>>()
 		val batchFailures = FailureTally()
 		val slots = RuStoreSession.poolSize(prefs)
-		for (slot in 0 until slots) {
-			RuStoreSession.DEVICE_TYPES.forEach { deviceType ->
-				runCatching { service.getBatchUpdates(batchRequest, deviceType, slot).body.content }
-					.onFailure {
-						Log.e("RuStoreRepository", "Batch check failed for $deviceType, device $slot", it)
-						batchFailures.record(it)
+		// All at once since 187, with sixteen devices: one after another that was 32 calls, about
+		// six seconds. OkHttp lets five of them run against the host together. awaitAll keeps the
+		// order they were started in — slot by slot, phone before TV — and the merge below relies
+		// on it.
+		val answers = coroutineScope {
+			(0 until slots).flatMap { slot ->
+				RuStoreSession.DEVICE_TYPES.map { deviceType ->
+					async {
+						Triple(slot, deviceType, runCatching { service.getBatchUpdates(batchRequest, deviceType, slot).body.content })
 					}
-					.getOrDefault(emptyList())
-					.forEach { app ->
-						val candidates = appsWithUpdates.getOrPut(app.packageName) { mutableListOf() }
-						if (candidates.none { it.slot == slot }) candidates += Found(app, deviceType, slot)
-					}
-			}
+				}
+			}.awaitAll()
+		}
+		answers.forEach { (slot, deviceType, answer) ->
+			answer
+				.onFailure {
+					Log.e("RuStoreRepository", "Batch check failed for $deviceType, device $slot", it)
+					batchFailures.record(it)
+				}
+				.getOrDefault(emptyList())
+				.forEach { app ->
+					val candidates = appsWithUpdates.getOrPut(app.packageName) { mutableListOf() }
+					if (candidates.none { it.slot == slot }) candidates += Found(app, deviceType, slot)
+				}
 		}
 		// Stable: equal versions keep slot order.
 		appsWithUpdates.values.forEach { it.sortByDescending { found -> found.app.versionCode } }
