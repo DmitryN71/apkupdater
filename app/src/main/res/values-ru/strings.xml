@@ -71,6 +71,11 @@
     <string name="copy_to_clipboard">Копировать в буфер обмена</string>
     <string name="copy_app_list">Скопировать список приложений</string>
     <string name="copy_app_logs">Скопировать логи</string>
+    <string name="save_app_logs">Сохранить логи в файл</string>
+    <string name="share_app_logs">Отправить логи</string>
+    <string name="app_logs_saved">Логи сохранены</string>
+    <string name="app_logs_save_failed">Не удалось сохранить логи</string>
+    <string name="no_share_target">На этом устройстве нет приложения, которое примет файл.</string>
     <string name="copy_crash_report">Скопировать отчёт о сбое</string>
     <string name="filter_system">Системные</string>
     <string name="filter_store">Из магазинов</string>

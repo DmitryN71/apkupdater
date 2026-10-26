@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
@@ -37,6 +39,7 @@ class DownloadService : Service() {
     companion object {
         private const val CHANNEL_ID = "downloadChannel"
         private const val NOTIFICATION_ID = 2001
+        private const val NOTIFY_INTERVAL_MS = 400L
         const val ACTION_CANCEL = "com.apkupdater.action.CANCEL_DOWNLOADS"
     }
 
@@ -71,6 +74,11 @@ class DownloadService : Service() {
                 Triple(tasks.size, if (total > 0L) (prog * 100L / total).toInt() else -1, total <= 0L)
             }
             .distinctUntilChanged()
+            // And no more often than every 400 ms, the newest state winning (build 188). A whole
+            // percent a step is still ten steps a second for a fast download — 292 MB from
+            // RuStore in 9.6 s — and Android drops updates above five a second ("Shedding
+            // notify … rate limit exceeded" in Dmitry's log), whichever one that happens to be.
+            .conflate()
             .onEach {
                 // stopSelfResult, not stopSelf: a task finishing and a new one starting can
                 // cross, and a plain stopSelf() would tear the service down under the new one,
@@ -80,6 +88,7 @@ class DownloadService : Service() {
                 } else {
                     notificationManager().notify(NOTIFICATION_ID, buildNotification())
                 }
+                delay(NOTIFY_INTERVAL_MS)
             }
             .launchIn(serviceScope)
     }

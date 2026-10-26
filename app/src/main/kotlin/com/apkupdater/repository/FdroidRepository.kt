@@ -1,6 +1,7 @@
 package com.apkupdater.repository
 
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import com.apkupdater.data.fdroid.FdroidApp
 import com.apkupdater.data.fdroid.FdroidData
@@ -12,7 +13,9 @@ import com.apkupdater.data.ui.getApp
 import com.apkupdater.data.ui.getVersionCode
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.FdroidService
+import com.apkupdater.util.AppJournal
 import com.google.gson.Gson
+import com.google.gson.JsonIOException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -20,7 +23,10 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.job
 import okhttp3.ResponseBody
+import retrofit2.HttpException
+import java.io.IOException
 import java.io.InputStream
+import kotlin.coroutines.cancellation.CancellationException
 import java.util.jar.JarInputStream
 
 
@@ -34,8 +40,7 @@ class FdroidRepository(
     private val api = Build.VERSION.SDK_INT
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
-        val response = service.getJar("${url}index-v1.jar")
-        val data = response.toDataStoppably()
+        val data = index()
         val appNames = apps.map { it.packageName }
         val updates = data.apps
             .asSequence()
@@ -54,8 +59,7 @@ class FdroidRepository(
     }
 
     suspend fun search(text: String) = flow {
-        val response = service.getJar("${url}index-v1.jar")
-        val data = response.toDataStoppably()
+        val data = index()
         val updates = data.apps
             .asSequence()
             .map { FdroidUpdate(data.packages[it.packageName]!![0], it) }
@@ -65,6 +69,22 @@ class FdroidRepository(
     }.catch {
         emit(Result.failure(it))
         Log.e("FdroidRepository", "Error searching.", it)
+    }
+
+    /**
+     * The repository's index, and a journal line saying whether it came from the HTTP cache
+     * (unchanged since the last check: a 304) or was downloaded, and how long it took (build 188).
+     */
+    private suspend fun index(): FdroidData {
+        val started = SystemClock.elapsedRealtime()
+        val response = service.getJar("${url}index-v1.jar")
+        val body = response.body() ?: throw HttpException(response)
+        val data = body.toDataStoppably()
+        val network = response.raw().networkResponse
+        val how = if (network == null || network.code == 304) "unchanged, read from the cache" else "downloaded"
+        val seconds = "%.1f".format(java.util.Locale.US, (SystemClock.elapsedRealtime() - started) / 1000.0)
+        AppJournal.add("FdroidRepository", "${source.name}: index $how in $seconds s")
+        return data
     }
 
     private fun Sequence<FdroidUpdate>.parseUpdates(apps: List<AppInstalled>?) = this
@@ -116,9 +136,25 @@ class FdroidRepository(
         // Belt: breaks a read that has not started yet, and covers the socket going quiet.
         val handle = job.invokeOnCompletion { runCatching { close() } }
         return try {
-            jarToJson(byteStream().stoppable(job))
+            val stream = byteStream().stoppable(job)
+            jarToJson(stream).also {
+                // Read to the end (build 188). The index is the jar's last entry, so a few hundred
+                // bytes are left after it, and until the body is read out OkHttp's cache does not
+                // keep the response — every check downloaded the whole 16.5 MB again, and the
+                // unclosed body was the "A resource failed to call close" in Dmitry's log.
+                stream.skip(Long.MAX_VALUE)
+                while (stream.read() != -1) Unit
+            }
+        } catch (e: JsonIOException) {
+            // Gson wraps whatever the stream throws. A check that was stopped then read as F-Droid
+            // failing ("JsonIOException: JobCancellationException …" in the journal), and the
+            // call timeout as a parse error. Unwrapped, a stop is a stop again.
+            val cause = e.cause
+            if (cause is CancellationException || cause is IOException) throw cause
+            throw e
         } finally {
             handle.dispose()
+            close()
         }
     }
 

@@ -140,7 +140,10 @@ val mainModule = module {
 		// bounds the ENTIRE call at the socket layer, so a stalled fetch aborts (source shows no
 		// updates) instead of getting stuck. Also covers IzzyOnDroid (same service) and Search.
 		Retrofit.Builder()
-			.client(get<OkHttpClient>().newBuilder().callTimeout(60, TimeUnit.SECONDS).build())
+			// 85 s, not 60 (build 188): the whole 16.5 MB index took 66 s from one address, and
+			// that full download is now once a day — after it an unchanged index is a 304 — so it
+			// has to be allowed to finish. Still under the 90 s the check gives each source.
+			.client(get<OkHttpClient>().newBuilder().callTimeout(85, TimeUnit.SECONDS).build())
 			.baseUrl("https://f-droid.org/repo/")
 			.addConverterFactory(GsonConverterFactory.create(get()))
 			.build()
@@ -165,8 +168,23 @@ val mainModule = module {
 	}
 
 	single {
+		// APKPure labels its refusals gzip although they are empty: HTTP 555, Content-Length 0,
+		// Content-Encoding gzip. OkHttp then unzips nothing, and the EOFException that throws comes
+		// before the status is ever read — so the check said "EOFException: null" instead of 555,
+		// and the 555 retry never ran (build 188, from the head unit's log). With no body there is
+		// nothing to decode; the header goes, and the refusal arrives as the HTTP error it is.
+		val apkPureClient = get<OkHttpClient>().newBuilder()
+			.addNetworkInterceptor { chain ->
+				val response = chain.proceed(chain.request())
+				if (response.header("Content-Length") == "0" && response.header("Content-Encoding") != null) {
+					response.newBuilder().removeHeader("Content-Encoding").build()
+				} else {
+					response
+				}
+			}
+			.build()
 		Retrofit.Builder()
-			.client(get())
+			.client(apkPureClient)
 			.baseUrl("https://tapi.pureapk.com/")
 			.addConverterFactory(GsonConverterFactory.create(get()))
 			.build()

@@ -24,6 +24,14 @@ import com.apkupdater.util.Clipboard
 import com.apkupdater.util.isAndroidTv
 import android.os.Build
 import android.util.Log
+import android.content.ClipData
+import android.content.Intent
+import androidx.core.content.FileProvider
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.withContext
 import com.apkupdater.util.CrashHandler
 import com.apkupdater.util.DownloadFolder
 import com.apkupdater.util.SnackBar
@@ -311,8 +319,76 @@ class SettingsViewModel(
 	}
 
 	fun copyAppLogs() = viewModelScope.launch(Dispatchers.IO) {
-		val process = Runtime.getRuntime().exec("logcat -d")
-		val data = process.inputStream.readBytes()
+		// Both tails only: the clipboard goes through a binder transaction that fails past about
+		// a megabyte, and a full journal plus a chatty system log reaches that.
+		runCatching { clipboard.copy(appLogsText(LOG_JOURNAL_CHARS, LOG_SYSTEM_CHARS), "App Logs") }
+			.onFailure { Log.e("SettingsViewModel", "Copying the logs failed", it) }
+	}
+
+	/**
+	 * The same report into a file the user picks (build 188), and whole: a file has no clipboard
+	 * limit to trim for. Asked for by Dmitry from his car's head unit, where handing over a log
+	 * meant a file manager, a new text file in Google Drive, no Paste in the menu, and a keyboard
+	 * that might paste the clipboard cut short.
+	 */
+	fun saveAppLogs(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+		val saved = runCatching {
+			context.contentResolver.openOutputStream(uri)?.use { it.write(appLogsText().toByteArray()) } != null
+		}.onFailure { Log.e("SettingsViewModel", "Saving the logs failed", it) }.getOrDefault(false)
+		snackBar.snackBar(viewModelScope, TextSnack(
+			stringer.get(if (saved) R.string.app_logs_saved else R.string.app_logs_save_failed),
+			type = if (saved) SnackType.SUCCESS else SnackType.ERROR
+		))
+	}
+
+	/**
+	 * The same whole report handed to the share sheet as a file (build 188), for Telegram, Google
+	 * Drive or mail to take as it is. A file rather than the text, since an intent's extras cross
+	 * the same binder as the clipboard. Written to the cache, where only the newest one is kept.
+	 */
+	fun shareAppLogs() = viewModelScope.launch(Dispatchers.IO) {
+		val name = appLogsFileName()
+		val uri = runCatching {
+			val dir = File(context.cacheDir, SHARED_DIR).apply { mkdirs() }
+			dir.listFiles()?.forEach { it.delete() }
+			val file = File(dir, name).apply { writeText(appLogsText()) }
+			FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+		}.onFailure { Log.e("SettingsViewModel", "Writing the logs for sharing failed", it) }.getOrNull()
+		if (uri == null) {
+			snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.app_logs_save_failed), type = SnackType.ERROR))
+			return@launch
+		}
+		val send = Intent(Intent.ACTION_SEND).apply {
+			type = "text/plain"
+			putExtra(Intent.EXTRA_STREAM, uri)
+			putExtra(Intent.EXTRA_SUBJECT, name)
+			// The read grant reaches the app chosen through the chooser by ClipData, not by the
+			// extra alone.
+			clipData = ClipData.newRawUri(name, uri)
+			addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+		}
+		val chooser = Intent.createChooser(send, stringer.get(R.string.share_app_logs))
+			.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+		withContext(Dispatchers.Main) {
+			runCatching { context.startActivity(chooser) }.onFailure {
+				Log.e("SettingsViewModel", "No share sheet", it)
+				snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.no_share_target), type = SnackType.ERROR))
+			}
+		}
+	}
+
+	/** `apkupdater-log-20261026-1758.txt`: sortable, and says when it was taken. */
+	fun appLogsFileName(): String =
+		"apkupdater-log-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".txt"
+
+	/**
+	 * What Copy App Logs, Save and Send hand over: header, install records, the journal, the
+	 * system log. Only the clipboard asks for tails ([journalChars], [systemChars]).
+	 */
+	private fun appLogsText(journalChars: Int = Int.MAX_VALUE, systemChars: Int = Int.MAX_VALUE): String {
+		val data = runCatching { Runtime.getRuntime().exec("logcat -d").inputStream.use { it.readBytes() } }
+			.onFailure { Log.e("SettingsViewModel", "Reading the system log failed", it) }
+			.getOrDefault(ByteArray(0))
 		// Our own record of where each app was installed from leads the dump, because "where
 		// did you install it from?" is the question every forum report starts with and the
 		// reporter usually cannot answer. Ahead of the log, which is long.
@@ -327,16 +403,13 @@ class SettingsViewModel(
 			"${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}${if (context.isAndroidTv()) ", TV" else ""}"
 		// The app's own journal, which does not depend on the ROM letting us read the system log
 		// — two reports came back with an empty one. See util/AppJournal.kt.
-		// Both tails only: the clipboard goes through a binder transaction that fails past about
-		// a megabyte, and a full journal plus a chatty system log reaches that.
-		val journal = AppJournal.read().takeLast(LOG_JOURNAL_CHARS).ifEmpty { "(empty)\n" }
-		val log = data.decodeToString().takeLast(LOG_SYSTEM_CHARS).ifBlank { "(empty: this ROM does not let apps read the system log)\n" }
+		val journal = AppJournal.read().takeLast(journalChars).ifEmpty { "(empty)\n" }
+		val log = data.decodeToString().takeLast(systemChars).ifBlank { "(empty: this ROM does not let apps read the system log)\n" }
 		val header = "APKUpdater ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n" +
 			"Device: $device\nInstalls with: $method\n\n" +
 			"Installed by APKUpdater, newest first:\n$records\n\n" +
 			"Journal:\n$journal\nSystem log:\n"
-		runCatching { clipboard.copy(header + log, "App Logs") }
-			.onFailure { Log.e("SettingsViewModel", "Copying the logs failed", it) }
+		return header + log
 	}
 
 	// Crash report captured by CrashHandler on the previous run (see util/CrashHandler.kt).
@@ -583,6 +656,8 @@ class SettingsViewModel(
 	private companion object {
 		const val LOG_JOURNAL_CHARS = 150_000
 		const val LOG_SYSTEM_CHARS = 200_000
+		/** Under cacheDir, and named in res/xml/shared_files.xml for the FileProvider. */
+		const val SHARED_DIR = "shared"
 		val HOSTS = setOf("github.com", "gitlab.com")
 	}
 

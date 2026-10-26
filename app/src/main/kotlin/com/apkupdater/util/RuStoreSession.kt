@@ -114,7 +114,23 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 		null
 	}
 
+	/**
+	 * The nonce, asked again after a pause when RuStore answers 429 (build 188). Sixteen devices
+	 * make sixteen handshakes at the first check after a start, and Dmitry's log had two of them
+	 * refused that way — those devices then asked unsigned, which is answered with stale data.
+	 * Runs on an OkHttp thread inside the signing interceptor, so a short sleep blocks nothing else.
+	 */
 	private fun fetchNonce(deviceId: String): String? {
+		NONCE_RETRY_MS.forEach { pause ->
+			val (nonce, limited) = requestNonce(deviceId)
+			if (!limited) return nonce
+			Thread.sleep(pause)
+		}
+		return requestNonce(deviceId).first
+	}
+
+	/** One nonce request: the nonce or null, and whether RuStore refused it with 429. */
+	private fun requestNonce(deviceId: String): Pair<String?, Boolean> {
 		val builder = Request.Builder()
 			.url(NONCE_URL)
 			.post(ByteArray(0).toRequestBody())
@@ -124,10 +140,10 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 		client.newCall(builder.build()).execute().use { response ->
 			if (!response.isSuccessful) {
 				Log.e("RuStoreSession", "Nonce request failed: ${response.code}")
-				return null
+				return null to (response.code == 429)
 			}
 			val body = response.body.string()
-			return JsonParser.parseString(body).asJsonObject.get("nonce")?.asString
+			return JsonParser.parseString(body).asJsonObject.get("nonce")?.asString to false
 		}
 	}
 
@@ -221,6 +237,9 @@ class RuStoreSession(private val client: OkHttpClient, private val prefs: Prefs)
 		 * by the signing interceptor in MainModule; never sent to RuStore.
 		 */
 		const val SLOT_HEADER = "X-APKUpdater-RuStore-Slot"
+
+		/** Pauses before asking for a nonce again after a 429, see fetchNonce. */
+		private val NONCE_RETRY_MS = listOf(1_000L, 3_000L)
 
 		fun poolSize(prefs: Prefs) = if (prefs.ruStoreDevicePool.get()) POOL_SIZE else 1
 

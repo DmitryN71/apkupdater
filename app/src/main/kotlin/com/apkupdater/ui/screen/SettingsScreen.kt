@@ -691,6 +691,11 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = Pa
 				).show()
 			}
 		}
+		val saveLogsLauncher = rememberLauncherForActivityResult(
+			ActivityResultContracts.CreateDocument("text/plain")
+		) { uri ->
+			if (uri != null) viewModel.saveAppLogs(uri)
+		}
 		val ignoredCount = remember { mutableStateOf(viewModel.getIgnoredVersionsCount()) }
 
 		// The settings backup: the two belong together and are what most people come here for.
@@ -749,6 +754,23 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = Pa
 					{ viewModel.copyAppLogs() },
 					R.drawable.ic_root,
 					R.drawable.ic_copy
+				)
+			}
+			// The whole log as a file (build 188): to a place the user picks, or to another app.
+			row("save_logs") {
+				ButtonSetting(
+					stringResource(R.string.save_app_logs),
+					{ runCatching { saveLogsLauncher.launch(viewModel.appLogsFileName()) }.onFailure { viewModel.filePickerUnavailable() } },
+					R.drawable.ic_root,
+					R.drawable.ic_save
+				)
+			}
+			row("share_logs") {
+				ButtonSetting(
+					stringResource(R.string.share_app_logs),
+					{ viewModel.shareAppLogs() },
+					R.drawable.ic_root,
+					R.drawable.ic_export
 				)
 			}
 			// Only shown after a crash was captured on the previous run — lets the user hand over

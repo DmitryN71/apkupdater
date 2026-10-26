@@ -132,6 +132,11 @@
     <string name="copy_to_clipboard">Copy to clipboard</string>
     <string name="copy_app_list">Copy App List</string>
     <string name="copy_app_logs">Copy App Logs</string>
+    <string name="save_app_logs">Save logs to a file</string>
+    <string name="share_app_logs">Send logs</string>
+    <string name="app_logs_saved">Logs saved</string>
+    <string name="app_logs_save_failed">Could not save the logs</string>
+    <string name="no_share_target">No app on this device can take the file.</string>
     <string name="copy_crash_report">Copy Crash Report</string>
     <string name="filter_system">System</string>
     <string name="filter_store">From stores</string>

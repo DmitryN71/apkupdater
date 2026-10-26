@@ -239,12 +239,29 @@ fun filterVersionTag(version: String) = version
 fun compareVersionNames(a: String, b: String): Int {
 	val va = Version(filterVersionTag(a))
 	val vb = Version(filterVersionTag(b))
+	// A bare build stamp against a dotted version (build 188): Maximoff's Apktool M has one old
+	// release tagged `v2026072802`, which read as version 2 026 072 802 and beat 2.4.0-261014, so
+	// the July build was offered as an update to the October one, for good. The two shapes cannot
+	// be compared, and the stamp is taken as the lower: offering nothing beats offering a downgrade
+	// that never goes away. Checked against every catalogued repository: Apktool M is the only one
+	// that mixes the two.
+	val stampA = isBuildStamp(va)
+	val stampB = isBuildStamp(vb)
+	if (stampA != stampB && (if (stampA) isDotted(vb) else isDotted(va))) return if (stampA) -1 else 1
 	val byLibrary = va.compareTo(vb)
 	if (byLibrary != 0) return byLibrary
 	val sa = numericSuffix(va.suffix) ?: return 0
 	val sb = numericSuffix(vb.suffix) ?: return 0
 	return sa.compareTo(sb)
 }
+
+/** One number of eight digits or more and nothing else: `2026072802`, `20261026`. */
+private fun isBuildStamp(version: Version) =
+	version.subversionNumbers.size == 1 && version.subversionNumbers[0] >= 10_000_000
+
+/** Two parts or more, the first of them small: `2.4.0`, `1.13`, not `2026.10.26`. */
+private fun isDotted(version: Version) =
+	version.subversionNumbers.size >= 2 && version.subversionNumbers[0] < 1000
 
 /** `-261013`, `.7`, `+42` or `_3` → the number; anything else, including no suffix, → null. */
 private fun numericSuffix(suffix: String?): Long? =
