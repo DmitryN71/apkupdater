@@ -209,8 +209,10 @@ class SearchRepository(
          * vanish ("Rostic's" is one word), any other non-letter becomes a space, and the spellings
          * that differ most often between the two alphabets are evened out on both sides, inside
          * each word only — x for ks and cs («Яндекс» / Yandex, «ростикс» / Rostic's), h for kh
-         * («хабр» / Habr), k for ck. Within a word, not across the space: "VK Studio" must stay
-         * "vk studio" for «вк» to find it, not run together into "vxtudio".
+         * («хабр» / Habr), k for ck, and ey for the English ay and ai, which Russian spells эй
+         * («Мир Пэй» / Mir Pay, «плей» / Play, «мэйл» / Mail; build 189, asked for on 4PDA). Within
+         * a word, not across the space: "VK Studio" must stay "vk studio" for «вк» to find it, not
+         * run together into "vxtudio".
          *
          * Only a fallback after the plain comparisons, so it adds matches and costs none; it can
          * still miss a pair spelled more differently than this evens out («вотсап» / WhatsApp).
@@ -228,6 +230,7 @@ class SearchRepository(
             .filter { it.isNotEmpty() }
             .joinToString(" ") { word ->
                 word.replace("ck", "k").replace("ks", "x").replace("cs", "x").replace("kh", "h")
+                    .replace("ay", "ey").replace("ai", "ey")
             }
     }
 

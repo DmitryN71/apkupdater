@@ -550,7 +550,7 @@ fun TvDownloadButton(
 	// not, and saving it would save HTML.
 	val apkMirrorFile = app.source == ApkMirrorSource && apkMirrorDirect &&
 		(app.link as? Link.Url)?.link?.let { ApkMirrorDownload.isVariantPage(it) } == true
-	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play) &&
+	val hasLink = (app.link is Link.Url || app.link is Link.Xapk || app.link is Link.Play || app.link is Link.Splits) &&
 		(app.source != ApkMirrorSource || apkMirrorFile)
 	if (hasLink) {
 		// Single focusable node: the button itself. The old extra combinedClickable

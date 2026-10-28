@@ -22,7 +22,8 @@ data class RuStoreApp(
 	val whatsNew: String = ""
 )
 
-fun RuStoreApp.toAppUpdate(app: AppInstalled?, downloadUrl: String) = AppUpdate(
+/** [link] is the download as RuStore described it ([toLink]); its size is what will be fetched. */
+fun RuStoreApp.toAppUpdate(app: AppInstalled?, link: Link) = AppUpdate(
 	name = appName,
 	packageName = packageName,
 	version = versionName,
@@ -31,7 +32,7 @@ fun RuStoreApp.toAppUpdate(app: AppInstalled?, downloadUrl: String) = AppUpdate(
 	oldVersionCode = app?.versionCode ?: 0L,
 	source = RuStoreSource,
 	iconUri = if (iconUrl.isNotEmpty()) iconUrl.toUri() else Uri.EMPTY,
-	link = Link.Url(downloadUrl, fileSize),
+	link = link,
 	whatsNew = whatsNew,
 	sourceUrl = "https://apps.rustore.ru/app/$packageName"
 )

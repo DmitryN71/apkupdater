@@ -94,7 +94,10 @@ class ApkPureRepository(
     }
 
     suspend fun search(text: String) = flow {
-        val response = retryFrequencyLimit { service.search(header, acceptLanguage, hl, text) }
+        // Lower case (build 189): APKPure's search tells Cyrillic capitals apart. «мир пэй» puts
+        // Mir Pay first, «Мир Пэй» does not return it at all, and «ЦППК» misses the ЦППК app
+        // «цппк» finds (measured 2026-10-28). Latin is answered the same either way.
+        val response = retryFrequencyLimit { service.search(header, acceptLanguage, hl, text.lowercase()) }
         val info = response.data.data.mapNotNull { d ->
             d.data.firstOrNull()?.takeIf { !it.ad }?.app_info?.let {
                 AppInfoForUpdate(it.package_name, 0L, false)

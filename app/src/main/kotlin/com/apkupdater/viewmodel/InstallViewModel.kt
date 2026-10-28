@@ -13,7 +13,7 @@ import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
 import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.rustore.RuStoreDownloadRequest
-import com.apkupdater.data.rustore.ruStoreApkUrl
+import com.apkupdater.data.rustore.toLink
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.data.ui.AppInstallStatus
 import com.apkupdater.data.ui.AppUpdate
@@ -267,7 +267,11 @@ abstract class InstallViewModel(
         null
     }
 
-    protected suspend fun resolveLink(update: AppUpdate): Link {
+    /**
+     * The link to download now. [singleFile]: one installable APK is needed, not parts to install
+     * together — for saving to a folder. Root asks for one as well, see the RuStore branch.
+     */
+    protected suspend fun resolveLink(update: AppUpdate, singleFile: Boolean = false): Link {
         // Walked at install time, never at check time: the file link APKMirror hands out is
         // signed and short-lived. Unlike RuStore below, a failure THROWS — falling back to the
         // page link would download a web page and try to install it.
@@ -285,7 +289,7 @@ abstract class InstallViewModel(
         if (update.source == ApkMirrorSource) {
             throw ApkMirrorDownload.Failure(R.string.apkmirror_failed, "Not a direct APKMirror download: ${update.link}")
         }
-        if (update.source == RuStoreSource && update.link is Link.Url) {
+        if (update.source == RuStoreSource && (update.link is Link.Url || update.link is Link.Splits)) {
             return runCatching {
                 // As the device that found this version (build 186): RuStore offers a version
                 // to some device ids only, and asked as another it would hand out the old one.
@@ -308,12 +312,12 @@ abstract class InstallViewModel(
                     return@runCatching update.link
                 }
                 if (appInfo != null) {
-                    val download = ruStoreService.getDownloadLink(RuStoreDownloadRequest(appInfo.body.appId), deviceType, slot)
+                    // In the parts this device needs (build 189), unless they cannot be installed
+                    // together: root installs a single APK with pm, and a saved file must be one.
+                    val whole = singleFile || prefs.rootInstall.get()
+                    val request = RuStoreDownloadRequest(appInfo.body.appId, withoutSplits = whole)
                     // v3 carries no status field — a usable URL is the success signal.
-                    val url = download.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl()
-                    if (!url.isNullOrEmpty()) {
-                        Link.Url(url, update.link.size)
-                    } else update.link
+                    ruStoreService.getDownloadLink(request, deviceType, slot).toLink() ?: update.link
                 } else update.link
             }.getOrElse {
                 Log.e("InstallViewModel", "Failed to refresh RuStore download URL", it)
@@ -378,6 +382,31 @@ abstract class InstallViewModel(
         installLog.emitProgress(AppInstallProgress(id, 0L))
         cancelInstall(id)
         return true
+    }
+
+    /**
+     * Downloads every part of [link] — RuStore's base and config splits (build 189) — under one
+     * progress bar over their sum. A failure part-way deletes the parts already fetched.
+     */
+    protected fun downloadParts(id: Int, link: Link.Splits): List<File> {
+        val total = link.parts.sumOf { it.size }
+        if (total > 0) installLog.emitProgress(AppInstallProgress(id, 0L, total))
+        val files = mutableListOf<File>()
+        try {
+            var done = 0L
+            link.parts.forEach { part ->
+                val offset = done
+                files += downloader.downloadFile(part.link, id) { progress, _ ->
+                    if (total > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, total))
+                }
+                // The part's own size, not the file's: the file is the APK unpacked from it.
+                done += part.size
+            }
+        } catch (t: Throwable) {
+            files.forEach { it.delete() }
+            throw t
+        }
+        return files
     }
 
     protected fun downloadAndRootInstall(id: Int, name: String, packageName: String, link: Link) = runCatching {
@@ -455,6 +484,12 @@ abstract class InstallViewModel(
                 downloader.beginInstall(id)
                 if (shizukuGoneAfterDownload(id, name, packageName, link, listOf(file))) return@runCatching
                 installer.shizukuInstallXapk(file, fake)
+            }
+            is Link.Splits -> {
+                val files = downloadParts(id, link)
+                downloader.beginInstall(id)
+                if (shizukuGoneAfterDownload(id, name, packageName, link, files)) return@runCatching
+                installer.shizukuInstallSplit(files, fake)
             }
             else -> {
                 snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.shizuku_install_not_supported)))
@@ -536,6 +571,12 @@ abstract class InstallViewModel(
                 // Progress already shown during download — install without re-tracking.
                 file.inputStream().use { installer.install(id, packageName, it, trackProgress = false) }
                 file.delete()
+            }
+            is Link.Splits -> {
+                val files = downloadParts(id, link)
+                downloader.beginInstall(id)
+                // One session for all the parts; the files are deleted whatever happens.
+                installer.installDownloaded(id, packageName, files, archive = false)
             }
             is Link.Xapk -> {
                 val result = downloader.downloadStreamWithSize(link.link, id)
@@ -747,7 +788,7 @@ abstract class InstallViewModel(
         background.begin(update.id, update.name)
         try {
         runCatching {
-            val link = resolveLink(update)
+            val link = resolveLink(update, singleFile = true)
             val safeName = update.name.replace(Regex("[^\\p{L}\\p{N}._\\- ]"), "").trim().ifEmpty { update.packageName }
             // The source belongs in the name. The same version from two sources is not the
             // same file — different signing key, sometimes a different build — and under one

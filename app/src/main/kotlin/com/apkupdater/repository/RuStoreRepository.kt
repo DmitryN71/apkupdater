@@ -7,10 +7,11 @@ import com.apkupdater.data.rustore.RuStoreBatchEntry
 import com.apkupdater.data.rustore.RuStoreBatchRequest
 import com.apkupdater.data.rustore.RuStoreDownloadRequest
 import com.apkupdater.data.rustore.RuStoreSearchApp
-import com.apkupdater.data.rustore.ruStoreApkUrl
+import com.apkupdater.data.rustore.toLink
 import com.apkupdater.data.rustore.toAppUpdate
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
+import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.getApp
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.prefs.RuStore404Entry
@@ -155,13 +156,12 @@ class RuStoreRepository(
 				clearRuStore404(batchApp.packageName)
 				if (!filterAlpha(ruStoreApp.versionName) || !filterBeta(ruStoreApp.versionName)) return@runCatching null
 
-				val downloadUrl = getDownloadUrl(ruStoreApp.appId, deviceType, slot)
-				if (downloadUrl.isEmpty()) return@runCatching null
+				val link = getDownloadLink(ruStoreApp.appId, deviceType, slot) ?: return@runCatching null
 
 				// Remembered, so the install fetches its file as that device too.
 				RuStoreSession.rememberSlot(batchApp.packageName, slot)
 				val app = apps.getApp(batchApp.packageName)
-				ruStoreApp.toAppUpdate(app, downloadUrl)
+				ruStoreApp.toAppUpdate(app, link)
 			}.onFailure { exception ->
 				when {
 					exception is HttpException && exception.code() == 429 -> {
@@ -221,10 +221,9 @@ class RuStoreRepository(
 
 					clearRuStore404(searchApp.packageName)
 					val details = detailResponse.body
-					val downloadUrl = getDownloadUrl(details.appId, deviceType)
-					if (downloadUrl.isEmpty()) return@runCatching null
+					val link = getDownloadLink(details.appId, deviceType) ?: return@runCatching null
 
-					details.toAppUpdate(null, downloadUrl)
+					details.toAppUpdate(null, link)
 				}.onFailure { exception ->
 					when {
 						exception is HttpException && exception.code() == 429 -> {
@@ -306,14 +305,18 @@ class RuStoreRepository(
 		}
 	}
 
-	private suspend fun getDownloadUrl(appId: Long, deviceType: String, slot: Int = 0): String {
+	/**
+	 * The download as RuStore's own client would get it (build 189): the parts this device needs,
+	 * or one APK where parts cannot be installed (root). The install asks again, see
+	 * InstallViewModel.resolveLink; this one gives the card its size and is the fallback.
+	 */
+	private suspend fun getDownloadLink(appId: Long, deviceType: String, slot: Int = 0): Link? {
 		return retryOnRateLimit {
 			var hitRateLimit = false
 			val result = runCatching {
-				val request = RuStoreDownloadRequest(appId = appId)
+				val request = RuStoreDownloadRequest(appId = appId, withoutSplits = prefs.rootInstall.get())
 				// v3 carries no status field — a usable URL is the success signal.
-				val response = service.getDownloadLink(request, deviceType, slot)
-				response.downloadUrls.firstOrNull()?.url?.ruStoreApkUrl().orEmpty()
+				service.getDownloadLink(request, deviceType, slot).toLink()
 			}.onFailure { exception ->
 				when {
 					exception is HttpException && exception.code() == 429 -> {
@@ -326,10 +329,10 @@ class RuStoreRepository(
 						Log.w("RuStoreRepository", "Download 404 for appId=$appId")
 					else -> Log.e("RuStoreRepository", "Error getting download for appId=$appId", exception)
 				}
-			}.getOrDefault("")
+			}.getOrNull()
 
-			AttemptResult(result.takeIf { it.isNotEmpty() }, hitRateLimit)
-		} ?: ""
+			AttemptResult(result, hitRateLimit)
+		}
 	}
 
 	@Synchronized

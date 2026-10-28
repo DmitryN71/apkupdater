@@ -432,8 +432,10 @@ class UpdatesViewModel(
 			val link = resolveLinkOrReport(update) ?: return@launch
 			// Root installs one APK with pm; a split archive goes to the standard installer
 			// instead, which needs no root. Refusing it wasted a whole APKMirror chain — three
-			// requests and a single-use download key — before saying "not supported".
-			if (link is com.apkupdater.data.ui.Link.Xapk) {
+			// requests and a single-use download key — before saying "not supported". RuStore's
+			// parts likewise (build 189) — only when its single APK could not be had, as root asks
+			// RuStore for one.
+			if (link is com.apkupdater.data.ui.Link.Xapk || link is com.apkupdater.data.ui.Link.Splits) {
 				// That installer needs "install unknown apps", which a root user may never have
 				// granted; checkPermission() opens the setting for it, as the standard path does.
 				if (installer.checkPermission()) {
@@ -522,6 +524,7 @@ class UpdatesViewModel(
 					}
 					listOf(file)
 				}
+				is com.apkupdater.data.ui.Link.Splits -> downloadParts(update.id, link)
 				is com.apkupdater.data.ui.Link.Play -> {
 					val playFiles = link.getInstallFiles()
 					// Belt only: a refusal throws since gplayapi 3.6 and is worded by
@@ -586,7 +589,7 @@ class UpdatesViewModel(
 				if (shizukuGoneAfterDownload(update.id, update.name, update.packageName, link, files)) return@runCatching
 				val error = when (link) {
 					is com.apkupdater.data.ui.Link.Xapk -> installer.shizukuInstallXapk(files.first(), fake)
-					is com.apkupdater.data.ui.Link.Play -> installer.shizukuInstallSplit(files, fake)
+					is com.apkupdater.data.ui.Link.Play, is com.apkupdater.data.ui.Link.Splits -> installer.shizukuInstallSplit(files, fake)
 					else -> installer.shizukuInstall(files.first(), fake)
 				}
 				if (error == null) {

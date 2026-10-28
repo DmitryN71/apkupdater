@@ -13,6 +13,7 @@ import java.io.InputStream
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
+import java.util.zip.ZipInputStream
 
 
 class Downloader(
@@ -163,10 +164,23 @@ class Downloader(
         session.calls.toList().forEach { runCatching { it.cancel() } }
     }
 
+    /**
+     * Downloads [url] to a file, resuming and retrying as below — and takes the APK out when the
+     * file is RuStore's .zip wrapper (build 189), so every install path gets an installable file.
+     */
     fun downloadFile(
         url: String,
         id: Int? = null,
         onProgress: ((bytesDownloaded: Long, totalBytes: Long) -> Unit)? = null
+    ): File {
+        val file = downloadRaw(url, id, onProgress)
+        return if (isRuStoreZip(url)) unwrapRuStoreApk(file) else file
+    }
+
+    private fun downloadRaw(
+        url: String,
+        id: Int?,
+        onProgress: ((bytesDownloaded: Long, totalBytes: Long) -> Unit)?
     ): File {
         // A URL OkHttp cannot even parse will not parse on the next attempt either. This is not
         // hypothetical: when Google Play rate-limits delivery (HTTP 429) the library still hands
@@ -424,6 +438,38 @@ class Downloader(
     }
 
     /** Moves a completed partial out of the resume directory so cleanUp() can reclaim it. */
+    private fun isRuStoreZip(url: String) = url.toHttpUrlOrNull()?.let {
+        it.host.endsWith("rustore.ru") && it.encodedPath.endsWith(".zip", ignoreCase = true)
+    } == true
+
+    /**
+     * The APK inside one of RuStore's .zip wrappers (build 189): one APK, deflated, and beside the
+     * base APK its baseline profiles, which an install does not need. The zip is deleted either
+     * way. Outside the retry loop on purpose: an archive without an APK would be the same archive
+     * on every attempt.
+     */
+    private fun unwrapRuStoreApk(zip: File): File {
+        try {
+            ZipInputStream(zip.inputStream().buffered()).use { input ->
+                while (true) {
+                    val entry = input.nextEntry ?: throw IOException("RuStore archive holds no APK")
+                    if (entry.isDirectory || entry.name.contains('/') || !entry.name.endsWith(".apk", true)) continue
+                    val apk = File(dir, randomUUID())
+                    try {
+                        apk.outputStream().use { input.copyTo(it) }
+                    } catch (t: Throwable) {
+                        apk.delete()
+                        throw t
+                    }
+                    Log.i("Downloader", "Unpacked ${apk.length() / 1048576} MB APK from a ${zip.length() / 1048576} MB RuStore archive")
+                    return apk
+                }
+            }
+        } finally {
+            zip.delete()
+        }
+    }
+
     private fun finishPartial(partial: File): File {
         if (!partial.exists() || partial.length() == 0L) {
             partial.delete()
