@@ -237,6 +237,9 @@
     <string name="apkmirror_page_changed">На странице APKMirror не нашлась ссылка на файл – похоже, сайт изменился. Откройте страницу в браузере.</string>
     <string name="apkmirror_failed">APKMirror не отдал файл. Откройте страницу в браузере.</string>
     <string name="apkmirror_app_blocked">APKMirror требует проверку в браузере для страниц этого приложения. Нажмите «Обновить» ещё раз – страница откроется в браузере. Остальных загрузок с APKMirror это не касается.</string>
+    <string name="apkmirror_webview_title">Проверка APKMirror</string>
+    <string name="apkmirror_webview_hint">Пройдите проверку Cloudflare ниже – скачивание продолжится в приложении.</string>
+    <string name="apkmirror_open_browser">Открыть в браузере</string>
     <string name="sources_not_checked">Не удалось проверить: %1$s</string>
     <string name="rustore_device_pool">Проверять как 16 устройств: постепенные обновления приходят раньше</string>
     <string name="repos_export">Экспорт списка</string>

@@ -4,13 +4,19 @@ import android.app.Activity.RESULT_CANCELED
 import android.content.Intent
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
@@ -48,8 +54,11 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.apkupdater.R
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
@@ -91,6 +100,7 @@ import com.apkupdater.data.ui.Screen
 import com.apkupdater.ui.component.BadgeText
 import com.apkupdater.ui.theme.AppTheme
 import com.apkupdater.prefs.Prefs
+import com.apkupdater.util.ApkMirrorWebViewResolver
 import com.apkupdater.util.Badger
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SnackBar
@@ -159,20 +169,117 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	// SnackBar
 	val snackBarHostState = handleSnackBar()
 
+	// APKMirror Cloudflare challenge session (shown only when interactive Turnstile is required)
+	val apkMirrorSession = koinInject<ApkMirrorWebViewResolver>().session.collectAsStateWithLifecycle().value
+
 	AppTheme(theme) {
-		Scaffold(
-			bottomBar = { BottomBar(mainViewModel, navController) },
-			// In Scaffold's own slot rather than floating in a Box over everything: Scaffold puts
-			// the snackbar ABOVE the bottom bar, so an error no longer covers the navigation the
-			// way it did in the screenshot from 4PDA.
-			snackbarHost = { AppSnackbarHost(snackBarHostState) }
-		) { padding ->
-			NavHost(
-				navController, padding, mainViewModel, appsViewModel,
-				updatesViewModel, searchViewModel, settingsViewModel,
-				onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) },
-				startRoute = startRoute
-			)
+		Box(modifier = Modifier.fillMaxSize()) {
+			Scaffold(
+				bottomBar = { BottomBar(mainViewModel, navController) },
+				// In Scaffold's own slot rather than floating in a Box over everything: Scaffold puts
+				// the snackbar ABOVE the bottom bar, so an error no longer covers the navigation the
+				// way it did in the screenshot from 4PDA.
+				snackbarHost = { AppSnackbarHost(snackBarHostState) }
+			) { padding ->
+				NavHost(
+					navController, padding, mainViewModel, appsViewModel,
+					updatesViewModel, searchViewModel, settingsViewModel,
+					onRefresh = { mainViewModel.refresh(appsViewModel, updatesViewModel) },
+					startRoute = startRoute
+				)
+			}
+			if (apkMirrorSession != null) {
+				ApkMirrorChallengeDialog(apkMirrorSession)
+			}
+		}
+	}
+}
+
+@Composable
+fun ApkMirrorChallengeDialog(session: ApkMirrorWebViewResolver.ChallengeSession) {
+	val uriHandler = LocalUriHandler.current
+	val verified = session.verified.collectAsStateWithLifecycle().value
+	val backdropInteraction = remember { MutableInteractionSource() }
+	val cardInteraction = remember { MutableInteractionSource() }
+
+	BackHandler {
+		session.cancel(openInBrowser = false)
+	}
+
+	// Rendered directly inside MainActivity's primary focused Window rather than a secondary
+	// Compose Dialog window so Android WebView retains full window focus (hasWindowFocus=true),
+	// receives the real ComponentActivity context, and avoids hardware-clipped offscreen layers
+	// that fail Adreno Vulkan compute shader compilation during Cloudflare Turnstile's Dawn probe.
+	Box(
+		modifier = Modifier
+			.fillMaxSize()
+			.background(Color.Black.copy(alpha = 0.62f))
+			.clickable(
+				interactionSource = backdropInteraction,
+				indication = null,
+				onClick = { session.cancel(openInBrowser = false) }
+			),
+		contentAlignment = Alignment.Center
+	) {
+		Surface(
+			shape = RoundedCornerShape(24.dp),
+			color = MaterialTheme.colorScheme.surfaceContainerHigh,
+			tonalElevation = 6.dp,
+			modifier = Modifier
+				.fillMaxWidth(0.94f)
+				.padding(vertical = 16.dp)
+				.clickable(
+					interactionSource = cardInteraction,
+					indication = null,
+					onClick = {}
+				)
+		) {
+			Column(modifier = Modifier.padding(20.dp)) {
+				Text(
+					text = stringResource(R.string.apkmirror_webview_title),
+					style = MaterialTheme.typography.titleLarge,
+					color = MaterialTheme.colorScheme.onSurface
+				)
+				Spacer(Modifier.height(6.dp))
+				Text(
+					text = stringResource(
+						if (verified) R.string.download_preparing
+						else R.string.apkmirror_webview_hint
+					),
+					style = MaterialTheme.typography.bodyMedium,
+					color = MaterialTheme.colorScheme.onSurfaceVariant
+				)
+				Spacer(Modifier.height(14.dp))
+				AndroidView(
+					modifier = Modifier
+						.fillMaxWidth()
+						.height(380.dp),
+					factory = { ctx ->
+						session.createWebView(ctx)
+					},
+					onRelease = { view ->
+						session.releaseWebView(view)
+					}
+				)
+				Spacer(Modifier.height(12.dp))
+				Row(
+					modifier = Modifier.fillMaxWidth(),
+					horizontalArrangement = Arrangement.SpaceBetween,
+					verticalAlignment = Alignment.CenterVertically
+				) {
+					TextButton(
+						onClick = {
+							runCatching { uriHandler.openUri(session.pageUrl) }
+							session.cancel(openInBrowser = true)
+						}
+					) {
+						Text(stringResource(R.string.apkmirror_open_browser))
+					}
+					TextButton(onClick = { session.cancel(openInBrowser = false) }) {
+						Text(stringResource(R.string.cancel_cd))
+					}
+				}
+			}
 		}
 	}
 }

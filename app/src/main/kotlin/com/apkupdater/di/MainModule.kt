@@ -27,6 +27,7 @@ import com.apkupdater.service.GitHubService
 import com.apkupdater.service.GitLabService
 import com.apkupdater.service.RuStoreService
 import com.apkupdater.util.ApkMirrorDownload
+import com.apkupdater.util.ApkMirrorWebViewResolver
 import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Clipboard
@@ -93,7 +94,7 @@ val mainModule = module {
 
 	single {
 		Retrofit.Builder()
-			.client(get())
+			.client(get<OkHttpClient>().newBuilder().readTimeout(35, TimeUnit.SECONDS).build())
 			.baseUrl("https://www.apkmirror.com")
 			.addConverterFactory(GsonConverterFactory.create(get()))
 			.build()
@@ -257,6 +258,8 @@ val mainModule = module {
 	// HTTP/2 with its challenge for any client that is not a browser, and over HTTP/1.1 with the
 	// page — same address, same name, alternating requests (measured from the PC). Nothing is
 	// disguised: the request still says "APKUpdater-Download", so APKMirror can refuse it by name.
+	single { ApkMirrorWebViewResolver(androidContext()) }
+
 	single {
 		ApkMirrorDownload(
 			OkHttpClient.Builder()
@@ -266,7 +269,8 @@ val mainModule = module {
 				.followSslRedirects(false)
 				.connectTimeout(15, TimeUnit.SECONDS)
 				.readTimeout(30, TimeUnit.SECONDS)
-				.build()
+				.build(),
+			get()
 		)
 	}
 

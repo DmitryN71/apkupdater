@@ -25,11 +25,14 @@ import com.apkupdater.util.orFalse
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.jsoup.Jsoup
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
+import java.net.SocketTimeoutException
 
 
 class ApkMirrorRepository(
@@ -130,8 +133,22 @@ class ApkMirrorRepository(
         Log.e("ApkMirrorRepository", "Error searching.", it)
     }
 
+    /**
+     * At most three 100-app chunks in flight at once. Firing all 10 chunks for ~1 000 installed
+     * apps simultaneously makes APKMirror's origin take >20 s on the tail chunks and time out.
+     */
+    private val appExistsSemaphore = Semaphore(3)
+
     private fun appExists(apps: List<String>, tally: FailureTally? = null) = flow {
-        emit(service.appExists(AppExistsRequest(apps, buildIgnoreList())).data)
+        val request = AppExistsRequest(apps, buildIgnoreList())
+        val data = appExistsSemaphore.withPermit {
+            try {
+                service.appExists(request).data
+            } catch (e: SocketTimeoutException) {
+                service.appExists(request).data
+            }
+        }
+        emit(data)
     }.catch {
         tally?.record(it)
         emit(emptyList())
