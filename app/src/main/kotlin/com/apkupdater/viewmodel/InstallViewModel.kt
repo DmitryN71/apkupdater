@@ -837,6 +837,10 @@ abstract class InstallViewModel(
 
                     snackBar.snackBar(viewModelScope, savedSnack(saved))
                 }
+                // RuStore parts (build 189). Asked for as one APK above, but every fallback there
+                // hands back the check's link — parts — and until 191 that ended here in "not
+                // supported" while installing the same card worked. Reported on 4PDA by Maximoff.
+                is Link.Splits -> savePartsToFolder(update.id, safeName, update.version, sourceTag, link)
                 else -> {
                     finishDownloadProgress(update.id)
                     snackBar.snackBar(viewModelScope, TextSnack(
@@ -918,6 +922,41 @@ abstract class InstallViewModel(
         finishDownloadProgress(id)
 
         snackBar.snackBar(viewModelScope, savedSnack(saved))
+    }
+
+    /** Saves RuStore's parts as one .apks bundle, the same file a Play save makes. */
+    private fun savePartsToFolder(
+        id: Int,
+        safeName: String,
+        version: String,
+        sourceTag: String,
+        link: Link.Splits
+    ) {
+        // Already the APKs: the downloader unpacked each part from RuStore's .zip wrapper.
+        val parts = downloadParts(id, link)
+        val apksFile = File(context.cacheDir, randomUUID())
+        try {
+            // RuStore names no part, and its order is not checked. The base is the one with
+            // code: the device parts are config splits (ABI, density, language) and carry none.
+            val base = parts.indexOfFirst { file ->
+                runCatching { java.util.zip.ZipFile(file).use { it.getEntry("classes.dex") != null } }
+                    .getOrDefault(false)
+            }.coerceAtLeast(0)
+            java.util.zip.ZipOutputStream(apksFile.outputStream()).use { zip ->
+                parts.forEachIndexed { index, file ->
+                    zip.putNextEntry(java.util.zip.ZipEntry(if (index == base) "base.apk" else "split_$index.apk"))
+                    file.inputStream().use { it.copyTo(zip) }
+                    zip.closeEntry()
+                }
+            }
+            val saved = saveToFolder(apksFile, "$safeName-$version-$sourceTag.apks")
+            downloader.cleanUp()
+            finishDownloadProgress(id)
+            snackBar.snackBar(viewModelScope, savedSnack(saved))
+        } finally {
+            parts.forEach { it.delete() }
+            apksFile.delete()
+        }
     }
 
     private fun saveToFolder(file: File, fileName: String) =
