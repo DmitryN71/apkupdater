@@ -105,6 +105,10 @@ import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.data.ui.Source
 import com.apkupdater.data.ui.UpdatesUiState
 import com.apkupdater.data.ui.WatchedApp
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import com.apkupdater.ui.component.TvWatchedItem
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -190,24 +194,64 @@ fun UpdatesScreen(
 	val showSkipped = viewModel.showSkipped.collectAsStateWithLifecycle().value
 	val showWatched = viewModel.showWatched.collectAsStateWithLifecycle().value
 	val state = viewModel.state().collectAsStateWithLifecycle().value
-	if (showWatched) {
+	val watched = viewModel.watched.collectAsStateWithLifecycle().value
+	val installedSide: @Composable ColumnScope.() -> Unit = {
+		state.onLoading {
+			UpdatesScreenLoading()
+		}.onIdle {
+			UpdatesScreenIdle(onRefresh, onCheck, isTv)
+		}.onError {
+			UpdatesScreenError()
+		}.onSuccess {
+			// Installed apps only (build 193): the watched ones have the other side of the switch.
+			UpdatesScreenSuccess(
+				viewModel, it.updates.filter { u -> !u.watched }, onRefresh, firstItemFocus, isTv, notificationPermission,
+				only = it.only, onCheck = onCheck, refreshFocus = refreshFocus,
+				skipped = if (showSkipped) it.skipped.filter { u -> !u.watched } else emptyList()
+			)
+		}
+	}
+	val watchedSide: @Composable ColumnScope.() -> Unit = {
 		// The watched side has no Idle or Error of its own: it always has its rows to show, the
 		// apps followed, whether or not a check has been run.
 		if (state is UpdatesUiState.Loading) UpdatesScreenLoading()
 		else WatchedScreen(viewModel, state.updates().filter { it.watched }, onRefresh, isTv, notificationPermission, refreshFocus)
-	} else state.onLoading {
-		UpdatesScreenLoading()
-	}.onIdle {
-		UpdatesScreenIdle(onRefresh, onCheck, isTv)
-	}.onError {
-		UpdatesScreenError()
-	}.onSuccess {
-		// Installed apps only (build 193): the watched ones have the other side of the switch.
-		UpdatesScreenSuccess(
-			viewModel, it.updates.filter { u -> !u.watched }, onRefresh, firstItemFocus, isTv, notificationPermission,
-			only = it.only, onCheck = onCheck, refreshFocus = refreshFocus,
-			skipped = if (showSkipped) it.skipped.filter { u -> !u.watched } else emptyList()
-		)
+	}
+	// Swiped between on a phone (build 196, asked for by Dmitry). Not on a TV: there is no finger,
+	// and a pager between the switch and the cards would be one more thing for the D-pad to fight.
+	val twoSides = watched.isNotEmpty() || state.updates().any { it.watched }
+	if (twoSides && !isTv) {
+		SwipeableSides(showWatched, { viewModel.setShowWatched(it) }, installedSide, watchedSide)
+	} else if (showWatched) watchedSide() else installedSide()
+}
+
+/**
+ * The two sides of the Installed | Watched switch as pages, so a swipe changes side as a tap on the
+ * switch does. The switch stays the one source of truth: a tap moves the pager, and a swipe that
+ * settles on a page moves the switch.
+ */
+@Composable
+private fun ColumnScope.SwipeableSides(
+	showWatched: Boolean,
+	onSide: (watched: Boolean) -> Unit,
+	installed: @Composable ColumnScope.() -> Unit,
+	watched: @Composable ColumnScope.() -> Unit
+) {
+	val pager = rememberPagerState(initialPage = if (showWatched) 1 else 0) { 2 }
+	val currentOnSide by rememberUpdatedState(onSide)
+	LaunchedEffect(showWatched) {
+		val target = if (showWatched) 1 else 0
+		if (pager.currentPage != target) pager.animateScrollToPage(target)
+	}
+	// settledPage, not currentPage: the latter flips halfway through a drag, and the switch would
+	// then jump back and forth under a finger that has not let go yet.
+	LaunchedEffect(pager) {
+		snapshotFlow { pager.settledPage }.collect { currentOnSide(it == 1) }
+	}
+	HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth()) { page ->
+		Column(Modifier.fillMaxSize()) {
+			if (page == 1) watched() else installed()
+		}
 	}
 }
 
