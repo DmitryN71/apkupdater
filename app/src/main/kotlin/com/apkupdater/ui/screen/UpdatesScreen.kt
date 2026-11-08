@@ -104,6 +104,11 @@ import com.apkupdater.data.ui.PlaySource
 import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.data.ui.Source
 import com.apkupdater.data.ui.UpdatesUiState
+import com.apkupdater.data.ui.WatchedApp
+import com.apkupdater.ui.component.TvWatchedItem
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import com.apkupdater.ui.component.DefaultErrorScreen
 import com.apkupdater.ui.component.LoadingGrid
 import com.apkupdater.ui.component.RefreshIcon
@@ -136,6 +141,7 @@ fun UpdatesScreen(
 	val refreshFocus = remember { FocusRequester() }
 	UpdatesTopBar(viewModel, refreshFocus)
 	ProgressBanner(viewModel.refreshProgress.collectAsStateWithLifecycle().value)
+	WatchedSwitch(viewModel)
 
 	// Placed once per visit to the tab, not once per refresh. UpdatesScreen survives the state
 	// changes now, so LaunchedEffect(Unit) fires only when the tab is opened: it waits for the
@@ -182,17 +188,181 @@ fun UpdatesScreen(
 		Unit
 	}
 	val showSkipped = viewModel.showSkipped.collectAsStateWithLifecycle().value
-	viewModel.state().collectAsStateWithLifecycle().value.onLoading {
+	val showWatched = viewModel.showWatched.collectAsStateWithLifecycle().value
+	val state = viewModel.state().collectAsStateWithLifecycle().value
+	if (showWatched) {
+		// The watched side has no Idle or Error of its own: it always has its rows to show, the
+		// apps followed, whether or not a check has been run.
+		if (state is UpdatesUiState.Loading) UpdatesScreenLoading()
+		else WatchedScreen(viewModel, state.updates().filter { it.watched }, onRefresh, isTv, notificationPermission, refreshFocus)
+	} else state.onLoading {
 		UpdatesScreenLoading()
 	}.onIdle {
 		UpdatesScreenIdle(onRefresh, onCheck, isTv)
 	}.onError {
 		UpdatesScreenError()
 	}.onSuccess {
+		// Installed apps only (build 193): the watched ones have the other side of the switch.
 		UpdatesScreenSuccess(
-			viewModel, it.updates, onRefresh, firstItemFocus, isTv, notificationPermission,
+			viewModel, it.updates.filter { u -> !u.watched }, onRefresh, firstItemFocus, isTv, notificationPermission,
 			only = it.only, onCheck = onCheck, refreshFocus = refreshFocus,
-			skipped = if (showSkipped) it.skipped else emptyList()
+			skipped = if (showSkipped) it.skipped.filter { u -> !u.watched } else emptyList()
+		)
+	}
+}
+
+/**
+ * Installed | Watched (build 193). Not drawn at all until something is watched, so for everyone who
+ * never uses the watchlist the tab looks exactly as it did. Each side carries its own count of what
+ * is new; the badge on the bottom bar counts the installed side alone.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WatchedSwitch(viewModel: UpdatesViewModel) {
+	val watched = viewModel.watched.collectAsStateWithLifecycle().value
+	val cards = viewModel.state().collectAsStateWithLifecycle().value.updates()
+	val showWatched = viewModel.showWatched.collectAsStateWithLifecycle().value
+	val watchedCards = cards.filter { it.watched }
+	if (watched.isEmpty() && watchedCards.isEmpty()) {
+		// The last watched app went from somewhere else (Search): back to the only side there is.
+		if (showWatched) LaunchedEffect(Unit) { viewModel.setShowWatched(false) }
+		return
+	}
+	val installedNew = cards.count { !it.watched && !it.isInstalled }
+	val watchedNew = watchedCards.filter { !it.isInstalled }.distinctBy { it.packageName }.size
+	SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+		SwitchSide(
+			stringResource(R.string.updates_side_installed), installedNew,
+			selected = !showWatched, index = 0
+		) { viewModel.setShowWatched(false) }
+		SwitchSide(
+			stringResource(R.string.updates_side_watched), watchedNew,
+			selected = showWatched, index = 1
+		) { viewModel.setShowWatched(true) }
+	}
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun androidx.compose.material3.SingleChoiceSegmentedButtonRowScope.SwitchSide(
+	label: String,
+	count: Int,
+	selected: Boolean,
+	index: Int,
+	onClick: () -> Unit
+) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val shape = SegmentedButtonDefaults.itemShape(index, 2)
+	SegmentedButton(
+		selected = selected,
+		onClick = onClick,
+		shape = shape,
+		// The app's own focus frame: the segment's built-in focus layer is too faint on a TV.
+		modifier = Modifier.tvFocusFrame(focused, shape),
+		interactionSource = interaction,
+		// No tick: the filled side already says which is chosen, and on a narrow phone the tick
+		// costs the room "Отслеживаемые · 2" needs.
+		icon = {}
+	) {
+		Text(
+			if (count > 0) "$label · $count" else label,
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis
+		)
+	}
+}
+
+/** A section header on the Watched side: a row of its own, not a card, and no focus stop. */
+private data class WatchedHeader(val text: String)
+
+/**
+ * The Watched side (build 193): the new versions of watched apps as cards, with Seen where an
+ * update has Skip, then every other watched app as a row — what is followed, and where to stop.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ColumnScope.WatchedScreen(
+	viewModel: UpdatesViewModel,
+	cards: List<AppUpdate>,
+	onRefresh: () -> Unit,
+	isTv: Boolean,
+	notificationPermission: ManagedActivityResultLauncher<String, Boolean>?,
+	refreshFocus: FocusRequester
+) {
+	val handler = LocalUriHandler.current
+	val context = LocalContext.current
+	val watched = viewModel.watched.collectAsStateWithLifecycle().value
+	val lastCheck = viewModel.lastCheck.collectAsStateWithLifecycle().value
+	val withNews = cards.mapTo(HashSet()) { it.packageName }
+	// The rows without news, in two groups under a header each, so a row reads as settled rather
+	// than as something waiting (Dmitry, on the first build): checked with nothing newer than the
+	// version seen, or not looked at by any check yet — no check since the app started, or added
+	// after the last one.
+	val (unchecked, settled) = watched
+		.filter { it.packageName !in withNews }
+		.sortedBy { it.name.lowercase() }
+		.partition { lastCheck == null || it.addedAt > lastCheck.at }
+	val nothingNew = lastCheck?.only?.let { stringResource(R.string.watched_nothing_new_on, it.name) }
+		?: stringResource(R.string.watched_nothing_new)
+	val notChecked = stringResource(R.string.watched_not_checked)
+	val entries: List<Any> = buildList {
+		addAll(cards.sortedBy { it.name.lowercase() })
+		if (settled.isNotEmpty()) {
+			add(WatchedHeader(nothingNew))
+			addAll(settled)
+		}
+		if (unchecked.isNotEmpty()) {
+			add(WatchedHeader(notChecked))
+			addAll(unchecked)
+		}
+	}
+	val pullState = rememberPullRefreshState(refreshing = false, onRefresh = onRefresh)
+	Box(Modifier.weight(1f).fillMaxWidth().pullRefresh(pullState, enabled = !isTv)) {
+		TvEqualRows(entries, itemKey = { entry ->
+			when (entry) {
+				is AppUpdate -> entry.id
+				is WatchedApp -> "watched:${entry.packageName}"
+				is WatchedHeader -> "header:${entry.text}"
+				else -> entry.hashCode()
+			}
+		}, fullRow = { it is WatchedHeader }) { entry, cardModifier ->
+			when (entry) {
+				is AppUpdate -> TvUpdateItem(
+					entry,
+					modifier = cardModifier,
+					{ viewModel.install(entry, handler, notificationPermission) },
+					{
+						// The card leaves the list, and a focused button that is disposed drops the
+						// D-pad to the bottom bar (build 137). The top bar is always there.
+						if (isTv) runCatching { refreshFocus.requestFocus() }
+						viewModel.markSeen(entry)
+					},
+					onOpen = { packageName ->
+						context.launchIntentFor(packageName)?.let { context.startActivity(it) }
+					},
+					onHide = { viewModel.hideUpdate(it) },
+					onSourceClick = if (entry.sourceUrl.isNotEmpty()) {{ handler.openUri(entry.sourceUrl) }} else null,
+					onDownload = { viewModel.downloadToFolder(it) },
+					onCancel = { viewModel.userCancelInstall(it) }
+				)
+				is WatchedApp -> TvWatchedItem(entry, cardModifier) {
+					if (isTv) runCatching { refreshFocus.requestFocus() }
+					viewModel.unwatch(it)
+				}
+				is WatchedHeader -> Text(
+					entry.text,
+					style = MaterialTheme.typography.labelLarge,
+					color = MaterialTheme.colorScheme.onSurfaceVariant,
+					modifier = cardModifier.padding(start = 8.dp, top = 8.dp)
+				)
+				else -> {}
+			}
+		}
+		if (!isTv) PullRefreshIndicator(
+			false, pullState,
+			Modifier.align(Alignment.TopCenter),
+			contentColor = MaterialTheme.colorScheme.primary
 		)
 	}
 }

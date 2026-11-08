@@ -97,6 +97,8 @@ class FdroidRepository(
 
     private fun filterSignature(installed: AppInstalled, update: FdroidApp) = when {
         update.allowedAPKSigningKeys.isEmpty() -> true
+        // A watched app (build 193): not installed, so no signer to match.
+        installed.signatureSha256.isEmpty() -> true
         update.allowedAPKSigningKeys.contains(installed.signatureSha256) -> true
         else -> false
     }

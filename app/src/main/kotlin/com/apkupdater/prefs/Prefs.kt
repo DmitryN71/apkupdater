@@ -3,6 +3,7 @@ package com.apkupdater.prefs
 import com.apkupdater.data.github.CustomGitRepo
 import com.apkupdater.data.ui.InstallRecord
 import com.apkupdater.data.ui.Screen
+import com.apkupdater.data.ui.WatchedApp
 import com.kryptoprefs.context.KryptoContext
 import com.kryptoprefs.gson.json
 import com.kryptoprefs.preferences.KryptoPrefs
@@ -125,5 +126,9 @@ class Prefs(
 	val customGitRepos = json("customGitRepos", emptyList<CustomGitRepo>(), true)
 	/** Where this app installed each package from. See util/InstallRecords.kt. */
 	val installRecords = json("installRecords", emptyList<InstallRecord>(), true)
+	/** Apps followed without being installed (build 193). Read and written by util/WatchList.kt. */
+	val watchedApps = json("watchedApps", emptyList<WatchedApp>(), true)
+	/** A scheduled check also announces new versions of watched apps, in a notification of its own. */
+	val notifyWatched = boolean("notifyWatched", defValue = true, backed = true)
 	val githubToken = string("githubToken", defValue = "", backed = true)
 }

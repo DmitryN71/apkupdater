@@ -27,6 +27,8 @@ import com.apkupdater.util.BackgroundInstaller
 import com.apkupdater.util.Badger
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.UpdatesNotification
+import com.apkupdater.util.WatchList
+import com.apkupdater.data.ui.WatchedApp
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
 import com.apkupdater.util.SnackBar
@@ -59,7 +61,8 @@ class SearchViewModel(
     context: Context,
     background: BackgroundInstaller,
     notification: UpdatesNotification,
-    apkMirror: ApkMirrorDownload
+    apkMirror: ApkMirrorDownload,
+    private val watchList: WatchList
 ) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification, apkMirror) {
 
     private val mutex = Mutex()
@@ -153,6 +156,27 @@ class SearchViewModel(
         return parseRepoQuery(query).firstOrNull { repo ->
             val source = if (repo.platform == GitProvider.GITHUB) GitHubSource else GitLabSource
             "${repo.user}/${repo.repo}".lowercase() !in followed && found.any { it.source == source }
+        }
+    }
+
+    /** The apps followed without being installed (build 193), for the results' Watch buttons. */
+    val watched: StateFlow<List<WatchedApp>> = watchList.apps
+
+    /**
+     * Follows [update]'s app, or stops following it. Its version now is the one seen: what is in
+     * front of the user is not news, the next version is.
+     */
+    fun toggleWatch(update: AppUpdate) {
+        val name = update.name.ifEmpty { update.packageName }
+        if (watchList.isWatched(update.packageName)) {
+            watchList.unwatch(update.packageName)
+            snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.watch_removed, name)))
+        } else {
+            watchList.watch(update)
+            snackBar.snackBar(viewModelScope, TextSnack(
+                stringer.get(R.string.watch_added, name),
+                type = SnackType.SUCCESS
+            ))
         }
     }
 

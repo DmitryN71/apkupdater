@@ -15,6 +15,7 @@ import com.apkupdater.data.ui.RuStoreSource
 import com.apkupdater.data.ui.Source
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.util.AppJournal
+import com.apkupdater.util.WatchList
 import com.apkupdater.util.isVersionDowngrade
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -39,7 +40,8 @@ class UpdatesRepository(
     private val playRepository: PlayRepository,
     private val ruStoreRepository: RuStoreRepository,
     private val appGalleryRepository: AppGalleryRepository,
-    private val prefs: Prefs
+    private val prefs: Prefs,
+    private val watchList: WatchList
 ) {
 
     /** Every source, in the order a check has always started them. */
@@ -86,7 +88,11 @@ class UpdatesRepository(
         fun include(source: Source) = isEnabled(source) && (only == null || only == source)
         appsRepository.getApps().collect { result ->
             result.onSuccess { apps ->
-                val filtered = apps.filter { !it.ignored }
+                // The watched apps go in as if installed at the version last seen (build 193), so
+                // every source compares against that the way it compares against an installed one.
+                // Their cards come back marked, for the Updates tab's other side.
+                val watched = watchList.notInstalled().associateBy { it.packageName }
+                val filtered = apps.filter { !it.ignored } + watched.values.map { it.toAppInstalled() }
                 val sourceNames = mutableListOf<String>()
                 val sourceFlows = mutableListOf<Flow<List<AppUpdate>>>()
                 val sourceObjs = mutableListOf<Source>()
@@ -168,7 +174,15 @@ class UpdatesRepository(
                         // No deduplication — show every source's update so the user
                         // can choose where to install from (e.g. avoid ApkMirror in
                         // favor of GitHub/F-Droid for direct install).
-                        emit(found.filter { !isVersionDowngrade(it.oldVersion, it.version) })
+                        emit(found
+                            .filter { !isVersionDowngrade(it.oldVersion, it.version) }
+                            .mapNotNull { update ->
+                                val seen = watched[update.packageName] ?: return@mapNotNull update
+                                // The version already seen, from a source that compares by name
+                                // alone or had no code to compare (seen code 0): nothing new.
+                                if (update.version == seen.seenVersion) null
+                                else update.copy(watched = true, oldVersion = seen.seenVersion)
+                            })
                     }
                     if (failed.isNotEmpty()) onSourceError?.invoke(failed.toList(), totalSources)
                 } else {

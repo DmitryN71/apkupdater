@@ -29,6 +29,9 @@ import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.outlined.NotificationAdd
+import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ButtonDefaults
@@ -73,6 +76,7 @@ import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.ReleaseType
 import com.apkupdater.data.ui.Source
+import com.apkupdater.data.ui.WatchedApp
 import com.apkupdater.util.ApkMirrorDownload
 import com.apkupdater.util.getAppName
 import kotlinx.coroutines.delay
@@ -331,7 +335,9 @@ fun TvInstallButton(
 	onOpen: (String) -> Unit = {},
 	onCancel: (Int) -> Unit = {},
 	isSearch: Boolean = false,
-	modifier: Modifier = Modifier
+	modifier: Modifier = Modifier,
+	/** A watched app's card (build 193): nothing is installed, so the button says Install. */
+	notInstalled: Boolean = false
 ) {
 	// For search: oldVersionCode > 0 means app is installed
 	val isInstalledElsewhere = isSearch && app.oldVersionCode > 0L && !app.isInstalled
@@ -398,7 +404,7 @@ fun TvInstallButton(
 			Text(stringResource(R.string.open_cd))
 		} else if (isUpToDate) {
 			Text(stringResource(R.string.installed_cd))
-		} else if (isUpdate || !isSearch) {
+		} else if (isUpdate || (!isSearch && !notInstalled)) {
 			Text(stringResource(R.string.update_cd))
 		} else {
 			Text(stringResource(R.string.install_cd))
@@ -501,7 +507,9 @@ fun TvIgnoreVersionButton(
 	app: AppUpdate,
 	onIgnoreVersion: (Int) -> Unit,
 	/** The card is a skipped one: the button brings it back and says so. */
-	skipped: Boolean = false
+	skipped: Boolean = false,
+	/** A watched app's card (build 193): the version is marked as seen instead of skipped. */
+	seen: Boolean = false
 ) {
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
@@ -514,7 +522,11 @@ fun TvIgnoreVersionButton(
 			contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
 		)
 	) {
-		Text(stringResource(if (skipped) R.string.unskip_cd else R.string.skip_cd))
+		Text(stringResource(when {
+			seen -> R.string.seen_cd
+			skipped -> R.string.unskip_cd
+			else -> R.string.skip_cd
+		}))
 	}
 }
 
@@ -711,6 +723,9 @@ fun TvUpdateItem(
 	// a version you said to skip is one tap away once it is back among the others.
 	skipped: Boolean = false
 ) = TvFocusCard(modifier) {
+	// A watched app's card (build 193) says Seen where an update says Skip, and Install where it
+	// says Update: the app is not on the device.
+	val watched = app.watched
 	// The content is dimmed, not the card: alpha on the card's modifier is an offscreen layer
 	// the card's size, which would cut off the glow that shows a focused card on a TV.
 	Column(if (skipped) Modifier.alpha(0.6f) else Modifier) {
@@ -771,14 +786,15 @@ fun TvUpdateItem(
 				TvIgnoreVersionButton(app, onIgnoreVersion, skipped = true)
 			} else {
 				if (!app.isInstalled) {
-					TvIgnoreVersionButton(app, onIgnoreVersion)
+					TvIgnoreVersionButton(app, onIgnoreVersion, seen = watched)
 				} else {
 					TvHideButton { onHide(app.id) }
 				}
 				TvDownloadButton(app, onDownload)
 				TvInstallButton(
 					app, onInstall, onOpen, onCancel,
-					modifier = if (firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier
+					modifier = if (firstItemFocus != null) Modifier.focusRequester(firstItemFocus) else Modifier,
+					notInstalled = watched
 				)
 			}
 		}
@@ -793,7 +809,10 @@ fun TvSearchItem(
 	onOpen: (String) -> Unit = {},
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
-	onCancel: (Int) -> Unit = {}
+	onCancel: (Int) -> Unit = {},
+	/** Whether the app is watched (build 193); null hides the button, as for an installed app. */
+	watched: Boolean? = null,
+	onWatch: () -> Unit = {}
 ) = TvFocusCard(modifier) {
 	Column {
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
@@ -835,8 +854,111 @@ fun TvSearchItem(
 				TvExpandButton(expanded) { expanded = !expanded }
 				Spacer(Modifier.weight(1f))
 			}
+			if (watched != null) TvWatchButton(watched, onWatch)
 			TvDownloadButton(app, onDownload)
 			TvInstallButton(app, onInstall, onOpen, onCancel, isSearch = true)
+		}
+	}
+}
+
+/**
+ * Follow or stop following an app that is not installed (build 193), on a search result. An icon,
+ * like the other round buttons in the row, with its label in the tooltip: a word would not fit
+ * beside Download and Install on a phone in Russian.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TvWatchButton(watched: Boolean, onClick: () -> Unit) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val label = stringResource(if (watched) R.string.unwatch_cd else R.string.watch_cd)
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(label) } },
+		state = rememberTooltipState()
+	) {
+		IconButton(
+			onClick = onClick,
+			interactionSource = interaction,
+			colors = IconButtonDefaults.iconButtonColors(
+				containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+				contentColor = when {
+					focused -> MaterialTheme.colorScheme.onPrimary
+					// Lit while watched, so a glance down the results shows which are followed.
+					watched -> MaterialTheme.colorScheme.primary
+					else -> MaterialTheme.colorScheme.onSurfaceVariant
+				}
+			)
+		) {
+			Icon(
+				if (watched) Icons.Filled.NotificationsActive else Icons.Outlined.NotificationAdd,
+				contentDescription = label
+			)
+		}
+	}
+}
+
+/**
+ * A watched app with nothing new since it was last seen (build 193). The Watched side lists these
+ * after the cards with news, so it also shows what is followed — and is where following stops.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TvWatchedItem(
+	app: WatchedApp,
+	modifier: Modifier = Modifier,
+	onUnwatch: (String) -> Unit
+) = TvFocusCard(modifier) {
+	// Dimmed, the content and not the card (see TvUpdateItem): nothing here waits for the user.
+	Row(
+		Modifier.fillMaxWidth().alpha(0.7f).padding(horizontal = 12.dp, vertical = 10.dp),
+		verticalAlignment = Alignment.CenterVertically
+	) {
+		if (app.iconUri == Uri.EMPTY) {
+			LoadingImageApp(app.packageName, Modifier.size(52.dp), padding = 2.dp)
+		} else {
+			LoadingImage(app.iconUri, Modifier.size(52.dp), padding = 2.dp)
+		}
+		Column(Modifier.padding(start = 12.dp).weight(1f)) {
+			Text(
+				app.name.ifEmpty { app.packageName },
+				style = MaterialTheme.typography.titleMedium,
+				fontWeight = FontWeight.Bold,
+				maxLines = 2,
+				overflow = TextOverflow.Ellipsis
+			)
+			val date = remember(app.seenAt) {
+				if (app.seenAt > 0L) java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT)
+					.format(java.util.Date(app.seenAt)) else ""
+			}
+			Text(
+				if (app.seenVersion.isEmpty()) app.packageName
+				else stringResource(R.string.watched_seen, app.seenVersion, date),
+				style = MaterialTheme.typography.bodyMedium,
+				color = MaterialTheme.colorScheme.onSurfaceVariant,
+				maxLines = 2,
+				overflow = TextOverflow.Ellipsis,
+				modifier = Modifier.padding(top = 2.dp)
+			)
+		}
+		val interaction = remember { MutableInteractionSource() }
+		val focused by interaction.collectIsFocusedAsState()
+		val label = stringResource(R.string.unwatch_cd)
+		TooltipBox(
+			positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+			tooltip = { PlainTooltip { Text(label) } },
+			state = rememberTooltipState()
+		) {
+			IconButton(
+				onClick = { onUnwatch(app.packageName) },
+				interactionSource = interaction,
+				colors = IconButtonDefaults.iconButtonColors(
+					containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+					contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+				)
+			) {
+				Icon(Icons.Outlined.NotificationsOff, contentDescription = label)
+			}
 		}
 	}
 }

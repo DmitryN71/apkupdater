@@ -242,7 +242,8 @@ private fun LastCheckLine(viewModel: UpdatesViewModel, onOpenUpdates: () -> Unit
 				check.at, System.currentTimeMillis(), DateFormat.SHORT, DateFormat.SHORT
 			).toString()
 			val at = check.only?.let { "$time (${it.name})" } ?: time
-			val waiting = state.updates().count { !it.isInstalled }
+			// Installed apps only, like the badge: a watched app's new version is not an update.
+			val waiting = state.updates().count { !it.isInstalled && !it.watched }
 			if (waiting > 0) stringResource(R.string.home_last_check, at, waiting)
 			else stringResource(R.string.home_last_check_none, at)
 		}

@@ -42,7 +42,11 @@ class AptoideRepository(
     }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
-        val data = apps.map(AppInstalled::toApksData)
+        // Not the watched apps (build 193): they are not installed, so they have no signature, and
+        // one empty signature makes Aptoide refuse the whole request — measured 2026-11-08, HTTP 400
+        // "Invalid value … for argument 'signatures_map'" — which would end the check of every
+        // installed app here as well.
+        val data = apps.filter { it.signature.isNotEmpty() }.map(AppInstalled::toApksData)
         val r = service
             .findUpdates(ListAppsUpdatesRequest(data, query, buildFilterList(), buildStoreList()))
             .list

@@ -66,7 +66,9 @@ class RuStoreRepository(
 		// ALREADY confirmed have an update, so they are transient API hiccups rather than
 		// "missing from RuStore". Blacklisting those for days was hiding real updates.
 		val batchRequest = RuStoreBatchRequest(
-			apps.map { RuStoreBatchEntry(it.packageName, it.versionCode) }
+			// At least 1: a watched app seen in a source without codes (build 193) has none, and a 0 in
+			// a batch that carries every app is not worth finding out about. Untested precaution.
+			apps.map { RuStoreBatchEntry(it.packageName, it.versionCode.coerceAtLeast(1L)) }
 		)
 
 		// Ask once per device kind and merge. RuStore answers for one kind at a time — a `mobile`

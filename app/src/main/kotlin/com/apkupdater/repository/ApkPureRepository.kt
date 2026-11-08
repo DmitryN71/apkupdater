@@ -156,6 +156,8 @@ class ApkPureRepository(
 
     private fun filterSignature(signatures: List<String>, signature: String) = when {
         signatures.isEmpty() -> true
+        // A watched app (build 193): not installed, so no signer to match.
+        signature.isEmpty() -> true
         signatures.contains(signature) -> true
         else -> false
     }

@@ -1,6 +1,7 @@
 package com.apkupdater.viewmodel
 
 import com.apkupdater.BuildConfig
+import com.apkupdater.util.WatchList
 import com.apkupdater.util.installRecordsReport
 
 import androidx.activity.compose.ManagedActivityResultLauncher
@@ -14,6 +15,8 @@ import com.apkupdater.data.github.parseRepoQuery
 import com.apkupdater.data.github.parseRepoUrl
 import com.apkupdater.data.snack.SnackType
 import com.apkupdater.data.snack.TextSnack
+import com.apkupdater.data.ui.WatchedApp
+import com.apkupdater.data.ui.PlaySource
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.SettingsUiState
 import com.apkupdater.prefs.Prefs
@@ -64,7 +67,8 @@ class SettingsViewModel(
 	private val themer: Themer,
 	private val context: Context,
 	private val snackBar: SnackBar,
-	private val stringer: Stringer
+	private val stringer: Stringer,
+	private val watchList: WatchList
 ) : ViewModel() {
 
 	val state = MutableStateFlow<SettingsUiState>(SettingsUiState.Settings)
@@ -148,6 +152,8 @@ class SettingsViewModel(
 	fun setCleanUpAfterInstall(b: Boolean) = prefs.cleanUpAfterInstall.put(b)
 	fun getNotifyOnInstall() = prefs.notifyOnInstall.get()
 	fun setNotifyOnInstall(b: Boolean) = prefs.notifyOnInstall.put(b)
+	fun getNotifyWatched() = prefs.notifyWatched.get()
+	fun setNotifyWatched(b: Boolean) = prefs.notifyWatched.put(b)
 
 	/**
 	 * The folder shown under the setting, or null while the default is in use. A StateFlow
@@ -494,6 +500,8 @@ class SettingsViewModel(
 			addProperty("searchAllSources", prefs.searchAllSources.get())
 			add("customGitRepos", gson.toJsonTree(prefs.customGitRepos.get()))
 			addProperty("ruStoreDevicePool", prefs.ruStoreDevicePool.get())
+			addProperty("notifyWatched", prefs.notifyWatched.get())
+			add("watchedApps", gson.toJsonTree(watchList.apps.value))
 		}
 		return gson.toJson(config)
 	}
@@ -557,8 +565,48 @@ class SettingsViewModel(
 			mergeCustomGitRepos(gson.fromJson(it, Array<CustomGitRepo?>::class.java).filterNotNull())
 		}
 		obj.get("ruStoreDevicePool")?.asBoolean?.let { prefs.ruStoreDevicePool.put(it) }
+		obj.get("notifyWatched")?.asBoolean?.let { prefs.notifyWatched.put(it) }
+		// Merged like the repositories: a file from another device adds what it follows, and an app
+		// already watched here keeps the version it was last seen at here.
+		obj.get("watchedApps")?.let {
+			watchList.merge(gson.fromJson(it, Array<WatchedApp?>::class.java).filterNotNull())
+		}
 		true
 	}.getOrElse { false }
+
+	/**
+	 * Reads App Watcher's export (build 193) into the watchlist: its "apps" array, each with
+	 * packageName, title, iconUrl and the version it last saw. That version becomes the one seen
+	 * here, so only what comes after it is news. Null when the file is not such a list.
+	 */
+	fun importAppWatcherFromUri(uri: Uri): WatchList.ImportResult? = runCatching {
+		val json = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+			?: return null
+		val apps = JsonParser.parseString(json).asJsonObject.getAsJsonArray("apps") ?: return null
+		val now = System.currentTimeMillis()
+		val entries = apps.mapNotNull { element ->
+			val app = element as? JsonObject ?: return@mapNotNull null
+			// 2 is App Watcher's STATUS_DELETED (entities/App.kt): taken off its list.
+			if (app.text("status") == "2") return@mapNotNull null
+			val packageName = app.text("packageName").ifEmpty { app.text("id") }
+			if (packageName.isEmpty()) return@mapNotNull null
+			WatchedApp(
+				packageName = packageName,
+				name = app.text("title"),
+				iconUrl = app.text("iconUrl").takeIf { it.startsWith("http") }.orEmpty(),
+				seenVersion = app.text("versionName"),
+				seenVersionCode = app.text("versionCode").toLongOrNull() ?: 0L,
+				seenAt = now,
+				// App Watcher follows Google Play only.
+				source = PlaySource.name,
+				addedAt = now
+			)
+		}
+		if (entries.isEmpty()) null else watchList.import(entries)
+	}.getOrNull()
+
+	private fun JsonObject.text(name: String): String =
+		get(name)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
 
 	/**
 	 * Adds [incoming] to the custom repositories and returns (added, already there). A repository

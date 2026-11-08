@@ -285,4 +285,21 @@
     <string name="shizuku_fallback">Shizuku is not available, so Android\'s standard installer is used. Start Shizuku to update without confirmations again.</string>
     <string name="shizuku_down_play_installer">Shizuku is not available. Start it and try again: without Shizuku, Play Store cannot be set as the installer, and your settings ask for that.</string>
     <string name="shizuku_fallback_permission">Shizuku became unavailable during the download, and the standard installer needs permission to install apps. Allow it and try again.</string>
+    <!-- Watchlist (build 193) -->
+    <string name="seen_cd">Seen</string>
+    <string name="watch_cd">Watch for new versions</string>
+    <string name="unwatch_cd">Stop watching</string>
+    <string name="watched_seen">Seen: %1$s · %2$s</string>
+    <string name="watch_added">Watching %1$s. New versions will show under Updates › Watched.</string>
+    <string name="watch_removed">No longer watching %1$s</string>
+    <string name="updates_side_installed">Installed</string>
+    <string name="updates_side_watched">Watched</string>
+    <string name="notification_watched_title">New versions of watched apps</string>
+    <string name="notify_watched">Notify About Watched Apps</string>
+    <string name="import_appwatcher">Import From App Watcher</string>
+    <string name="appwatcher_imported">App Watcher: %1$d added to watched apps, %2$d installed (checked anyway), %3$d already watched.</string>
+    <string name="appwatcher_import_failed">This file is not an App Watcher list.</string>
+    <string name="watched_nothing_new">Nothing new</string>
+    <string name="watched_nothing_new_on">Nothing new on %1$s</string>
+    <string name="watched_not_checked">Not checked yet</string>
 </resources>

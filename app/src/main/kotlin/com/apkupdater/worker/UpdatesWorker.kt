@@ -6,6 +6,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.repository.UpdatesRepository
 import com.apkupdater.util.UpdatesNotification
@@ -59,11 +60,19 @@ class UpdatesWorker(
         // notification saying "5 updates" opened a list of 3 — and a version skipped for good kept
         // the notification coming back after every scheduled check.
         val skipped = prefs.ignoredVersions.get().toHashSet()
+        var last: List<AppUpdate> = emptyList()
         updatesRepository.updates().collect { found ->
-            val count = found.count { it.id !in skipped }
+            last = found
+            // Installed apps only: a watched app's new version is not an update of anything here.
+            val count = found.count { it.id !in skipped && !it.watched }
             if (count > 0) {
                 notification.showUpdateNotification(count)
             }
+        }
+        // Once, from the complete answer — the flow emits after every source, and the names would
+        // otherwise be re-posted nine times as the list grows.
+        if (prefs.notifyWatched.get()) {
+            notification.showWatchedNotification(last.filter { it.watched }.map { it.name }.distinct())
         }
         // Release idle connections so Android doesn't count the app as "background active"
         okHttpClient.connectionPool.evictAll()

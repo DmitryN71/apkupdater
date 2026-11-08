@@ -9,6 +9,7 @@ import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.Source
 import com.apkupdater.data.ui.UpdatesUiState
+import com.apkupdater.data.ui.WatchedApp
 import com.apkupdater.data.ui.removeId
 import com.apkupdater.data.ui.markInstalledFrom
 import com.apkupdater.data.ui.setIsInstalled
@@ -27,6 +28,8 @@ import com.apkupdater.util.clearDownloadCacheBytes
 import com.apkupdater.util.downloadCacheSizeBytes
 import com.apkupdater.util.Downloader
 import com.apkupdater.util.UpdatesNotification
+import com.apkupdater.util.WatchList
+import com.apkupdater.util.isVersionDowngrade
 import com.apkupdater.data.ui.AppInstallProgress
 import com.apkupdater.util.InstallLog
 import com.apkupdater.util.SessionInstaller
@@ -63,7 +66,8 @@ class UpdatesViewModel(
 	notification: UpdatesNotification,
 	private val playRepository: PlayRepository,
 	private val ruStoreSession: RuStoreSession,
-	apkMirror: ApkMirrorDownload
+	apkMirror: ApkMirrorDownload,
+	private val watchList: WatchList
 ) : InstallViewModel(downloader, installer, prefs, snackBar, stringer, installLog, ruStoreService, context, background, notification, apkMirror) {
 
 	private val mutex = Mutex()
@@ -182,6 +186,53 @@ class UpdatesViewModel(
 		// The skipped cards replace the start screen, editor and all; Back must not stay with an
 		// editor nobody can see, nor bring it back after "Hide skipped".
 		_editingOrder.value = false
+	}
+
+	/** The apps followed without being installed (build 193), for the Watched side's rows. */
+	val watched: StateFlow<List<WatchedApp>> = watchList.apps
+
+	/**
+	 * Which side of the tab is showing: the installed apps' updates, or the new versions of watched
+	 * apps (build 193). Kept apart because they are different news — one is "update this", the
+	 * other "something you are following has moved" — and Dmitry asked for them not to mix.
+	 */
+	private val _showWatched = MutableStateFlow(false)
+	val showWatched: StateFlow<Boolean> = _showWatched
+
+	fun setShowWatched(on: Boolean) {
+		_showWatched.value = on
+		// The skipped cards belong to the installed side; their look must not follow to the other.
+		if (on) _showSkipped.value = false
+	}
+
+	/**
+	 * The card's "Seen": [update]'s version is the one this app was last looked at, and only a newer
+	 * one is news. Every card of the same app at that version or below goes — the same version can
+	 * come from several sources — and a newer one from another source stays.
+	 */
+	fun markSeen(update: AppUpdate) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+		val version = update.version
+		// The highest code any source gave for this version: a GitHub card has none, and seen
+		// without one, Play's card of the very same version would come back on the next check.
+		val code = state.value.updates()
+			.filter { it.packageName == update.packageName && it.version == version }
+			.maxOfOrNull { it.versionCode } ?: update.versionCode
+		watchList.markSeen(update.packageName, version, code)
+		val left = state.value.mutableUpdates().filterNot { card ->
+			card.watched && card.packageName == update.packageName && !card.isInstalling &&
+				(card.version == version ||
+					(card.versionCode > 0L && code > 0L && card.versionCode <= code) ||
+					((card.versionCode <= 0L || code <= 0L) && isVersionDowngrade(version, card.version)))
+		}
+		setSuccess(left + state.value.skipped(), keepLabel = true)
+	}
+
+	/** Stops following [packageName]; its cards on the Watched side go with it. */
+	fun unwatch(packageName: String) = viewModelScope.launchWithMutex(mutex, Dispatchers.IO) {
+		watchList.unwatch(packageName)
+		val left = state.value.mutableUpdates().filterNot { it.watched && it.packageName == packageName && !it.isInstalling }
+		setSuccess(left + state.value.skipped(), keepLabel = true)
+		if (watchList.apps.value.isEmpty() && left.none { it.watched }) _showWatched.value = false
 	}
 
 	private val _cacheSize = MutableStateFlow(0L)
@@ -416,6 +467,9 @@ class UpdatesViewModel(
 			// is right at once and not only after the next check.
 			val done = state.value.updates().find { it.id == id }
 			if (done != null) prefs.recordInstall(done)
+			// Installed now: from the next check on it is an installed app like any other. The
+			// card stays where it is, offering Open, until then.
+			if (done?.watched == true) watchList.unwatch(done.packageName)
 			val updated = state.updateAndGet {
 				it.withUpdates(it.mutableUpdates().setIsInstalled(id).markInstalledFrom(done))
 			}
@@ -642,7 +696,8 @@ class UpdatesViewModel(
 		// installs. Those stay a manual tap, unless the user switched on in-app downloads.
 		val updates = state.value.updates()
 			.filter {
-				!it.isInstalling && !it.isInstalled && isBatchInstallable(it)
+				// Never a watched app: it is not installed, and following one is not asking for it.
+				!it.isInstalling && !it.isInstalled && !it.watched && isBatchInstallable(it)
 			}
 			// Nor anything without a direct APK: install() opens the release page for those, so
 			// each such GitLab or GitHub card became one more browser tab.
@@ -687,7 +742,7 @@ class UpdatesViewModel(
 	)
 
 	/** The badge counts what still needs doing: a card already installed is done. */
-	private fun List<AppUpdate>.badgeCount() = count { !it.isInstalled }.toString()
+	private fun List<AppUpdate>.badgeCount() = count { !it.isInstalled && !it.watched }.toString()
 
 	/**
 	 * Publishes the result of a check.
@@ -725,6 +780,9 @@ class UpdatesViewModel(
 		val enabled: Set<Source>
 		val ignoredApps: Set<String>
 		val installedNow: Map<String, Long>
+		// A watched card is checked against the version last seen instead: the app is not
+		// installed, so its "installed version" is always nought.
+		val watchedNow = watchList.apps.value.associateBy { it.packageName }
 		if (answered == null) {
 			enabled = emptySet()
 			ignoredApps = emptySet()
@@ -755,8 +813,9 @@ class UpdatesViewModel(
 					card.source in enabled &&
 					card.packageName !in ignoredApps &&
 					(card.isInstalling ||
-						card.oldVersionCode <= 0L ||
-						(installedNow[card.packageName] ?: card.oldVersionCode) == card.oldVersionCode)
+						if (card.watched) watchedNow[card.packageName].let { it != null && it.seenVersion != card.version }
+						else card.oldVersionCode <= 0L ||
+							(installedNow[card.packageName] ?: card.oldVersionCode) == card.oldVersionCode)
 			}
 			// Fresh cards first: should one ever share an id with a kept card, the fresh one is
 			// what distinctBy keeps.

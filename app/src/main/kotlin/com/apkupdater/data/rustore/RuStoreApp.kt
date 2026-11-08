@@ -6,6 +6,7 @@ import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.RuStoreSource
+import com.apkupdater.util.formatIsoDate
 
 
 data class RuStoreApp(
@@ -19,7 +20,12 @@ data class RuStoreApp(
 	val iconUrl: String = "",
 	val fileSize: Long = 0L,
 	val companyName: String = "",
-	val whatsNew: String = ""
+	val whatsNew: String = "",
+	/**
+	 * When this version was published, ISO 8601 ("2026-09-30T06:28:09.798+00:00"). Nullable: Gson
+	 * writes an explicit null over the default. Read since build 194; the cards had no date before.
+	 */
+	val appVerUpdatedAt: String? = null
 )
 
 /** [link] is the download as RuStore described it ([toLink]); its size is what will be fetched. */
@@ -34,5 +40,6 @@ fun RuStoreApp.toAppUpdate(app: AppInstalled?, link: Link) = AppUpdate(
 	iconUri = if (iconUrl.isNotEmpty()) iconUrl.toUri() else Uri.EMPTY,
 	link = link,
 	whatsNew = whatsNew,
-	sourceUrl = "https://apps.rustore.ru/app/$packageName"
+	sourceUrl = "https://apps.rustore.ru/app/$packageName",
+	updateDate = formatIsoDate(appVerUpdatedAt.orEmpty())
 )

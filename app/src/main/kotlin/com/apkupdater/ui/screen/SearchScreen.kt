@@ -199,6 +199,8 @@ fun SearchScreenSuccess(
 		return
 	}
 
+	val watched = viewModel.watched.collectAsStateWithLifecycle().value
+	val watchedNames = remember(watched) { watched.mapTo(HashSet()) { it.packageName } }
 	TvEqualRows(shown, itemKey = { it.id }) { update, cardModifier ->
 			TvSearchItem(
 				update,
@@ -211,7 +213,10 @@ fun SearchScreenSuccess(
 				},
 				onSourceClick = if (update.sourceUrl.isNotEmpty()) {{ uriHandler.openUri(update.sourceUrl) }} else null,
 				onDownload = { viewModel.downloadToFolder(it) },
-				onCancel = { viewModel.userCancelInstall(it) }
+				onCancel = { viewModel.userCancelInstall(it) },
+				// Only for an app that is not installed (build 193): an installed one is checked anyway.
+				watched = if (update.oldVersionCode > 0L) null else update.packageName in watchedNames,
+				onWatch = { viewModel.toggleWatch(update) }
 			)
 	}
 }

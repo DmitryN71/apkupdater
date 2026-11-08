@@ -133,10 +133,33 @@ fun <T> TvEqualRows(
     items: List<T>,
     itemKey: (T) -> Any,
     contentPadding: PaddingValues = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+    /**
+     * Items that take a row of their own at full width, whatever the columns — the Watched side's
+     * section headers (build 193). The items before one end their row early.
+     */
+    fullRow: (T) -> Boolean = { false },
     card: @Composable (item: T, modifier: Modifier) -> Unit
 ) {
     val columns = getTvNumColumns()
-    val rows = remember(items, columns) { items.chunked(columns) }
+    val rows = remember(items, columns) {
+        val out = mutableListOf<List<T>>()
+        var current = mutableListOf<T>()
+        items.forEach { item ->
+            if (fullRow(item)) {
+                if (current.isNotEmpty()) out += current
+                current = mutableListOf()
+                out += listOf(item)
+            } else {
+                current += item
+                if (current.size == columns) {
+                    out += current
+                    current = mutableListOf()
+                }
+            }
+        }
+        if (current.isNotEmpty()) out += current
+        out
+    }
     var viewportHeight by remember { mutableIntStateOf(0) }
     TvLazyVerticalGrid(
         columns = TvGridCells.Fixed(1),
@@ -160,7 +183,7 @@ fun <T> TvEqualRows(
                     }
                 }
                 // A short last row keeps its column width rather than stretching one card wide.
-                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                if (!(row.size == 1 && fullRow(row.first()))) repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }

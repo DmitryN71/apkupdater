@@ -39,6 +39,7 @@ class UpdatesNotification(private val context: Context) {
     private val channelName = context.getString(R.string.notification_channel_name)
     private val updateTitle = context.getString(R.string.notification_update_title)
     private val updateId = 42
+    private val watchedId = 43
 
     @SuppressLint("MissingPermission")
     fun showUpdateNotification(num: Int) {
@@ -59,6 +60,34 @@ class UpdatesNotification(private val context: Context) {
         createNotificationChannel()
         if (areNotificationsEnabled()) {
             NotificationManagerCompat.from(context).notify(updateId, builder.build())
+        }
+    }
+
+    /**
+     * New versions of watched apps (build 193), apart from the updates of installed ones: they are
+     * a different kind of news, and "Found 3 updates" counting an app that is not even installed
+     * would open a tab that lists two. Names the apps, since there is no action to count.
+     */
+    @SuppressLint("MissingPermission")
+    fun showWatchedNotification(names: List<String>) {
+        if (names.isEmpty()) return
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            action = UpdateAction
+        }
+        val text = names.joinToString(", ")
+        val builder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_install)
+            .setContentTitle(context.getString(R.string.notification_watched_title))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(PendingIntent.getActivity(context, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT + PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true)
+
+        createNotificationChannel()
+        if (areNotificationsEnabled()) {
+            NotificationManagerCompat.from(context).notify(watchedId, builder.build())
         }
     }
 

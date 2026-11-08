@@ -27,6 +27,11 @@ data class AppUpdate(
 	val isPreRelease: Boolean = false,
 	/** Source.name this app was last installed from BY US, "" if never. See util/InstallRecords.kt. */
 	val installedFrom: String = "",
+	/**
+	 * A new version of a watched app, which is not installed (build 193). Listed on the Updates
+	 * tab's Watched side only, and never counted by the badge or taken by "Update all".
+	 */
+	val watched: Boolean = false,
 	val id: Int = "${source.name}.$packageName.$versionCode.$version".hashCode()
 ) {
 	/**

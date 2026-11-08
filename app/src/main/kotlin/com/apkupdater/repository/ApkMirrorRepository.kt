@@ -197,6 +197,8 @@ class ApkMirrorRepository(
 
     private fun filterSignature(apk: AppExistsResponseApk, signature: String?) = when {
         apk.signaturesSha1.isNullOrEmpty() -> true
+        // A watched app (build 193): not installed, so no signer to match.
+        signature.isNullOrEmpty() -> true
         apk.signaturesSha1.contains(signature) -> true
         else -> false
     }

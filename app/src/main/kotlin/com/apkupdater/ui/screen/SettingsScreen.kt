@@ -572,6 +572,14 @@ fun InstallSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = 
 					R.drawable.ic_notification
 				)
 			}
+			row("notifyWatched") {
+				SwitchSetting(
+					{ viewModel.getNotifyWatched() },
+					{ viewModel.setNotifyWatched(it) },
+					stringResource(R.string.notify_watched),
+					R.drawable.ic_notification
+				)
+			}
 		}
 
 		// A group of its own, and last on purpose: the installer switches above are why people
@@ -691,6 +699,21 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = Pa
 				).show()
 			}
 		}
+		// App Watcher's export (build 193): its list goes into the watchlist. Any file type, not
+		// only JSON — file managers hand out a .json as octet-stream often enough.
+		val appWatcherLauncher = rememberLauncherForActivityResult(
+			ActivityResultContracts.OpenDocument()
+		) { uri ->
+			if (uri != null) {
+				val result = viewModel.importAppWatcherFromUri(uri)
+				Toast.makeText(
+					context,
+					if (result == null) context.getString(R.string.appwatcher_import_failed)
+					else context.getString(R.string.appwatcher_imported, result.added, result.installed, result.known),
+					Toast.LENGTH_LONG
+				).show()
+			}
+		}
 		val saveLogsLauncher = rememberLauncherForActivityResult(
 			ActivityResultContracts.CreateDocument("text/plain")
 		) { uri ->
@@ -715,6 +738,14 @@ fun ToolsSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = Pa
 				ButtonSetting(
 					stringResource(R.string.import_config),
 					{ runCatching { importLauncher.launch(arrayOf("application/json")) }.onFailure { viewModel.filePickerUnavailable() } },
+					R.drawable.ic_import,
+					R.drawable.ic_import
+				)
+			}
+			row("import_appwatcher") {
+				ButtonSetting(
+					stringResource(R.string.import_appwatcher),
+					{ runCatching { appWatcherLauncher.launch(arrayOf("application/json", "*/*")) }.onFailure { viewModel.filePickerUnavailable() } },
 					R.drawable.ic_import,
 					R.drawable.ic_import
 				)

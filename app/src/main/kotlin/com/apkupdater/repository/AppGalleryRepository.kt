@@ -41,7 +41,9 @@ class AppGalleryRepository(
 		// have to be `package`/`version`, and a wrong name is answered with rtnCode 0 and an
 		// empty list rather than an error — "no updates" that is really "you asked wrongly".
 		val request = AppGalleryUpdateRequest(
-			apps.map { AppGalleryInstalled(it.packageName, it.versionCode) }
+			// At least 1: a watched app seen in a source without codes (build 193) has none, and a 0 in
+			// a batch that carries every app is not worth finding out about. Untested precaution.
+			apps.map { AppGalleryInstalled(it.packageName, it.versionCode.coerceAtLeast(1L)) }
 		)
 		val response = service.updateCheck(
 			url,

@@ -284,4 +284,21 @@
     <string name="shizuku_fallback">Shizuku недоступен – устанавливаю стандартным установщиком Android. Запустите Shizuku, чтобы снова обновлять без подтверждений.</string>
     <string name="shizuku_down_play_installer">Shizuku недоступен. Запустите его и повторите: без Shizuku настройка «Установщик — Play Store» не сработает.</string>
     <string name="shizuku_fallback_permission">Shizuku стал недоступен во время загрузки, а стандартному установщику нужно разрешение на установку приложений. Дайте его и повторите.</string>
+    <!-- Отслеживаемые (сборка 193) -->
+    <string name="seen_cd">Просмотрено</string>
+    <string name="watch_cd">Следить за новыми версиями</string>
+    <string name="unwatch_cd">Не следить</string>
+    <string name="watched_seen">Просмотрена %1$s · %2$s</string>
+    <string name="watch_added">«%1$s» – в отслеживаемых. Новые версии появятся в «Обновлениях», раздел «Отслеживаемые».</string>
+    <string name="watch_removed">«%1$s» больше не отслеживается</string>
+    <string name="updates_side_installed">Установленные</string>
+    <string name="updates_side_watched">Отслеживаемые</string>
+    <string name="notification_watched_title">Новые версии отслеживаемых</string>
+    <string name="notify_watched">Уведомлять о новых версиях отслеживаемых</string>
+    <string name="import_appwatcher">Импорт из App Watcher</string>
+    <string name="appwatcher_imported">App Watcher: в отслеживаемые добавлено %1$d, установлено (и так проверяются) %2$d, уже отслеживались %3$d.</string>
+    <string name="appwatcher_import_failed">Это не список App Watcher.</string>
+    <string name="watched_nothing_new">Нового нет</string>
+    <string name="watched_nothing_new_on">%1$s: нового нет</string>
+    <string name="watched_not_checked">Ещё не проверялись</string>
 </resources>
