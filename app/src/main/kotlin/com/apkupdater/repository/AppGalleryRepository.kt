@@ -9,6 +9,7 @@ import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.getApp
 import com.apkupdater.data.ui.getVersionCode
+import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.AppGalleryService
 import com.apkupdater.util.AppGallerySession
@@ -34,6 +35,11 @@ class AppGalleryRepository(
 ) {
 
 	suspend fun updates(apps: List<AppInstalled>) = flow {
+		val validApps = apps.filter { isPackageName(it.packageName) }
+		if (validApps.isEmpty()) {
+			emit(emptyList())
+			return@flow
+		}
 		val current = session.current() ?: throw IOException("AppGallery handshake failed")
 		val url = session.apiUrl(current.host)
 
@@ -43,7 +49,7 @@ class AppGalleryRepository(
 		val request = AppGalleryUpdateRequest(
 			// At least 1: a watched app seen in a source without codes (build 193) has none, and a 0 in
 			// a batch that carries every app is not worth finding out about. Untested precaution.
-			apps.map { AppGalleryInstalled(it.packageName, it.versionCode.coerceAtLeast(1L)) }
+			validApps.map { AppGalleryInstalled(it.packageName, it.versionCode.coerceAtLeast(1L)) }
 		)
 		val response = service.updateCheck(
 			url,
@@ -62,7 +68,7 @@ class AppGalleryRepository(
 			// every other source has, against an answer that is somehow not newer after all.
 			// It does most of the work here: AppGallery often carries an OLDER build than Play,
 			// and 144 answers came down to 4 on one of Dmitry's checks because of this line.
-			.filter { it.versionCode > apps.getVersionCode(it.packageName) }
+			.filter { it.versionCode > validApps.getVersionCode(it.packageName) }
 			.filter { filterAlpha(it.version) && filterBeta(it.version) }
 
 		// Almost always free: the batch answer already carries the download url, so a card needs
@@ -70,16 +76,16 @@ class AppGalleryRepository(
 		val updates = offered.mapNotNull { entry ->
 			val direct = entry.downloadUrl()
 			if (direct.isNotEmpty()) {
-				entry.toAppUpdate(apps.getApp(entry.packageName), direct)
+				entry.toAppUpdate(validApps.getApp(entry.packageName), direct)
 			} else if (entry.id.isNotEmpty()) {
-				resolve(url, current.sign, entry, apps)
+				resolve(url, current.sign, entry, validApps)
 			} else {
 				null
 			}
 		}
 		Log.i(
 			"AppGalleryRepository",
-			"AppGallery on ${current.host}: ${response.list.size} offered, ${updates.size} usable of ${apps.size} installed."
+			"AppGallery on ${current.host}: ${response.list.size} offered, ${updates.size} usable of ${validApps.size} installed."
 		)
 		emit(updates)
 	}.catch {

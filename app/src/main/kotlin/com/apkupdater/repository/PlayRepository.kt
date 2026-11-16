@@ -11,7 +11,9 @@ import com.apkupdater.data.ui.PlaySource
 import com.apkupdater.data.ui.getPackageNames
 import com.apkupdater.data.ui.getVersion
 import com.apkupdater.data.ui.getVersionCode
+import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
+import com.apkupdater.util.AppJournal
 import com.apkupdater.util.play.NativeDeviceInfoProvider
 import com.apkupdater.util.play.PlayHttpClient
 import com.aurora.gplayapi.data.models.App
@@ -271,10 +273,22 @@ class PlayRepository(
     }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
+        val (valid, invalid) = apps.filter { !it.ignored }.partition { isPackageName(it.packageName) }
+        if (invalid.isNotEmpty()) {
+            AppJournal.add(
+                "PlayRepository",
+                "Play: ${invalid.size} non-package id(s) left out: " + invalid.take(5).joinToString { it.packageName }
+            )
+        }
+        val packageNames = valid.map { it.packageName }.distinct()
+        if (packageNames.isEmpty()) {
+            emit(emptyList())
+            return@flow
+        }
         val authData = auth()
         val details = AppDetailsHelper(authData)
             .using(playHttpClient)
-            .getAppByPackageName(apps.getPackageNames())
+            .getAppByPackageName(packageNames)
         // Play answers for some apps with no version at all: it has no build for this session's
         // device profile — a TV-only app asked about from a phone, a region-locked listing. Those
         // used to vanish into the same filter as "already up to date", so an app Play will never
@@ -289,12 +303,12 @@ class PlayRepository(
             Log.w("PlayRepository", "No version offered for: ${named.joinToString()}")
         }
         val updates = offered
-            .filter { it.versionCode > apps.getVersionCode(it.packageName) }
+            .filter { it.versionCode > valid.getVersionCode(it.packageName) }
             .map {
                 it.toAppUpdate(
                     ::getInstallFiles,
-                    apps.getVersion(it.packageName),
-                    apps.getVersionCode(it.packageName)
+                    valid.getVersion(it.packageName),
+                    valid.getVersionCode(it.packageName)
                 )
             }
         emit(updates)

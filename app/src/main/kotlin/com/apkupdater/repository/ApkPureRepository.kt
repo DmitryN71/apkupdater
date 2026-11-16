@@ -9,6 +9,7 @@ import com.apkupdater.data.apkpure.toAppUpdate
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.getApp
 import com.apkupdater.data.ui.getSignature
+import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.ApkPureService
 import com.apkupdater.util.AppJournal
@@ -67,12 +68,17 @@ class ApkPureRepository(
     }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
+        val validApps = apps.filter { isPackageName(it.packageName) }
+        if (validApps.isEmpty()) {
+            emit(emptyList())
+            return@flow
+        }
         // APKPure's server reads version_code as a 32-bit int, and ONE app above 2 147 483 647 —
         // a long versionCode, which Android allows since 9 — fails the whole request: HTTP 555,
         // "cannot unmarshal number 2147483648 into Go value of type int32" (measured 2026-10-26).
         // Dmitry's car head unit has such a system app, so APKPure failed every check the moment
         // he let system apps in. APKPure cannot describe those versions anyway; left out.
-        val (fits, tooLong) = apps.partition { it.versionCode <= Int.MAX_VALUE }
+        val (fits, tooLong) = validApps.partition { it.versionCode <= Int.MAX_VALUE }
         if (tooLong.isNotEmpty()) {
             AppJournal.add("ApkPureRepository", "APKPure: ${tooLong.size} app(s) left out, versionCode too long for its API: " +
                 tooLong.take(3).joinToString { "${it.packageName} ${it.versionCode}" })
@@ -80,10 +86,10 @@ class ApkPureRepository(
         val info = fits.map { AppInfoForUpdate(it.packageName, it.versionCode) }
         val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
-            .filter { filterSignature(it.sign, apps.getSignature(it.package_name)) }
+            .filter { filterSignature(it.sign, validApps.getSignature(it.package_name)) }
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
-            .map { it.toAppUpdate(apps.getApp(it.package_name)) }
+            .map { it.toAppUpdate(validApps.getApp(it.package_name)) }
         emit(updates)
     }.catch {
         Log.e("ApkPureRepository", it.message, it)

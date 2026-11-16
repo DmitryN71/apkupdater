@@ -1,8 +1,10 @@
 package com.apkupdater.util
 
 import android.content.Context
+import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.WatchedApp
+import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,10 +118,12 @@ class WatchList(private val context: Context, private val prefs: Prefs) {
 		if (entry == null) return@mapNotNull null
 		val packageName: String? = entry.packageName
 		if (packageName.isNullOrBlank()) return@mapNotNull null
+		val source: String? = entry.source
+		if (!isWatchable(packageName)) return@mapNotNull null
+		if (source == ApkMirrorSource.name && !isPackageName(packageName)) return@mapNotNull null
 		val name: String? = entry.name
 		val iconUrl: String? = entry.iconUrl
 		val seenVersion: String? = entry.seenVersion
-		val source: String? = entry.source
 		WatchedApp(
 			packageName = packageName,
 			name = name.orEmpty(),
@@ -134,4 +138,15 @@ class WatchList(private val context: Context, private val prefs: Prefs) {
 
 	private fun isInstalled(packageName: String) =
 		runCatching { context.packageManager.getPackageInfo(packageName, 0) }.isSuccess
+
+	companion object {
+		private val REPO_ID_REGEX = Regex("^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+
+		/**
+		 * Whether [packageName] can actually be tracked for updates: either an Android package ID
+		 * or a GitHub/GitLab `owner/repo` identifier. Rejects APKMirror search developer names.
+		 */
+		fun isWatchable(packageName: String): Boolean =
+			isPackageName(packageName) || REPO_ID_REGEX.matches(packageName)
+	}
 }

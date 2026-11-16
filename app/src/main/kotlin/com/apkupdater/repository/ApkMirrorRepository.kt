@@ -17,6 +17,7 @@ import com.apkupdater.data.ui.getApp
 import com.apkupdater.data.ui.getPackageNames
 import com.apkupdater.data.ui.getSignature
 import com.apkupdater.data.ui.getVersionCode
+import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.ApkMirrorService
 import com.apkupdater.util.combine
@@ -65,11 +66,16 @@ class ApkMirrorRepository(
     }
 
     suspend fun updates(apps: List<AppInstalled>) = flow {
+        val validApps = apps.filter { isPackageName(it.packageName) }
+        if (validApps.isEmpty()) {
+            emit(emptyList())
+            return@flow
+        }
         val tally = FailureTally()
-        val chunks = apps.chunked(100)
+        val chunks = validApps.chunked(100)
         chunks
             .map { appExists(it.getPackageNames(), tally) }
-            .combine { all -> emit(parseUpdates(all.flatMap { it }, apps)) }
+            .combine { all -> emit(parseUpdates(all.flatMap { it }, validApps)) }
             .collect()
         tally.throwIfAllFailed(chunks.size, "APKMirror")
     }

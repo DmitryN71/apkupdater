@@ -173,6 +173,18 @@ class SearchViewModel(
             snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.watch_removed, name)))
         } else {
             watchList.watch(update)
+            // If watching an uncatalogued `owner/repo` lookup result, also track it in Custom Repositories
+            // so GitHubRepository / GitLabRepository can check it on refresh.
+            if (update.packageName.contains('/')) {
+                val repo = _trackable.value
+                if (repo != null && "${repo.user}/${repo.repo}".equals(update.packageName, ignoreCase = true)) {
+                    val current = prefs.customGitRepos.get()
+                    if (current.none { it.user.equals(repo.user, true) && it.repo.equals(repo.repo, true) }) {
+                        prefs.customGitRepos.put(current + repo)
+                    }
+                    _trackable.value = null
+                }
+            }
             snackBar.snackBar(viewModelScope, TextSnack(
                 stringer.get(R.string.watch_added, name),
                 type = SnackType.SUCCESS

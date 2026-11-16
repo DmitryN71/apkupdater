@@ -13,6 +13,7 @@ import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
 import com.apkupdater.data.ui.getApp
+import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.prefs.RuStore404Entry
 import com.apkupdater.service.RuStoreService
@@ -57,6 +58,11 @@ class RuStoreRepository(
 	private var lastRateLimitTimestamp = 0L
 
 	suspend fun updates(apps: List<AppInstalled>) = flow {
+		val validApps = apps.filter { isPackageName(it.packageName) }
+		if (validApps.isEmpty()) {
+			emit(emptyList())
+			return@flow
+		}
 		// Step 1: one batch request covering EVERY installed app.
 		//
 		// This is deliberately not filtered by the 404 cache any more. That filter was pure
@@ -68,7 +74,7 @@ class RuStoreRepository(
 		val batchRequest = RuStoreBatchRequest(
 			// At least 1: a watched app seen in a source without codes (build 193) has none, and a 0 in
 			// a batch that carries every app is not worth finding out about. Untested precaution.
-			apps.map { RuStoreBatchEntry(it.packageName, it.versionCode.coerceAtLeast(1L)) }
+			validApps.map { RuStoreBatchEntry(it.packageName, it.versionCode.coerceAtLeast(1L)) }
 		)
 
 		// Ask once per device kind and merge. RuStore answers for one kind at a time — a `mobile`
@@ -130,7 +136,7 @@ class RuStoreRepository(
 		// Step 2: For each app with an update, fetch details + download link with rate limiting
 		val updates = processAppsWithRateLimiting(appsWithUpdates.values.toList()) { candidates, markRateLimit ->
 			// Newest first; the next candidate only when this one could not be had.
-			candidates.firstNotNullOfOrNull { found -> details(found, apps, markRateLimit) }
+			candidates.firstNotNullOfOrNull { found -> details(found, validApps, markRateLimit) }
 		}
 
 		emit(updates)

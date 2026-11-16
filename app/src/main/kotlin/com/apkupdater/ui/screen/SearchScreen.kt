@@ -70,9 +70,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apkupdater.R
+import com.apkupdater.data.ui.ApkMirrorSource
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.SearchUiState
 import com.apkupdater.data.ui.Source
+import com.apkupdater.util.WatchList
 import com.apkupdater.util.launchIntentFor
 import com.apkupdater.util.isAndroidTv
 import androidx.compose.ui.focus.onFocusChanged
@@ -215,7 +217,8 @@ fun SearchScreenSuccess(
 				onDownload = { viewModel.downloadToFolder(it) },
 				onCancel = { viewModel.userCancelInstall(it) },
 				// Only for an app that is not installed (build 193): an installed one is checked anyway.
-				watched = if (update.oldVersionCode > 0L) null else update.packageName in watchedNames,
+				// APKMirror search cards carry only the developer name and cannot be watched.
+				watched = if (update.oldVersionCode > 0L || !WatchList.isWatchable(update.packageName) || update.source == ApkMirrorSource) null else update.packageName in watchedNames,
 				onWatch = { viewModel.toggleWatch(update) }
 			)
 	}
