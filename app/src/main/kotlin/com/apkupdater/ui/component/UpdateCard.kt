@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -75,7 +76,8 @@ fun UpdateCardHeader(
 	releaseType: ReleaseType,
 	installedFrom: String,
 	chipRightFocus: FocusRequester?,
-	modifier: Modifier = Modifier
+	modifier: Modifier = Modifier,
+	trailing: (@Composable RowScope.() -> Unit)? = null
 ) {
 	// Read once, unconditionally — koinInject<Prefs>() is @Composable and must not be called behind a
 	// short-circuit (overflow flips 0→N after layout measures).
@@ -154,6 +156,7 @@ fun UpdateCardHeader(
 			// "Ставили" instead of "Ставили отсюда" — which is what Maximoff reported against 157.
 			ProvenanceChip(installedFrom, source, Modifier.padding(top = 6.dp))
 		}
+		trailing?.invoke(this)
 	}
 }
 

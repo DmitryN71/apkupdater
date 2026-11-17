@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -715,6 +716,7 @@ fun TvUpdateItem(
 	onSourceClick: (() -> Unit)? = null,
 	onDownload: (AppUpdate) -> Unit = {},
 	onCancel: (Int) -> Unit = {},
+	onUnwatch: (() -> Unit)? = null,
 	// Set on the FIRST card only, so the screen can put D-pad focus there instead of leaving
 	// it on the bottom navigation bar — see UpdatesScreenSuccess.
 	firstItemFocus: FocusRequester? = null,
@@ -732,6 +734,16 @@ fun TvUpdateItem(
 		// Route D-pad RIGHT from the source chip to this card's action buttons instead of
 		// letting geometric/grid focus search leak to the next column or the bottom nav bar.
 		val actionFocus = remember { FocusRequester() }
+		val unwatchFocus = remember { FocusRequester() }
+		val headerTrailing: (@Composable RowScope.() -> Unit)? = if (onUnwatch != null) {
+			{
+				TvUnwatchButton(
+					onClick = onUnwatch,
+					enabled = !app.isInstalling,
+					modifier = Modifier.align(Alignment.Top).focusRequester(unwatchFocus)
+				)
+			}
+		} else null
 		// A compact card opens on a tap anywhere that is not a button, and shows exactly what
 		// the full layout shows — which is the point: compact hides the changelog, and the
 		// changelog is often the reason to update at all.
@@ -761,7 +773,8 @@ fun TvUpdateItem(
 				updateDate = app.updateDate,
 				releaseType = app.releaseType,
 				installedFrom = app.installedFrom,
-				chipRightFocus = actionFocus
+				chipRightFocus = if (onUnwatch != null && !app.isInstalling) unwatchFocus else actionFocus,
+				trailing = headerTrailing
 			)
 		}
 		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, app.oldVersionCode)
@@ -899,10 +912,43 @@ fun TvWatchButton(watched: Boolean, onClick: () -> Unit) {
 }
 
 /**
+ * Stops following a watched app (build 193 / 198): shared by [TvWatchedItem] in the "Nothing new"
+ * section and the top-right header corner of active watched update cards in [TvUpdateItem].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TvUnwatchButton(
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
+	enabled: Boolean = true
+) {
+	val interaction = remember { MutableInteractionSource() }
+	val focused by interaction.collectIsFocusedAsState()
+	val label = stringResource(R.string.unwatch_cd)
+	TooltipBox(
+		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+		tooltip = { PlainTooltip { Text(label) } },
+		state = rememberTooltipState()
+	) {
+		IconButton(
+			onClick = onClick,
+			enabled = enabled,
+			modifier = modifier,
+			interactionSource = interaction,
+			colors = IconButtonDefaults.iconButtonColors(
+				containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
+				contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+			)
+		) {
+			Icon(Icons.Outlined.NotificationsOff, contentDescription = label)
+		}
+	}
+}
+
+/**
  * A watched app with nothing new since it was last seen (build 193). The Watched side lists these
  * after the cards with news, so it also shows what is followed — and is where following stops.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TvWatchedItem(
 	app: WatchedApp,
@@ -941,25 +987,7 @@ fun TvWatchedItem(
 				modifier = Modifier.padding(top = 2.dp)
 			)
 		}
-		val interaction = remember { MutableInteractionSource() }
-		val focused by interaction.collectIsFocusedAsState()
-		val label = stringResource(R.string.unwatch_cd)
-		TooltipBox(
-			positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-			tooltip = { PlainTooltip { Text(label) } },
-			state = rememberTooltipState()
-		) {
-			IconButton(
-				onClick = { onUnwatch(app.packageName) },
-				interactionSource = interaction,
-				colors = IconButtonDefaults.iconButtonColors(
-					containerColor = if (focused) MaterialTheme.colorScheme.primary else Color.Transparent,
-					contentColor = if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-				)
-			) {
-				Icon(Icons.Outlined.NotificationsOff, contentDescription = label)
-			}
-		}
+		TvUnwatchButton(onClick = { onUnwatch(app.packageName) })
 	}
 }
 

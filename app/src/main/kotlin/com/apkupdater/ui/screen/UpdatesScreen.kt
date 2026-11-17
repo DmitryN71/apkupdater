@@ -388,7 +388,11 @@ fun ColumnScope.WatchedScreen(
 					onHide = { viewModel.hideUpdate(it) },
 					onSourceClick = if (entry.sourceUrl.isNotEmpty()) {{ handler.openUri(entry.sourceUrl) }} else null,
 					onDownload = { viewModel.downloadToFolder(it) },
-					onCancel = { viewModel.userCancelInstall(it) }
+					onCancel = { viewModel.userCancelInstall(it) },
+					onUnwatch = {
+						if (isTv) runCatching { refreshFocus.requestFocus() }
+						viewModel.unwatch(entry.packageName)
+					}
 				)
 				is WatchedApp -> TvWatchedItem(entry, cardModifier) {
 					if (isTv) runCatching { refreshFocus.requestFocus() }
