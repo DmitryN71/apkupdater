@@ -20,8 +20,10 @@ import com.apkupdater.data.ui.getVersionCode
 import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.ApkMirrorService
+import com.apkupdater.util.apkMirrorArchScore
 import com.apkupdater.util.combine
 import com.apkupdater.util.isAndroidTv
+import com.apkupdater.util.isApkMirrorArchCompatible
 import com.apkupdater.util.orFalse
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -43,14 +45,6 @@ class ApkMirrorRepository(
     /** For the site's search page, under a name of its own — see [search]. */
     private val searchClient: OkHttpClient
 ) {
-
-    private val arch = when {
-        Build.SUPPORTED_ABIS.contains("x86") -> "x86"
-        Build.SUPPORTED_ABIS.contains("x86_64") -> "x86"
-        Build.SUPPORTED_ABIS.contains("armeabi-v7a") -> "arm"
-        Build.SUPPORTED_ABIS.contains("arm64-v8a") -> "arm"
-        else -> "arm"
-    }
 
     private val isAndroidTV = packageManager.isAndroidTv()
     private val api = Build.VERSION.SDK_INT
@@ -168,7 +162,7 @@ class ApkMirrorRepository(
             data.apks
                 .asSequence()
                 .filter { filterSignature(it, apps.getSignature(data.pname))}
-                .filter { filterArch(it) }
+                .filter { filterArch(it, data.pname) }
                 .filter { it.versionCode > apps.getVersionCode(data.pname) }
                 .filter { filterMinApi(it) }
                 .filter { filterAndroidTv(it) }
@@ -179,7 +173,7 @@ class ApkMirrorRepository(
                 // 640 dpi phone was offered the Android 9+ build (…013) instead, and then …029 as a
                 // same-version "update" right after. A "120-480dpi" page on a 640 dpi phone is
                 // usually just the newest build having no 640 variant; Android uses its 480 art.
-                .maxWithOrNull(compareBy<AppExistsResponseApk>({ it.versionCode }, { screenScore(it) }))
+                .maxWithOrNull(compareBy<AppExistsResponseApk>({ it.versionCode }, { apkMirrorArchScore(it.arches) }, { screenScore(it) }))
                 ?.toAppUpdate(apps.getApp(data.pname)!!, data.release)
         }
 
@@ -209,13 +203,8 @@ class ApkMirrorRepository(
         else -> false
     }
 
-    private fun filterArch(app: AppExistsResponseApk) = when {
-        app.arches.isEmpty() -> true
-        app.arches.contains("universal") || app.arches.contains("noarch") -> true
-        app.arches.find { a -> Build.SUPPORTED_ABIS.contains(a) } != null -> true
-        app.arches.find { a -> a.contains(arch) } != null -> true
-        else -> false
-    }
+    private fun filterArch(app: AppExistsResponseApk, packageName: String) =
+        isApkMirrorArchCompatible(app.arches, packageName)
 
     private fun filterAndroidTv(apk: AppExistsResponseApk): Boolean {
         if (!isAndroidTV) {

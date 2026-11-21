@@ -448,7 +448,10 @@ class SessionInstaller(
     private suspend fun installArchive(id: Int, packageName: String, file: File) {
         ZipFile(file).use { zip ->
             val entries = zip.entries().toList()
-            val wanted = selectSplitEntries(entries.map { it.name }).toSet()
+            val wanted = selectSplitEntries(
+                entries.map { it.name },
+                keepAllSupportedAbis = isGoogleOrAospWebViewPackage(packageName)
+            ).toSet()
             val apks = entries.filter { it.name in wanted }.map { zip.getInputStream(it) }
             install(id, packageName, apks, trackProgress = false)
         }
@@ -490,7 +493,10 @@ class SessionInstaller(
  * most one ABI split, or none of them matches the device, everything goes in as before and the
  * installer decides.
  */
-internal fun selectSplitEntries(names: List<String>): List<String> {
+internal fun selectSplitEntries(
+    names: List<String>,
+    keepAllSupportedAbis: Boolean = false
+): List<String> {
     // ENDS in .apk. "Contains" also took folder entries, `.apk.idsig` signatures and OBB data
     // under Android/obb/<package>/ whenever the package name has ".apk" in it — and each of those
     // went into the install session as an "APK" that could not be parsed.
@@ -498,8 +504,13 @@ internal fun selectSplitEntries(names: List<String>): List<String> {
     fun abiOf(name: String) = ABI_SPLIT.find(name.substringAfterLast('/'))?.groupValues?.get(1)
     val abiSplits = apks.mapNotNull { abiOf(it) }.toSet()
     if (abiSplits.size <= 1) return apks
-    val wanted = Build.SUPPORTED_ABIS
-        .map { it.replace('-', '_') }
+    val supportedNormalized = Build.SUPPORTED_ABIS.map { it.replace('-', '_') }
+    if (keepAllSupportedAbis) {
+        val matching = supportedNormalized.filter { it in abiSplits }.toSet()
+        if (matching.isEmpty()) return apks
+        return apks.filter { abiOf(it).let { abi -> abi == null || abi in matching } }
+    }
+    val wanted = supportedNormalized
         .firstOrNull { it in abiSplits }
         ?: return apks
     return apks.filter { abiOf(it).let { abi -> abi == null || abi == wanted } }

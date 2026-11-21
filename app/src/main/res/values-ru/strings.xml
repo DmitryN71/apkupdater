@@ -240,6 +240,7 @@
     <string name="apkmirror_webview_title">Проверка APKMirror</string>
     <string name="apkmirror_webview_hint">Пройдите проверку Cloudflare ниже – скачивание продолжится в приложении.</string>
     <string name="apkmirror_open_browser">Открыть в браузере</string>
+    <string name="apkmirror_webview_unavailable">Не удалось запустить системный Android System WebView на этом устройстве. Нажмите «Обновить» еще раз – страница откроется в браузере.</string>
     <string name="sources_not_checked">Не удалось проверить: %1$s</string>
     <string name="rustore_device_pool">Проверять как 16 устройств: постепенные обновления приходят раньше</string>
     <string name="repos_export">Экспорт списка</string>

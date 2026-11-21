@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -46,10 +47,12 @@ import kotlin.coroutines.resume
  */
 class ApkMirrorWebViewResolver(@Suppress("UNUSED_PARAMETER") appContext: Context) {
 
+	class WebViewUnavailableException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
 	class ChallengeSession(
 		val pageUrl: String,
-		internal val attachWebView: (Context) -> WebView,
-		internal val detachWebView: (WebView) -> Unit,
+		internal val attachWebView: (Context) -> View,
+		internal val detachWebView: (View) -> Unit,
 		private val onDismiss: (openInBrowser: Boolean) -> Unit
 	) {
 		private val _verified = MutableStateFlow(false)
@@ -59,14 +62,17 @@ class ApkMirrorWebViewResolver(@Suppress("UNUSED_PARAMETER") appContext: Context
 			_verified.value = true
 		}
 
-		fun createWebView(activityContext: Context): WebView = attachWebView(activityContext)
+		fun createWebView(activityContext: Context): View = attachWebView(activityContext)
 
-		fun releaseWebView(webView: WebView) = detachWebView(webView)
+		fun releaseWebView(view: View) = detachWebView(view)
 
 		fun cancel(openInBrowser: Boolean = false) {
 			onDismiss(openInBrowser)
 		}
 	}
+
+	@Volatile
+	private var brokenLinkageDetail: String? = null
 
 	private val _session = MutableStateFlow<ChallengeSession?>(null)
 	val session: StateFlow<ChallengeSession?> = _session
@@ -78,6 +84,10 @@ class ApkMirrorWebViewResolver(@Suppress("UNUSED_PARAMETER") appContext: Context
 	): ApkMirrorDownload.Resolved = withContext(Dispatchers.Main) {
 		if (!AppVisibility.foreground) {
 			throw IOException("Cloudflare challenge requires foreground window for $pageUrl")
+		}
+		brokenLinkageDetail?.let { detail ->
+			AppJournal.add(TAG, "System WebView skipped (broken native library): $detail")
+			throw WebViewUnavailableException(detail)
 		}
 
 		val outcome = CompletableDeferred<ApkMirrorDownload.Resolved>()
@@ -132,90 +142,106 @@ class ApkMirrorWebViewResolver(@Suppress("UNUSED_PARAMETER") appContext: Context
 					(existing.parent as? ViewGroup)?.removeView(existing)
 					return@ChallengeSession existing
 				}
-				WebView(activityContext).apply {
-					activeWebView = this
-					layoutParams = ViewGroup.LayoutParams(
-						ViewGroup.LayoutParams.MATCH_PARENT,
-						ViewGroup.LayoutParams.MATCH_PARENT
-					)
-					isFocusable = true
-					isFocusableInTouchMode = true
+				try {
+					WebView(activityContext).apply {
+						layoutParams = ViewGroup.LayoutParams(
+							ViewGroup.LayoutParams.MATCH_PARENT,
+							ViewGroup.LayoutParams.MATCH_PARENT
+						)
+						isFocusable = true
+						isFocusableInTouchMode = true
 
-					CookieManager.getInstance().let { cm ->
-						cm.setAcceptCookie(true)
-						cm.setAcceptThirdPartyCookies(this, true)
-					}
-
-					settings.apply {
-						javaScriptEnabled = true
-						domStorageEnabled = true
-						useWideViewPort = true
-						loadWithOverviewMode = true
-						javaScriptCanOpenWindowsAutomatically = false
-						setSupportMultipleWindows(false)
-					}
-
-					webChromeClient = object : WebChromeClient() {
-						override fun onReceivedTitle(view: WebView?, title: String?) {
-							super.onReceivedTitle(view, title)
-							if (view != null && isRealApkMirrorPage(view)) {
-								_session.value?.markVerified()
-							}
+						CookieManager.getInstance().let { cm ->
+							cm.setAcceptCookie(true)
+							cm.setAcceptThirdPartyCookies(this, true)
 						}
-					}
 
-					webViewClient = object : WebViewClient() {
-						override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-							super.onPageStarted(view, url, favicon)
-							if (url != null && looksLikeFileRedirect(url)) {
-								completeWithFile(url)
+						settings.apply {
+							javaScriptEnabled = true
+							domStorageEnabled = true
+							useWideViewPort = true
+							loadWithOverviewMode = true
+							javaScriptCanOpenWindowsAutomatically = false
+							setSupportMultipleWindows(false)
+						}
+
+						webChromeClient = object : WebChromeClient() {
+							override fun onReceivedTitle(view: WebView?, title: String?) {
+								super.onReceivedTitle(view, title)
+								if (view != null && isRealApkMirrorPage(view)) {
+									_session.value?.markVerified()
+								}
 							}
 						}
 
-						override fun onPageCommitVisible(view: WebView, url: String) {
-							super.onPageCommitVisible(view, url)
-							if (isRealApkMirrorPage(view)) {
-								_session.value?.markVerified()
+						webViewClient = object : WebViewClient() {
+							override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+								super.onPageStarted(view, url, favicon)
+								if (url != null && looksLikeFileRedirect(url)) {
+									completeWithFile(url)
+								}
+							}
+
+							override fun onPageCommitVisible(view: WebView, url: String) {
+								super.onPageCommitVisible(view, url)
+								if (isRealApkMirrorPage(view)) {
+									_session.value?.markVerified()
+								}
+							}
+
+							override fun onPageFinished(view: WebView, url: String) {
+								super.onPageFinished(view, url)
+								if (isRealApkMirrorPage(view)) {
+									_session.value?.markVerified()
+								}
+							}
+
+							override fun shouldOverrideUrlLoading(
+								view: WebView,
+								request: WebResourceRequest
+							): Boolean {
+								val uri = request.url ?: return false
+								val scheme = uri.scheme?.lowercase().orEmpty()
+								if (scheme != "http" && scheme != "https") return true
+								val host = uri.host?.lowercase().orEmpty()
+								val url = uri.toString()
+								if (host.endsWith("apkmirror.com") || host.endsWith("cloudflare.com")) {
+									return false
+								}
+								if (request.isForMainFrame && (sawStep1Or2 || looksLikeFileRedirect(url))) {
+									completeWithFile(url)
+								}
+								return true
 							}
 						}
 
-						override fun onPageFinished(view: WebView, url: String) {
-							super.onPageFinished(view, url)
-							if (isRealApkMirrorPage(view)) {
-								_session.value?.markVerified()
+						setDownloadListener { url, _, contentDisposition, _, _ ->
+							val host = url.toHttpUrlOrNull()?.host?.lowercase().orEmpty()
+							if (host.isNotEmpty() && !host.endsWith("apkmirror.com")) {
+								completeWithFile(url, contentDisposition)
 							}
 						}
 
-						override fun shouldOverrideUrlLoading(
-							view: WebView,
-							request: WebResourceRequest
-						): Boolean {
-							val uri = request.url ?: return false
-							val scheme = uri.scheme?.lowercase().orEmpty()
-							if (scheme != "http" && scheme != "https") return true
-							val host = uri.host?.lowercase().orEmpty()
-							val url = uri.toString()
-							if (host.endsWith("apkmirror.com") || host.endsWith("cloudflare.com")) {
-								return false
-							}
-							if (request.isForMainFrame && (sawStep1Or2 || looksLikeFileRedirect(url))) {
-								completeWithFile(url)
-							}
-							return true
+						activeWebView = this
+						post {
+							requestFocus()
+							loadUrl(pageUrl)
 						}
 					}
-
-					setDownloadListener { url, _, contentDisposition, _, _ ->
-						val host = url.toHttpUrlOrNull()?.host?.lowercase().orEmpty()
-						if (host.isNotEmpty() && !host.endsWith("apkmirror.com")) {
-							completeWithFile(url, contentDisposition)
-						}
+				} catch (t: Throwable) {
+					activeWebView = null
+					val root = t.rootCause()
+					val detail = "${root.javaClass.simpleName}: ${root.message}"
+					if (root is LinkageError) {
+						brokenLinkageDetail = detail
 					}
-
-					post {
-						requestFocus()
-						loadUrl(pageUrl)
+					Log.e(TAG, "Failed to initialize system WebView", t)
+					AppJournal.add(TAG, "System WebView failed to load: $detail")
+					_session.value = null
+					if (!outcome.isCompleted) {
+						outcome.completeExceptionally(WebViewUnavailableException(detail, t))
 					}
+					View(activityContext)
 				}
 			},
 			detachWebView = { view ->
@@ -310,6 +336,15 @@ class ApkMirrorWebViewResolver(@Suppress("UNUSED_PARAMETER") appContext: Context
 				if (cont.isActive) cont.resume("")
 			}
 		}
+
+	private fun Throwable.rootCause(): Throwable {
+		var cur = this
+		val seen = HashSet<Throwable>()
+		while (cur.cause != null && seen.add(cur)) {
+			cur = cur.cause!!
+		}
+		return cur
+	}
 
 	companion object {
 		private const val TAG = "ApkMirrorWebView"

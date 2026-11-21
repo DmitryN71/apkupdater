@@ -129,6 +129,13 @@ class ApkMirrorDownload(
 						appBlockedUntil[app] = SystemClock.elapsedRealtime() + BLOCK_PAUSE_MS
 						throw Stopped()
 					}
+					if (wvError is ApkMirrorWebViewResolver.WebViewUnavailableException) {
+						appBlockedUntil[app] = SystemClock.elapsedRealtime() + BLOCK_PAUSE_MS
+						throw Failure(
+							R.string.apkmirror_webview_unavailable,
+							"System WebView unavailable for $app: ${wvError.message}"
+						)
+					}
 					if (wvError is Failure) throw wvError
 					AppJournal.add(TAG, "WebView challenge not passed for $app: ${wvError.message}")
 					appBlockedUntil[app] = SystemClock.elapsedRealtime() + BLOCK_PAUSE_MS

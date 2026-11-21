@@ -241,6 +241,7 @@
     <string name="apkmirror_webview_title">APKMirror check</string>
     <string name="apkmirror_webview_hint">Complete the Cloudflare check below – the download will continue in the app.</string>
     <string name="apkmirror_open_browser">Open in browser</string>
+    <string name="apkmirror_webview_unavailable">Android System WebView could not be started on this device. Tap Update again to open the page in your browser.</string>
     <string name="sources_not_checked">Could not check: %1$s</string>
     <string name="rustore_device_pool">Check as 16 devices: catches staged rollouts sooner</string>
     <string name="repos_export">Export the list</string>
