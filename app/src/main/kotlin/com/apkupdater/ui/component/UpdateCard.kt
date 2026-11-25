@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,7 +82,7 @@ fun UpdateCardHeader(
 ) {
 	// Read once, unconditionally — koinInject<Prefs>() is @Composable and must not be called behind a
 	// short-circuit (overflow flips 0→N after layout measures).
-	val animateText = koinInject<Prefs>().playTextAnimations.get()
+	val animateText = if (LocalInspectionMode.current) false else koinInject<Prefs>().playTextAnimations.get()
 	Row(modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
 		// 52 dp of box with a 2 dp inset leaves 48 dp of icon — launcher-sized.
 		if (uri == null) {

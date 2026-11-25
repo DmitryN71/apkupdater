@@ -120,7 +120,8 @@ fun Intent.getAppId() = runCatching {
 
 fun PackageManager.isAndroidTv() = hasSystemFeature(PackageManager.FEATURE_LEANBACK)
 
-fun Context.isAndroidTv() = packageManager.isAndroidTv()
+fun Context.isAndroidTv() = packageManager.isAndroidTv() ||
+	(resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
 
 /**
  * The intent that opens [packageName], or null if it has no launcher entry at all.

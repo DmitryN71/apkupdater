@@ -57,6 +57,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
@@ -67,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
@@ -97,6 +99,10 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.ui.graphics.Color
 import com.apkupdater.prefs.Prefs
 import org.koin.compose.koinInject
+
+/** Used only by `@Preview` scenes to render specific D-pad focus states on frame 0. */
+internal val LocalPreviewFocusTarget = compositionLocalOf<String?> { null }
+internal val LocalPreviewCompactCards = compositionLocalOf { false }
 
 
 @Composable
@@ -202,7 +208,8 @@ fun SourceChip(source: Source, modifier: Modifier = Modifier, onClick: (() -> Un
 	val shape = RoundedCornerShape(50)
 	val clickable = onClick != null
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = if (LocalInspectionMode.current) LocalPreviewFocusTarget.current == "source" else rawFocused
 	// Clickable chips read as a link (primary tonal + open-in-new icon). On TV,
 	// D-pad focus fills the pill solid primary — the same clean highlight the
 	// action buttons use, instead of a rectangular focus box.
@@ -291,7 +298,7 @@ fun TvCommonItem(
 ) {
 	// Read once, unconditionally — koinInject<Prefs>() is @Composable and must not be
 	// called behind a short-circuit (overflow flips 0→N after layout measures).
-	val animateText = koinInject<Prefs>().playTextAnimations.get()
+	val animateText = if (LocalInspectionMode.current) false else koinInject<Prefs>().playTextAnimations.get()
 	Row(
 		Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
 		verticalAlignment = Alignment.CenterVertically
@@ -350,24 +357,37 @@ fun TvInstallButton(
 	// never paints outside the button's bounds (unlike a border modifier, which
 	// hugged the invisible 48dp touch-target box and stuck out vertically).
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = if (LocalInspectionMode.current) LocalPreviewFocusTarget.current == "install" else rawFocused
 	// Filled with primary at rest on a phone (build 178): the one strong colour on the card, so
 	// the eye finds the button that matters first. Not on a TV, where a solid primary fill IS
 	// the focus cue of every button inside a card — an Update button filled at rest would look
 	// focused on every card at once. There it stays tonal until it holds the D-pad.
-	val filled = !LocalContext.current.isAndroidTv()
+	val isTv = LocalContext.current.isAndroidTv()
+	val filled = !isTv
 
 	val container = when {
 		// Outlined, not red: stopping a download is an ordinary choice, and the progress bar
 		// above already says what is going on.
 		app.isInstalling -> if (focused) MaterialTheme.colorScheme.primary else Color.Transparent
-		app.isInstalled -> if (focused) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiaryContainer
+		// On TV, resting Open uses calm secondaryContainer (matching ProvenanceChip instead of
+		// clashing pink/maroon tertiaryContainer) and unified primary fill on D-pad focus.
+		// Phone keeps its existing wallpaper-driven tertiaryContainer untouched.
+		app.isInstalled -> when {
+			focused -> MaterialTheme.colorScheme.primary
+			isTv -> MaterialTheme.colorScheme.secondaryContainer
+			else -> MaterialTheme.colorScheme.tertiaryContainer
+		}
 		focused || filled -> MaterialTheme.colorScheme.primary
 		else -> MaterialTheme.colorScheme.primaryContainer
 	}
 	val content = when {
 		app.isInstalling -> if (focused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-		app.isInstalled -> if (focused) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onTertiaryContainer
+		app.isInstalled -> when {
+			focused -> MaterialTheme.colorScheme.onPrimary
+			isTv -> MaterialTheme.colorScheme.onSecondaryContainer
+			else -> MaterialTheme.colorScheme.onTertiaryContainer
+		}
 		focused || filled -> MaterialTheme.colorScheme.onPrimary
 		else -> MaterialTheme.colorScheme.onPrimaryContainer
 	}
@@ -434,7 +454,8 @@ fun TvFocusCard(
 	modifier: Modifier = Modifier,
 	content: @Composable ColumnScope.() -> Unit
 ) {
-	var focused by remember { mutableStateOf(false) }
+	var rawFocused by remember { mutableStateOf(false) }
+	val focused = if (LocalInspectionMode.current) LocalPreviewFocusTarget.current != null else rawFocused
 	val shape = RoundedCornerShape(20.dp)
 	val glow = MaterialTheme.colorScheme.inverseSurface
 	Card(
@@ -459,7 +480,7 @@ fun TvFocusCard(
 					spotColor = glow
 				) else Modifier
 			)
-			.onFocusChanged { focused = it.hasFocus },
+			.onFocusChanged { rawFocused = it.hasFocus },
 		shape = shape,
 		colors = CardDefaults.cardColors(
 			containerColor = if (focused) MaterialTheme.colorScheme.surfaceContainerHighest
@@ -513,7 +534,8 @@ fun TvIgnoreVersionButton(
 	seen: Boolean = false
 ) {
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = if (LocalInspectionMode.current) LocalPreviewFocusTarget.current == "skip" else rawFocused
 	TextButton(
 		onClick = { onIgnoreVersion(app.id) },
 		enabled = !app.isInstalling,
@@ -536,7 +558,8 @@ fun TvHideButton(
 	onHide: () -> Unit
 ) {
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = if (LocalInspectionMode.current) LocalPreviewFocusTarget.current == "hide" else rawFocused
 	TextButton(
 		onClick = onHide,
 		interactionSource = interaction,
@@ -556,7 +579,7 @@ fun TvDownloadButton(
 	onDownload: (AppUpdate) -> Unit
 ) {
 	// Read unconditionally — koinInject<Prefs>() is @Composable (see playTextAnimations above).
-	val apkMirrorDirect = koinInject<Prefs>().apkMirrorDirect.get()
+	val apkMirrorDirect = if (LocalInspectionMode.current) false else koinInject<Prefs>().apkMirrorDirect.get()
 	// An APKMirror link is a web page, which is why this button was hidden for it from build 61
 	// on. With the opt-in download switched on, a VARIANT page (what the update check gives)
 	// becomes a file through ApkMirrorDownload; a release page (what a search result gives) does
@@ -570,7 +593,8 @@ fun TvDownloadButton(
 		// wrapper was a second focus stop with a rectangular highlight — the cause
 		// of the square ring around this round button on TV.
 		val interaction = remember { MutableInteractionSource() }
-		val focused by interaction.collectIsFocusedAsState()
+		val rawFocused by interaction.collectIsFocusedAsState()
+		val focused = if (LocalInspectionMode.current) LocalPreviewFocusTarget.current == "download" else rawFocused
 		TooltipBox(
 			positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
 			tooltip = { PlainTooltip { Text(stringResource(R.string.download_cd)) } },
@@ -605,7 +629,8 @@ fun TvDownloadButton(
 @Composable
 private fun TvExpandButton(expanded: Boolean, onToggle: () -> Unit) {
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = rawFocused || LocalPreviewFocusTarget.current == "expand"
 	val label = stringResource(if (expanded) R.string.collapse_card_cd else R.string.expand_card_cd)
 	TooltipBox(
 		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -754,7 +779,7 @@ fun TvUpdateItem(
 		// their own clicks and their own D-pad focus; in the full layout there is nothing to
 		// reveal, so no click is attached at all and that path is untouched.
 		var expanded by rememberSaveable { mutableStateOf(false) }
-		val compact = koinInject<Prefs>().compactCards.get()
+		val compact = if (LocalInspectionMode.current) LocalPreviewCompactCards.current else koinInject<Prefs>().compactCards.get()
 		val showFull = !compact || expanded
 		// fillMaxWidth so the whole width of the header takes the tap, whatever the name's
 		// length — "this card collapses, that one doesn't" was exactly that difference once.
@@ -833,7 +858,7 @@ fun TvSearchItem(
 		val actionFocus = remember { FocusRequester() }
 		// Tap to open, exactly as on the Updates card — see TvUpdateItem for why.
 		var expanded by rememberSaveable { mutableStateOf(false) }
-		val compact = koinInject<Prefs>().compactCards.get()
+		val compact = if (LocalInspectionMode.current) LocalPreviewCompactCards.current else koinInject<Prefs>().compactCards.get()
 		val showFull = !compact || expanded
 		val tapToExpand = compact && !LocalContext.current.isAndroidTv()
 		Box(Modifier.fillMaxWidth().then(if (tapToExpand) Modifier.clickable { expanded = !expanded } else Modifier)) {
@@ -883,7 +908,8 @@ fun TvSearchItem(
 @Composable
 fun TvWatchButton(watched: Boolean, onClick: () -> Unit) {
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = rawFocused || LocalPreviewFocusTarget.current == "watch"
 	val label = stringResource(if (watched) R.string.unwatch_cd else R.string.watch_cd)
 	TooltipBox(
 		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
@@ -923,7 +949,8 @@ fun TvUnwatchButton(
 	enabled: Boolean = true
 ) {
 	val interaction = remember { MutableInteractionSource() }
-	val focused by interaction.collectIsFocusedAsState()
+	val rawFocused by interaction.collectIsFocusedAsState()
+	val focused = rawFocused || LocalPreviewFocusTarget.current == "unwatch"
 	val label = stringResource(R.string.unwatch_cd)
 	TooltipBox(
 		positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),

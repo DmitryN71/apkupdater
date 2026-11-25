@@ -1,6 +1,7 @@
 package com.apkupdater.ui.component
 
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -12,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
@@ -31,17 +33,29 @@ private fun BaseLoadingImage(
     // card's icons came out looking half the size they were asked for. Callers working small
     // pass a smaller figure.
     padding: Dp = 10.dp
-) = AsyncImage(
-    model = request,
-    contentDescription = stringResource(R.string.app_cd),
-    modifier = modifier
+) {
+    val imageModifier = modifier
         .padding(padding)
         .clip(RoundedCornerShape(8.dp))
-        .background(color),
-    contentScale = ContentScale.Fit,
-    error = painterResource(R.drawable.ic_root),
-    placeholder = painterResource(R.drawable.ic_empty)
-)
+        .background(color)
+    if (LocalInspectionMode.current) {
+        Image(
+            painter = painterResource(R.drawable.ic_root),
+            contentDescription = stringResource(R.string.app_cd),
+            modifier = imageModifier,
+            contentScale = ContentScale.Fit
+        )
+    } else {
+        AsyncImage(
+            model = request,
+            contentDescription = stringResource(R.string.app_cd),
+            modifier = imageModifier,
+            contentScale = ContentScale.Fit,
+            error = painterResource(R.drawable.ic_root),
+            placeholder = painterResource(R.drawable.ic_empty)
+        )
+    }
+}
 
 @Composable
 fun LoadingImage(
