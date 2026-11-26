@@ -19,6 +19,8 @@ data class AppUpdate(
 	val progress: Long = 0L,
 	val sourceUrl: String = "",
 	val updateDate: String = "",
+	/** Reported APK ABI(s) when the source provides them (e.g. "arm64-v8a, armeabi-v7a"), "" otherwise. */
+	val arch: String = "",
 	/**
 	 * The source said this is a pre-release, whatever the version string looks like. Only
 	 * GitHub can tell us — its releases carry the flag — and it is worth having, because a

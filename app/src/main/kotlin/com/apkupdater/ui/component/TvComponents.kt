@@ -802,7 +802,7 @@ fun TvUpdateItem(
 				trailing = headerTrailing
 			)
 		}
-		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, app.oldVersionCode)
+		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, app.oldVersionCode, app.arch)
 		// Takes up whatever height the card was given beyond its content — which happens only
 		// when a neighbour in the same row is taller (TvEqualRows) — so the action row sits at
 		// the bottom and lines up with the neighbour's. Zero in portrait, where a row is one card.
@@ -876,7 +876,7 @@ fun TvSearchItem(
 				chipRightFocus = actionFocus
 			)
 		}
-		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, oldVersionCode = null)
+		if (showFull) CardDetails(app.whatsNew, app.packageName, app.versionCode, oldVersionCode = null, arch = app.arch)
 		// Takes up whatever height the card was given beyond its content — which happens only
 		// when a neighbour in the same row is taller (TvEqualRows) — so the action row sits at
 		// the bottom and lines up with the neighbour's. Zero in portrait, where a row is one card.

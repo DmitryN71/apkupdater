@@ -5,6 +5,7 @@ import com.apkupdater.data.ui.ApkPureSource
 import com.apkupdater.data.ui.AppInstalled
 import com.apkupdater.data.ui.AppUpdate
 import com.apkupdater.data.ui.Link
+import com.apkupdater.util.formatIsoDate
 
 
 data class AppUpdateResponse(
@@ -16,7 +17,10 @@ data class AppUpdateResponse(
     val description_short: String,
     val label: String,
     val asset: AppUpdateResponseAsset,
-    val icon: AppUpdateResponseIcon
+    val icon: AppUpdateResponseIcon,
+    val native_code: List<String>? = null,
+    val sdk_version: String? = null,
+    val update_date: String? = null
 )
 
 fun AppUpdateResponse.toAppUpdate(
@@ -32,5 +36,7 @@ fun AppUpdateResponse.toAppUpdate(
     if (app == null) Uri.parse(icon.thumbnail.url) else Uri.EMPTY,
     if (asset.url.contains("/XAPK")) Link.Xapk(asset.url.replace("http://", "https://"), asset.size) else Link.Url(asset.url.replace("http://", "https://"), asset.size),
     if (app == null) description_short else whatsnew,
-    sourceUrl = "https://apkpure.com/search?q=$package_name"
+    sourceUrl = "https://apkpure.com/search?q=$package_name",
+    updateDate = formatIsoDate(update_date.orEmpty()),
+    arch = native_code.orEmpty().map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
 )

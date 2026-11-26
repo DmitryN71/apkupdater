@@ -256,6 +256,7 @@
     <string name="show_more_cd">Show more</string>
     <string name="show_less_cd">Show less</string>
     <string name="version_code">Version code %1$s</string>
+    <string name="card_arch">ABI: %1$s</string>
     <string name="download_progress">%1$s of %2$s</string>
     <string name="download_preparing">Preparing…</string>
     <string name="show_skipped">Show skipped (%1$d)</string>

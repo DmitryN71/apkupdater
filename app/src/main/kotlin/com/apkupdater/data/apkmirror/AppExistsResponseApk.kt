@@ -34,5 +34,6 @@ fun AppExistsResponseApk.toAppUpdate(app: AppInstalled, release: AppExistsRespon
 	Link.Url("https://www.apkmirror.com$link"),
 	release.whatsNew.orEmpty(),
 	sourceUrl = "https://www.apkmirror.com$link",
-	updateDate = (publishDate ?: release.publishDate)?.let { formatIsoDate(it).ifEmpty { it } } ?: ""
+	updateDate = (publishDate ?: release.publishDate)?.let { formatIsoDate(it).ifEmpty { it } } ?: "",
+	arch = arches.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
 )

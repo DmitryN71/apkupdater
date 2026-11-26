@@ -183,6 +183,7 @@ fun CardDetails(
 	versionCode: Long,
 	/** The installed version's code, or null where there is none to show (Search). */
 	oldVersionCode: Long?,
+	arch: String = "",
 	modifier: Modifier = Modifier
 ) {
 	val changelog = rememberChangelog(whatsNew)
@@ -241,6 +242,13 @@ fun CardDetails(
 				if (code != null) {
 					Text(
 						stringResource(R.string.version_code, code),
+						style = MaterialTheme.typography.bodySmall,
+						color = MaterialTheme.colorScheme.onSurfaceVariant
+					)
+				}
+				if (arch.isNotBlank()) {
+					Text(
+						stringResource(R.string.card_arch, arch),
 						style = MaterialTheme.typography.bodySmall,
 						color = MaterialTheme.colorScheme.onSurfaceVariant
 					)

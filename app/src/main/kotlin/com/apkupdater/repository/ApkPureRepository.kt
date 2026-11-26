@@ -1,5 +1,6 @@
 package com.apkupdater.repository
 
+import android.os.Build
 import android.util.Log
 import com.apkupdater.data.apkpure.AppInfoForUpdate
 import com.apkupdater.data.apkpure.AppUpdateResponse
@@ -13,6 +14,8 @@ import com.apkupdater.data.ui.isPackageName
 import com.apkupdater.prefs.Prefs
 import com.apkupdater.service.ApkPureService
 import com.apkupdater.util.AppJournal
+import com.apkupdater.util.currentWebViewPackageName
+import com.apkupdater.util.isApkMirrorArchCompatible
 import com.google.gson.Gson
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
@@ -87,6 +90,7 @@ class ApkPureRepository(
         val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
             .filter { filterSignature(it.sign, validApps.getSignature(it.package_name)) }
+            .filter { isApkPureCompatible(it) }
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
             .map { it.toAppUpdate(validApps.getApp(it.package_name)) }
@@ -111,6 +115,7 @@ class ApkPureRepository(
         }
         val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
+            .filter { isApkPureCompatible(it) }
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
             .map { it.toAppUpdate(null) }
@@ -168,4 +173,36 @@ class ApkPureRepository(
         else -> false
     }
 
+}
+
+/**
+ * Verifies an APKPure update against the device's SDK level and ABI rules.
+ * APKPure's `/v3/get_app_update` returns only a single variant per package and matches loosely
+ * against any ABI in `device_info.abis`, so on dual-ABI (64+32-bit) devices it can serve a
+ * single-ABI system WebView or an incompatible build unless we re-check `native_code` and
+ * `sdk_version` client-side.
+ */
+internal fun isApkPureCompatible(
+    update: AppUpdateResponse,
+    supportedAbis: List<String> = Build.SUPPORTED_ABIS.toList(),
+    supported64BitAbis: List<String> = Build.SUPPORTED_64_BIT_ABIS.toList(),
+    supported32BitAbis: List<String> = Build.SUPPORTED_32_BIT_ABIS.toList(),
+    activeWebViewPackage: String? = currentWebViewPackageName(),
+    sdkInt: Int = Build.VERSION.SDK_INT
+): Boolean {
+    val minSdk = update.sdk_version?.trim()?.toIntOrNull()
+    if (minSdk != null && minSdk > sdkInt) return false
+    val arches = update.native_code
+        .orEmpty()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+    return isApkMirrorArchCompatible(
+        apkArches = arches,
+        packageName = update.package_name,
+        supportedAbis = supportedAbis,
+        supported64BitAbis = supported64BitAbis,
+        supported32BitAbis = supported32BitAbis,
+        activeWebViewPackage = activeWebViewPackage,
+        sdkInt = sdkInt
+    )
 }

@@ -255,6 +255,7 @@
     <string name="show_more_cd">Показать полностью</string>
     <string name="show_less_cd">Свернуть</string>
     <string name="version_code">Код версии %1$s</string>
+    <string name="card_arch">ABI: %1$s</string>
     <string name="download_progress">%1$s из %2$s</string>
     <string name="download_preparing">Подготовка…</string>
     <string name="show_skipped">Показать пропущенные (%1$d)</string>
