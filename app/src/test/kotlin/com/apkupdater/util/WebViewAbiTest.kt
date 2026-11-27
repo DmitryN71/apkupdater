@@ -94,4 +94,59 @@ class WebViewAbiTest {
 		assertTrue(nativeScore > universalScore)
 		assertTrue(universalScore > compat32Score)
 	}
+
+	@Test
+	fun only64BitRejects32BitAppsOnHybridDeviceWhileKeepingWebViewDualAbi() {
+		// Regular 32-bit app: allowed when only64Bit=false, rejected when only64Bit=true
+		assertTrue(
+			isApkMirrorArchCompatible(
+				apkArches = listOf("armeabi-v7a"),
+				packageName = "com.example.legacy32",
+				supportedAbis = dualArmAbis,
+				supported64BitAbis = dualArm64,
+				supported32BitAbis = dualArm32,
+				activeWebViewPackage = "com.google.android.webview",
+				sdkInt = 34,
+				only64Bit = false
+			)
+		)
+		assertFalse(
+			isApkMirrorArchCompatible(
+				apkArches = listOf("armeabi-v7a"),
+				packageName = "com.example.legacy32",
+				supportedAbis = dualArmAbis,
+				supported64BitAbis = dualArm64,
+				supported32BitAbis = dualArm32,
+				activeWebViewPackage = "com.google.android.webview",
+				sdkInt = 34,
+				only64Bit = true
+			)
+		)
+		// Universal build still passes when only64Bit=true
+		assertTrue(
+			isApkMirrorArchCompatible(
+				apkArches = listOf("universal"),
+				packageName = "com.example.universal",
+				supportedAbis = dualArmAbis,
+				supported64BitAbis = dualArm64,
+				supported32BitAbis = dualArm32,
+				activeWebViewPackage = "com.google.android.webview",
+				sdkInt = 34,
+				only64Bit = true
+			)
+		)
+		// System WebView on hybrid device STILL rejects 64-bit-only even when only64Bit=true
+		assertFalse(
+			isApkMirrorArchCompatible(
+				apkArches = listOf("arm64-v8a"),
+				packageName = "com.google.android.webview",
+				supportedAbis = dualArmAbis,
+				supported64BitAbis = dualArm64,
+				supported32BitAbis = dualArm32,
+				activeWebViewPackage = "com.google.android.webview",
+				sdkInt = 34,
+				only64Bit = true
+			)
+		)
+	}
 }

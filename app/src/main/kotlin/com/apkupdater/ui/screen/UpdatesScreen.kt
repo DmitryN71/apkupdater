@@ -42,6 +42,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -689,14 +690,26 @@ fun UpdatesEmpty(title: String, hint: String, onCheck: () -> Unit) =
  * around it.
  */
 @Composable
-fun BigCheckButton(contentDescription: String, onCheck: () -> Unit) {
+fun BigCheckButton(
+	contentDescription: String,
+	onCheck: () -> Unit,
+	pullProgress: Float = 0f,
+	modifier: Modifier = Modifier
+) {
 	val focus = remember { FocusRequester() }
 	RequestInitialTvFocus(focus)
 	val interaction = remember { MutableInteractionSource() }
 	val focused by interaction.collectIsFocusedAsState()
+	val scale = 1f + pullProgress.coerceIn(0f, 1.3f) * 0.12f
 	Surface(
 		onClick = onCheck,
-		modifier = Modifier.size(96.dp).focusRequester(focus),
+		modifier = modifier
+			.size(96.dp)
+			.graphicsLayer {
+				scaleX = scale
+				scaleY = scale
+			}
+			.focusRequester(focus),
 		shape = CircleShape,
 		color = MaterialTheme.colorScheme.primaryContainer,
 		contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -708,7 +721,11 @@ fun BigCheckButton(contentDescription: String, onCheck: () -> Unit) {
 			Icon(
 				painterResource(R.drawable.ic_refresh),
 				contentDescription = contentDescription,
-				modifier = Modifier.size(44.dp)
+				modifier = Modifier
+					.size(44.dp)
+					.graphicsLayer {
+						rotationZ = pullProgress.coerceAtLeast(0f) * 180f
+					}
 			)
 		}
 	}

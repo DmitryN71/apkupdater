@@ -155,7 +155,7 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	intentListener(mainViewModel, updatesViewModel, navController, launcher)
 
 	// Theme
-	val theme = koinInject<Themer>().flow().collectAsStateWithLifecycle().value
+	val themeConfig = koinInject<Themer>().flow().collectAsStateWithLifecycle().value
 
 	// Read once and SAVED: the start destination must not change under a NavHost that restores
 	// its back stack. remember would work it out again after a rotation, and with "check on
@@ -172,7 +172,7 @@ fun MainScreen(mainViewModel: MainViewModel = koinViewModel()) {
 	// APKMirror Cloudflare challenge session (shown only when interactive Turnstile is required)
 	val apkMirrorSession = koinInject<ApkMirrorWebViewResolver>().session.collectAsStateWithLifecycle().value
 
-	AppTheme(theme) {
+	AppTheme(themeConfig) {
 		Box(modifier = Modifier.fillMaxSize()) {
 			Scaffold(
 				bottomBar = { BottomBar(mainViewModel, navController) },

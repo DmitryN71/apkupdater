@@ -50,13 +50,22 @@ fun isSystemWebViewPackage(
 	return false
 }
 
+fun isHybrid64BitDevice(
+	supported64BitAbis: List<String> = Build.SUPPORTED_64_BIT_ABIS.toList(),
+	supported32BitAbis: List<String> = Build.SUPPORTED_32_BIT_ABIS.toList()
+): Boolean = supported64BitAbis.isNotEmpty() && supported32BitAbis.isNotEmpty()
+
 /**
- * Checks whether an APKMirror variant's [apkArches] can safely be installed on this device.
+ * Checks whether an APKMirror/APKPure variant's [apkArches] can safely be installed on this device.
  *
  * System WebView providers are loaded in-process via `dlopen()` by other apps rather than running
  * solely in an ABI-matched Zygote of their own: installing a 32-bit-only `armeabi-v7a` WebView on
  * an `arm64-v8a` device breaks every 64-bit app that opens a WebView with `UnsatisfiedLinkError`,
  * and installing a 64-bit-only Google WebView on a dual-ABI (64+32-bit) device breaks 32-bit apps.
+ *
+ * When [only64Bit] is enabled on a hybrid 64/32-bit device, regular apps must match one of
+ * [supported64BitAbis] (universal/noarch builds still pass), while system WebView keeps the strict
+ * dual-ABI rule so 32-bit host apps continue working.
  */
 fun isApkMirrorArchCompatible(
 	apkArches: List<String>,
@@ -65,7 +74,8 @@ fun isApkMirrorArchCompatible(
 	supported64BitAbis: List<String> = Build.SUPPORTED_64_BIT_ABIS.toList(),
 	supported32BitAbis: List<String> = Build.SUPPORTED_32_BIT_ABIS.toList(),
 	activeWebViewPackage: String? = currentWebViewPackageName(),
-	sdkInt: Int = Build.VERSION.SDK_INT
+	sdkInt: Int = Build.VERSION.SDK_INT,
+	only64Bit: Boolean = false
 ): Boolean {
 	if (apkArches.isEmpty() || "universal" in apkArches || "noarch" in apkArches) {
 		return true
@@ -84,14 +94,15 @@ fun isApkMirrorArchCompatible(
 		return apkArches.any { it in supportedAbis }
 	}
 
-	if (apkArches.any { it in supportedAbis }) return true
+	val allowedAbis = if (only64Bit && supported64BitAbis.isNotEmpty()) supported64BitAbis else supportedAbis
+	if (apkArches.any { it in allowedAbis }) return true
 
 	// Fallback only for non-standard arch labels; never match "armeabi-v7a" to "arm64-v8a"
-	// on 64-bit-only devices.
+	// on 64-bit-only devices or when only64Bit is enabled.
 	return apkArches.any { arch ->
 		arch !in KNOWN_ABIS && when (arch) {
-			"arm64" -> "arm64-v8a" in supportedAbis
-			"arm" -> supportedAbis.any { it.startsWith("arm") }
+			"arm64" -> "arm64-v8a" in allowedAbis
+			"arm" -> !only64Bit && allowedAbis.any { it.startsWith("arm") }
 			else -> false
 		}
 	}

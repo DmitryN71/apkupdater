@@ -229,7 +229,8 @@ fun SwitchSetting(
 	setValue: (Boolean) -> Unit,
 	text: String,
 	@DrawableRes icon: Int = R.drawable.ic_system,
-	modifier: Modifier = Modifier
+	modifier: Modifier = Modifier,
+	subtitle: String? = null
 ) {
 	var value by remember { mutableStateOf(getValue()) }
 	SwitchSetting(
@@ -240,7 +241,8 @@ fun SwitchSetting(
 		},
 		text = text,
 		icon = icon,
-		modifier = modifier
+		modifier = modifier,
+		subtitle = subtitle
 	)
 }
 

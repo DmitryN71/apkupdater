@@ -1,30 +1,43 @@
 package com.apkupdater.ui.screen
 
+import android.os.Build
 import com.apkupdater.ui.component.TvFocus
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.style.TextAlign
+import com.apkupdater.ui.theme.AccentPresets
+import com.apkupdater.ui.theme.parseHexColor
+import com.apkupdater.ui.theme.resolveAccentColor
+import com.apkupdater.util.isHybrid64BitDevice
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -521,6 +534,17 @@ fun UpdatesSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding = 
 					R.drawable.ic_pre_release
 				)
 			}
+			if (isHybrid64BitDevice()) {
+				row("only64bit") {
+					SwitchSetting(
+						getValue = { viewModel.getOnly64Bit() },
+						setValue = { viewModel.setOnly64Bit(it) },
+						text = stringResource(R.string.only_64_bit),
+						icon = R.drawable.ic_system,
+						subtitle = stringResource(R.string.only_64_bit_summary)
+					)
+				}
+			}
 		}
 	}
 }
@@ -632,6 +656,12 @@ fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding
 	item {
 		val firstRowFocus = remember { FocusRequester() }
 		RequestInitialTvFocus(firstRowFocus)
+		val supportsDynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+		var useDynamicColor by remember { mutableStateOf(viewModel.getUseDynamicColor()) }
+		var accentKey by remember { mutableStateOf(viewModel.getAccentColor()) }
+		var paletteStyle by remember { mutableStateOf(viewModel.getPaletteStyle()) }
+		var showAccentDialog by remember { mutableStateOf(false) }
+
 		SettingsGroup {
 			row("compact") {
 				SwitchSetting(
@@ -651,6 +681,7 @@ fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding
 				)
 			}
 		}
+
 		SettingsGroup {
 			row("theme") {
 				SegmentedButtonSetting(
@@ -665,8 +696,218 @@ fun AppearanceSettings(viewModel: SettingsViewModel) = LazyColumn(contentPadding
 					R.drawable.ic_theme
 				)
 			}
+			if (supportsDynamicColor) {
+				row("dynamic_color") {
+					SwitchSetting(
+						checked = useDynamicColor,
+						onCheckedChange = {
+							useDynamicColor = it
+							viewModel.setUseDynamicColor(it)
+						},
+						text = stringResource(R.string.use_dynamic_color),
+						icon = R.drawable.ic_theme,
+						subtitle = stringResource(R.string.use_dynamic_color_summary)
+					)
+				}
+			}
+			if (!supportsDynamicColor || !useDynamicColor) {
+				row("accent_color") {
+					val preset = AccentPresets.find { it.id.equals(accentKey, ignoreCase = true) }
+					val accentLabel = preset?.let { stringResource(it.labelRes) }
+						?: accentKey.uppercase()
+					val swatchColor = resolveAccentColor(accentKey)
+					SettingsRow(
+						text = stringResource(R.string.accent_color),
+						subtitle = accentLabel,
+						icon = R.drawable.ic_theme,
+						onClick = { showAccentDialog = true }
+					) {
+						Box(
+							Modifier
+								.size(26.dp)
+								.clip(CircleShape)
+								.background(swatchColor)
+								.border(1.5.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+						)
+					}
+				}
+				row("palette_style") {
+					DropDownSetting(
+						text = stringResource(R.string.palette_style),
+						options = listOf(
+							stringResource(R.string.palette_tonal_spot),
+							stringResource(R.string.palette_expressive),
+							stringResource(R.string.palette_vibrant),
+							stringResource(R.string.palette_neutral),
+							stringResource(R.string.palette_monochrome)
+						),
+						getValue = { paletteStyle },
+						setValue = {
+							paletteStyle = it
+							viewModel.setPaletteStyle(it)
+						},
+						icon = R.drawable.ic_theme
+					)
+				}
+			}
+			row("amoled_black") {
+				SwitchSetting(
+					getValue = { viewModel.getAmoledBlack() },
+					setValue = { viewModel.setAmoledBlack(it) },
+					text = stringResource(R.string.amoled_black),
+					icon = R.drawable.ic_theme,
+					subtitle = stringResource(R.string.amoled_black_summary)
+				)
+			}
+			row("high_contrast") {
+				SwitchSetting(
+					getValue = { viewModel.getHighContrast() },
+					setValue = { viewModel.setHighContrast(it) },
+					text = stringResource(R.string.high_contrast),
+					icon = R.drawable.ic_theme,
+					subtitle = stringResource(R.string.high_contrast_summary)
+				)
+			}
+		}
+
+		if (showAccentDialog) {
+			AccentColorDialog(
+				currentKey = accentKey,
+				onSelect = { newKey ->
+					accentKey = newKey
+					viewModel.setAccentColor(newKey)
+					showAccentDialog = false
+				},
+				onDismiss = { showAccentDialog = false }
+			)
 		}
 	}
+}
+
+@Composable
+private fun AccentColorDialog(
+	currentKey: String,
+	onSelect: (String) -> Unit,
+	onDismiss: () -> Unit
+) {
+	val isCustom = AccentPresets.none { it.id.equals(currentKey, ignoreCase = true) }
+	var hexInput by remember { mutableStateOf(if (isCustom) currentKey else "") }
+	var hexError by remember { mutableStateOf(false) }
+	val previewHex = parseHexColor(hexInput)
+
+	AlertDialog(
+		onDismissRequest = onDismiss,
+		title = { Text(stringResource(R.string.accent_color)) },
+		text = {
+			Column(
+				modifier = Modifier.verticalScroll(rememberScrollState()),
+				verticalArrangement = Arrangement.spacedBy(12.dp)
+			) {
+				AccentPresets.chunked(4).forEach { rowPresets ->
+					Row(
+						modifier = Modifier.fillMaxWidth(),
+						horizontalArrangement = Arrangement.SpaceEvenly
+					) {
+						rowPresets.forEach { preset ->
+							val selected = preset.id.equals(currentKey, ignoreCase = true)
+							val interaction = remember { MutableInteractionSource() }
+							val focused by interaction.collectIsFocusedAsState()
+							Column(
+								horizontalAlignment = CenterHorizontally,
+								modifier = Modifier
+									.width(64.dp)
+									.clip(RoundedCornerShape(12.dp))
+									.tvFocusFrame(focused, RoundedCornerShape(12.dp))
+									.clickable(interactionSource = interaction, indication = null) {
+										onSelect(preset.id)
+									}
+									.padding(vertical = 6.dp)
+							) {
+								Box(
+									contentAlignment = Alignment.Center,
+									modifier = Modifier
+										.size(42.dp)
+										.clip(CircleShape)
+										.background(preset.seedColor)
+										.border(
+											width = if (selected) 2.5.dp else 1.dp,
+											color = if (selected) MaterialTheme.colorScheme.onSurface
+												else MaterialTheme.colorScheme.outlineVariant,
+											shape = CircleShape
+										)
+								) {
+									if (selected) {
+										Icon(
+											Icons.Default.Check,
+											contentDescription = null,
+											tint = if (preset.seedColor.luminance() > 0.45f) Color.Black else Color.White,
+											modifier = Modifier.size(20.dp)
+										)
+									}
+								}
+								Spacer(Modifier.height(4.dp))
+								Text(
+									text = stringResource(preset.labelRes),
+									style = MaterialTheme.typography.labelSmall,
+									color = MaterialTheme.colorScheme.onSurfaceVariant,
+									maxLines = 1,
+									overflow = TextOverflow.Ellipsis,
+									textAlign = TextAlign.Center
+								)
+							}
+						}
+					}
+				}
+				Row(
+					verticalAlignment = CenterVertically,
+					horizontalArrangement = Arrangement.spacedBy(10.dp),
+					modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+				) {
+					Box(
+						modifier = Modifier
+							.size(32.dp)
+							.clip(CircleShape)
+							.background(previewHex ?: MaterialTheme.colorScheme.surfaceContainerHighest)
+							.border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+					)
+					TvTextField(
+						value = hexInput,
+						onValueChange = {
+							hexInput = it.take(9)
+							hexError = false
+						},
+						label = { Text(stringResource(R.string.accent_custom_hex)) },
+						placeholder = { Text(stringResource(R.string.accent_custom_hex_hint)) },
+						isError = hexError,
+						supportingText = if (hexError) {
+							{ Text(stringResource(R.string.accent_custom_hex_invalid)) }
+						} else null,
+						modifier = Modifier.weight(1f)
+					)
+				}
+			}
+		},
+		confirmButton = {
+			if (hexInput.isNotBlank()) {
+				TextButton(onClick = {
+					val parsed = parseHexColor(hexInput)
+					if (parsed != null) {
+						val normalized = "#" + hexInput.trim().removePrefix("#").uppercase()
+						onSelect(normalized)
+					} else {
+						hexError = true
+					}
+				}) {
+					Text(stringResource(R.string.save_repo))
+				}
+			}
+		},
+		dismissButton = {
+			TextButton(onClick = onDismiss) {
+				Text(stringResource(R.string.cancel_cd))
+			}
+		}
+	)
 }
 
 @Composable
@@ -827,7 +1068,9 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 		var errorMsg by remember { mutableStateOf<String?>(null) }
 		// Re-read after an import from the top bar (build 186), which changes the stored list.
 		val reposRevision by viewModel.customReposRevision.collectAsStateWithLifecycle()
+		val sortOrder by viewModel.customReposSortOrder.collectAsStateWithLifecycle()
 		var repos by remember(reposRevision) { mutableStateOf(viewModel.getCustomGitRepos()) }
+		val sortedRepos = remember(repos, sortOrder) { viewModel.sortCustomGitRepos(repos, sortOrder) }
 		val invalidUrlMsg = stringResource(R.string.invalid_repo_url)
 		// Non-null while editing an existing repo (its id); null in add mode.
 		var editingId by remember { mutableStateOf<String?>(null) }
@@ -931,7 +1174,7 @@ fun CustomRepos(viewModel: SettingsViewModel) = LazyColumn(Modifier.fillMaxSize(
 		// One group of rows, each opening the repository in the form above for editing, with its
 		// delete button at the end; the one being edited is marked.
 		SettingsGroup {
-			repos.forEach { repo ->
+			sortedRepos.forEach { repo ->
 				row(repo.id) {
 					val host = if (repo.platform == GitProvider.GITHUB) "github.com" else "gitlab.com"
 					// The delete button sits inside the row's own focus target, where a D-pad move
@@ -1010,6 +1253,31 @@ fun CustomReposTopBar(viewModel: SettingsViewModel) {
 			}
 		},
 		actions = {
+			var sortMenuOpen by remember { mutableStateOf(false) }
+			val currentSort by viewModel.customReposSortOrder.collectAsStateWithLifecycle()
+			Box {
+				TvIconButton(onClick = { sortMenuOpen = true }) {
+					Icon(Icons.AutoMirrored.Filled.Sort, stringResource(R.string.repos_sort_cd))
+				}
+				DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+					listOf(
+						0 to R.string.repos_sort_name,
+						1 to R.string.repos_sort_owner,
+						2 to R.string.repos_sort_added
+					).forEach { (order, labelRes) ->
+						DropdownMenuItem(
+							text = { Text(stringResource(labelRes)) },
+							leadingIcon = if (currentSort == order) {
+								{ Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+							} else null,
+							onClick = {
+								viewModel.setCustomReposSortOrder(order)
+								sortMenuOpen = false
+							}
+						)
+					}
+				}
+			}
 			TvIconButton(onClick = { runCatching { importLauncher.launch(arrayOf("*/*")) }.onFailure { viewModel.filePickerUnavailable() } }) {
 				Icon(painterResource(R.drawable.ic_import), stringResource(R.string.repos_import))
 			}

@@ -204,7 +204,7 @@ class ApkMirrorRepository(
     }
 
     private fun filterArch(app: AppExistsResponseApk, packageName: String) =
-        isApkMirrorArchCompatible(app.arches, packageName)
+        isApkMirrorArchCompatible(app.arches, packageName, only64Bit = prefs.only64Bit.get())
 
     private fun filterAndroidTv(apk: AppExistsResponseApk): Boolean {
         if (!isAndroidTV) {

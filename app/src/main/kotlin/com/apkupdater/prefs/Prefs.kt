@@ -44,6 +44,11 @@ class Prefs(
 	val ignoreAlpha = boolean("ignoreAlpha", defValue = true, backed = true)
 	val ignoreBeta = boolean("ignoreBeta", defValue = true, backed = true)
 	val ignorePreRelease = boolean("ignorePreRelease", defValue = true, backed = true)
+	/**
+	 * On hybrid 64/32-bit devices, reject 32-bit-only builds from APKMirror and APKPure (and ask
+	 * APKPure with 64-bit ABIs only). System WebView still enforces dual-ABI on hybrid devices.
+	 */
+	val only64Bit = boolean("only64Bit", defValue = false, backed = true)
 	val useSafeStores = boolean("useSafeStores", defValue = true, backed = true)
 	val useApkMirror = boolean("useApkMirror", defValue = false, backed = true)
 	// Downloading from APKMirror inside the app instead of opening its page — see
@@ -91,6 +96,15 @@ class Prefs(
 	val shizukuInstall = boolean("shizukuInstall", defValue = false, backed = true)
 	val fakePlayStore = boolean("fakePlayStore", defValue = false, backed = true)
 	val theme = int("theme", defValue = 0, backed = true)
+	val useDynamicColor = boolean("useDynamicColor", defValue = true, backed = true)
+	/** Preset key ("indigo", "blue", "teal", "green", "amber", "rose", "purple", "slate") or "#RRGGBB". */
+	val accentColor = string("accentColor", defValue = "indigo", backed = true)
+	/** 0 = Tonal Spot, 1 = Expressive, 2 = Vibrant, 3 = Neutral, 4 = Monochrome. */
+	val paletteStyle = int("paletteStyle", defValue = 0, backed = true)
+	val amoledBlack = boolean("amoledBlack", defValue = false, backed = true)
+	val highContrast = boolean("highContrast", defValue = false, backed = true)
+	/** 0 = by repo name (A–Z), 1 = by owner/repo (A–Z), 2 = order added. */
+	val customReposSortOrder = int("customReposSortOrder", defValue = 0, backed = true)
 	val cleanUpAfterInstall = boolean("cleanUpAfterInstall", defValue = true, backed = true)
 	// Success only. Failures are always reported — silent failures were the single most
 	// confusing thing users hit, and this switch exists to unclutter batch updates, where

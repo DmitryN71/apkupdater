@@ -5,6 +5,7 @@ import android.util.Log
 import com.apkupdater.data.apkpure.AppInfoForUpdate
 import com.apkupdater.data.apkpure.AppUpdateResponse
 import com.apkupdater.data.apkpure.DeviceHeader
+import com.apkupdater.data.apkpure.DeviceInfo
 import com.apkupdater.data.apkpure.GetAppUpdate
 import com.apkupdater.data.apkpure.toAppUpdate
 import com.apkupdater.data.ui.AppInstalled
@@ -25,7 +26,7 @@ import java.util.Locale
 
 
 class ApkPureRepository(
-    gson: Gson,
+    private val gson: Gson,
     private val service: ApkPureService,
     private val prefs: Prefs
 ) {
@@ -36,7 +37,13 @@ class ApkPureRepository(
         val RETRY_DELAYS_MS = listOf(2_000L, 5_000L)
     }
 
-    private val header = gson.toJson(DeviceHeader())
+    private val defaultHeader = gson.toJson(DeviceHeader())
+    private val arm64Header by lazy {
+        val abis64 = Build.SUPPORTED_64_BIT_ABIS.toList()
+        if (abis64.isNotEmpty()) gson.toJson(DeviceHeader(DeviceInfo(abis = abis64))) else defaultHeader
+    }
+
+    private fun requestHeader(): String = if (prefs.only64Bit.get()) arm64Header else defaultHeader
 
     /**
      * An attempt, not a fix. Asked for on 4PDA by CJ Flash, who gets APKPure updates in the
@@ -87,10 +94,11 @@ class ApkPureRepository(
                 tooLong.take(3).joinToString { "${it.packageName} ${it.versionCode}" })
         }
         val info = fits.map { AppInfoForUpdate(it.packageName, it.versionCode) }
-        val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
+        val only64 = prefs.only64Bit.get()
+        val r = retryFrequencyLimit { service.getAppUpdate(requestHeader(), acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
             .filter { filterSignature(it.sign, validApps.getSignature(it.package_name)) }
-            .filter { isApkPureCompatible(it) }
+            .filter { isApkPureCompatible(it, only64Bit = only64) }
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
             .map { it.toAppUpdate(validApps.getApp(it.package_name)) }
@@ -107,15 +115,17 @@ class ApkPureRepository(
         // Lower case (build 189): APKPure's search tells Cyrillic capitals apart. «мир пэй» puts
         // Mir Pay first, «Мир Пэй» does not return it at all, and «ЦППК» misses the ЦППК app
         // «цппк» finds (measured 2026-10-28). Latin is answered the same either way.
-        val response = retryFrequencyLimit { service.search(header, acceptLanguage, hl, text.lowercase()) }
+        val only64 = prefs.only64Bit.get()
+        val hdr = requestHeader()
+        val response = retryFrequencyLimit { service.search(hdr, acceptLanguage, hl, text.lowercase()) }
         val info = response.data.data.mapNotNull { d ->
             d.data.firstOrNull()?.takeIf { !it.ad }?.app_info?.let {
                 AppInfoForUpdate(it.package_name, 0L, false)
             }
         }
-        val r = retryFrequencyLimit { service.getAppUpdate(header, acceptLanguage, hl, GetAppUpdate(info)) }
+        val r = retryFrequencyLimit { service.getAppUpdate(hdr, acceptLanguage, hl, GetAppUpdate(info)) }
         val updates = r.app_update_response
-            .filter { isApkPureCompatible(it) }
+            .filter { isApkPureCompatible(it, only64Bit = only64) }
             .filter { filterAlpha(it) }
             .filter { filterBeta(it) }
             .map { it.toAppUpdate(null) }
@@ -188,7 +198,8 @@ internal fun isApkPureCompatible(
     supported64BitAbis: List<String> = Build.SUPPORTED_64_BIT_ABIS.toList(),
     supported32BitAbis: List<String> = Build.SUPPORTED_32_BIT_ABIS.toList(),
     activeWebViewPackage: String? = currentWebViewPackageName(),
-    sdkInt: Int = Build.VERSION.SDK_INT
+    sdkInt: Int = Build.VERSION.SDK_INT,
+    only64Bit: Boolean = false
 ): Boolean {
     val minSdk = update.sdk_version?.trim()?.toIntOrNull()
     if (minSdk != null && minSdk > sdkInt) return false
@@ -203,6 +214,7 @@ internal fun isApkPureCompatible(
         supported64BitAbis = supported64BitAbis,
         supported32BitAbis = supported32BitAbis,
         activeWebViewPackage = activeWebViewPackage,
-        sdkInt = sdkInt
+        sdkInt = sdkInt,
+        only64Bit = only64Bit
     )
 }

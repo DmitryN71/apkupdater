@@ -114,6 +114,8 @@ class SettingsViewModel(
 	fun getCheckOnLaunch() = prefs.checkOnLaunch.get()
 	fun setIgnorePreRelease(b: Boolean) = prefs.ignorePreRelease.put(b)
 	fun getIgnorePreRelease() = prefs.ignorePreRelease.get()
+	fun setOnly64Bit(b: Boolean) = prefs.only64Bit.put(b)
+	fun getOnly64Bit() = prefs.only64Bit.get()
 	fun getUseSafeStores() = prefs.useSafeStores.get()
 	fun setUseSafeStores(b: Boolean) = prefs.useSafeStores.put(b)
 	fun getUseApkMirror() = prefs.useApkMirror.get()
@@ -218,7 +220,37 @@ class SettingsViewModel(
 
 	fun setTheme(theme: Int) {
 		prefs.theme.put(theme)
-		themer.setTheme(isDarkTheme(theme))
+		themer.refresh()
+	}
+
+	fun getUseDynamicColor() = prefs.useDynamicColor.get()
+	fun setUseDynamicColor(b: Boolean) {
+		prefs.useDynamicColor.put(b)
+		themer.refresh()
+	}
+
+	fun getAccentColor() = prefs.accentColor.get()
+	fun setAccentColor(color: String) {
+		prefs.accentColor.put(color)
+		themer.refresh()
+	}
+
+	fun getPaletteStyle() = prefs.paletteStyle.get()
+	fun setPaletteStyle(style: Int) {
+		prefs.paletteStyle.put(style)
+		themer.refresh()
+	}
+
+	fun getAmoledBlack() = prefs.amoledBlack.get()
+	fun setAmoledBlack(b: Boolean) {
+		prefs.amoledBlack.put(b)
+		themer.refresh()
+	}
+
+	fun getHighContrast() = prefs.highContrast.get()
+	fun setHighContrast(b: Boolean) {
+		prefs.highContrast.put(b)
+		themer.refresh()
 	}
 
 	fun setRootInstall(b: Boolean) {
@@ -431,6 +463,20 @@ class SettingsViewModel(
 	fun clearIgnoredVersions() = prefs.ignoredVersions.put(emptyList())
 
 	fun getCustomGitRepos(): List<CustomGitRepo> = prefs.customGitRepos.get()
+
+	private val _customReposSortOrder = MutableStateFlow(prefs.customReposSortOrder.get())
+	val customReposSortOrder: StateFlow<Int> = _customReposSortOrder
+
+	fun setCustomReposSortOrder(order: Int) {
+		prefs.customReposSortOrder.put(order)
+		_customReposSortOrder.value = order
+	}
+
+	fun sortCustomGitRepos(repos: List<CustomGitRepo>, order: Int): List<CustomGitRepo> = when (order) {
+		0 -> repos.sortedWith(compareBy({ it.repo.lowercase() }, { it.user.lowercase() }))
+		1 -> repos.sortedWith(compareBy({ it.user.lowercase() }, { it.repo.lowercase() }))
+		else -> repos
+	}
 
 	private val _customReposRevision = MutableStateFlow(0)
 

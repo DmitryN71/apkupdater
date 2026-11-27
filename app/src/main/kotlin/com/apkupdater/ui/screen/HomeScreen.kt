@@ -2,6 +2,9 @@ package com.apkupdater.ui.screen
 
 import android.text.format.DateUtils
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -44,6 +47,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +62,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -282,6 +291,7 @@ private fun LastCheckLine(viewModel: UpdatesViewModel, onOpenUpdates: () -> Unit
  * the geometric search moves through it the way it looks; DOWN from the last row reaches the
  * actions under it.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StartScreen(
 	viewModel: UpdatesViewModel,
@@ -295,87 +305,146 @@ fun StartScreen(
 		.toInt()
 		.coerceIn(2, 5)
 	val screenHeight = maxHeight
-	Column(
-		Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-		horizontalAlignment = Alignment.CenterHorizontally
-	) {
+	val pullState = rememberPullToRefreshState()
+	val rawPull = if (editing) 0f else pullState.distanceFraction.coerceIn(0f, 1.4f)
+	val smoothPull by animateFloatAsState(
+		targetValue = rawPull,
+		animationSpec = spring(
+			dampingRatio = Spring.DampingRatioMediumBouncy,
+			stiffness = Spring.StiffnessMediumLow
+		),
+		label = "homePullElastic"
+	)
+	val haptic = LocalHapticFeedback.current
+	var crossedThreshold by remember { mutableStateOf(false) }
+	LaunchedEffect(rawPull >= 1f) {
+		if (rawPull >= 1f && !crossedThreshold) {
+			crossedThreshold = true
+			haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+		} else if (rawPull < 0.85f) {
+			crossedThreshold = false
+		}
+	}
+	val density = LocalDensity.current
+
+	val content: @Composable () -> Unit = {
 		Column(
-			Modifier
-				.widthIn(max = Design.ContentMaxWidth)
-				.fillMaxWidth()
-				.heightIn(min = screenHeight)
-				.padding(Design.ScreenPadding),
-			verticalArrangement = Arrangement.Center,
+			Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
 			horizontalAlignment = Alignment.CenterHorizontally
 		) {
-			if (editing) {
-				SourceOrderEditor(viewModel, sources)
-			} else {
-				BigCheckButton(stringResource(R.string.refresh_updates), onCheck)
-				Spacer(Modifier.height(20.dp))
-				Text(
-					stringResource(R.string.check_prompt),
-					style = MaterialTheme.typography.titleMedium,
-					textAlign = TextAlign.Center
-				)
-				LastCheckLine(viewModel, onOpenUpdates)
-				if (sources.size > 1) {
-					Spacer(Modifier.height(6.dp))
-					Text(
-						stringResource(R.string.check_prompt_hint),
-						style = MaterialTheme.typography.bodyMedium,
-						color = MaterialTheme.colorScheme.onSurfaceVariant,
-						textAlign = TextAlign.Center
+			Column(
+				Modifier
+					.widthIn(max = Design.ContentMaxWidth)
+					.fillMaxWidth()
+					.heightIn(min = screenHeight)
+					.padding(Design.ScreenPadding),
+				verticalArrangement = Arrangement.Center,
+				horizontalAlignment = Alignment.CenterHorizontally
+			) {
+				if (editing) {
+					SourceOrderEditor(viewModel, sources)
+				} else {
+					val baseShiftPx = with(density) { (smoothPull * 26f).dp.toPx() }
+					BigCheckButton(
+						contentDescription = stringResource(R.string.refresh_updates),
+						onCheck = onCheck,
+						pullProgress = smoothPull,
+						modifier = Modifier.graphicsLayer { translationY = baseShiftPx }
 					)
 					Spacer(Modifier.height(20.dp))
-					sources.chunked(columns).forEach { row ->
-						Row(
-							Modifier.fillMaxWidth().padding(bottom = Design.Gap),
-							horizontalArrangement = Arrangement.spacedBy(Design.Gap)
-						) {
-							row.forEach { source ->
-								ActionTile(
-									icon = source.resourceId,
-									label = source.name,
-									onClick = { onCheckOnly(source) },
-									modifier = Modifier.weight(1f)
-								)
-							}
-							// Keeps a short last row in the same columns as the rows above it.
-							repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
-						}
+					Column(
+						horizontalAlignment = Alignment.CenterHorizontally,
+						modifier = Modifier.graphicsLayer { translationY = baseShiftPx * 1.15f }
+					) {
+						Text(
+							stringResource(R.string.check_prompt),
+							style = MaterialTheme.typography.titleMedium,
+							textAlign = TextAlign.Center
+						)
+						LastCheckLine(viewModel, onOpenUpdates)
 					}
-					// Play's and RuStore's own actions, in one quiet row under the grid, in the
-					// order their sources have. They first sat under their tiles, which left a hole
-					// beside each and broke the grid apart whenever the two were not neighbours
-					// (Dmitry, on his phone and TV) — so here the source's icon says whose action
-					// it is, and the grid stays whole. Guarded in the ViewModel: a second press while
-					// an account switch is under way is ignored, and its progress shows in the banner.
-					val withActions = sources.filter { it == PlaySource || it == RuStoreSource }
-					if (withActions.isNotEmpty()) {
-						Row(
-							Modifier.fillMaxWidth().padding(top = 8.dp),
-							horizontalArrangement = Arrangement.spacedBy(Design.Gap, Alignment.CenterHorizontally)
-						) {
-							withActions.forEach { source ->
-								if (source == PlaySource) {
-									SourceActionChip(
-										source.resourceId,
-										stringResource(R.string.play_switch_account_short),
-										onClick = { viewModel.switchPlayAccount() }
+					if (sources.size > 1) {
+						Spacer(Modifier.height(6.dp))
+						Text(
+							stringResource(R.string.check_prompt_hint),
+							style = MaterialTheme.typography.bodyMedium,
+							color = MaterialTheme.colorScheme.onSurfaceVariant,
+							textAlign = TextAlign.Center,
+							modifier = Modifier.graphicsLayer { translationY = baseShiftPx * 1.25f }
+						)
+						Spacer(Modifier.height(20.dp))
+						val rows = sources.chunked(columns)
+						rows.forEachIndexed { rowIndex, row ->
+							val rowShiftPx = with(density) {
+								(smoothPull * (32f + rowIndex * 8f)).dp.toPx()
+							}
+							Row(
+								Modifier
+									.fillMaxWidth()
+									.padding(bottom = Design.Gap)
+									.graphicsLayer { translationY = rowShiftPx },
+								horizontalArrangement = Arrangement.spacedBy(Design.Gap)
+							) {
+								row.forEach { source ->
+									ActionTile(
+										icon = source.resourceId,
+										label = source.name,
+										onClick = { onCheckOnly(source) },
+										modifier = Modifier.weight(1f)
 									)
-								} else {
-									SourceActionChip(
-										source.resourceId,
-										stringResource(R.string.rustore_switch_device_short),
-										onClick = { viewModel.switchRuStoreDevice() }
-									)
+								}
+								// Keeps a short last row in the same columns as the rows above it.
+								repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+							}
+						}
+						// Play's and RuStore's own actions, in one quiet row under the grid, in the
+						// order their sources have.
+						val withActions = sources.filter { it == PlaySource || it == RuStoreSource }
+						if (withActions.isNotEmpty()) {
+							val actionsShiftPx = with(density) {
+								(smoothPull * (34f + rows.size * 8f)).dp.toPx()
+							}
+							Row(
+								Modifier
+									.fillMaxWidth()
+									.padding(top = 8.dp)
+									.graphicsLayer { translationY = actionsShiftPx },
+								horizontalArrangement = Arrangement.spacedBy(Design.Gap, Alignment.CenterHorizontally)
+							) {
+								withActions.forEach { source ->
+									if (source == PlaySource) {
+										SourceActionChip(
+											source.resourceId,
+											stringResource(R.string.play_switch_account_short),
+											onClick = { viewModel.switchPlayAccount() }
+										)
+									} else {
+										SourceActionChip(
+											source.resourceId,
+											stringResource(R.string.rustore_switch_device_short),
+											onClick = { viewModel.switchRuStoreDevice() }
+										)
+									}
 								}
 							}
 						}
 					}
 				}
 			}
+		}
+	}
+
+	if (editing) {
+		content()
+	} else {
+		PullToRefreshBox(
+			isRefreshing = false,
+			onRefresh = onCheck,
+			state = pullState,
+			indicator = {},
+			modifier = Modifier.fillMaxSize()
+		) {
+			content()
 		}
 	}
 }

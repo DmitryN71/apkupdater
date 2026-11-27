@@ -18,8 +18,8 @@ android {
         applicationId = "com.apkupdater" + System.getenv("BUILD_TAG").orEmpty()
         minSdk = 21
         targetSdk = 35
-        versionCode = 201
-        versionName = if (buildNumber.isEmpty()) "3.14.6" else "0.0.$buildNumber"
+        versionCode = 202
+        versionName = if (buildNumber.isEmpty()) "3.15.0" else "0.0.$buildNumber"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -102,6 +102,7 @@ dependencies {
 
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3:1.3.1")
+    implementation("com.materialkolor:material-color-utilities:4.1.1")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.compose.ui:ui:1.7.8")
     implementation("androidx.core:core-ktx:1.15.0")
