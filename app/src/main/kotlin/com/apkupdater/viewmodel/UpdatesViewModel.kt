@@ -580,27 +580,15 @@ class UpdatesViewModel(
 				}
 				is com.apkupdater.data.ui.Link.Splits -> downloadParts(update.id, link)
 				is com.apkupdater.data.ui.Link.Play -> {
-					val playFiles = link.getInstallFiles()
-					// Belt only: a refusal throws since gplayapi 3.6 and is worded by
-					// playErrorResId; an empty list here would be a library change.
-					if (playFiles.isEmpty()) {
+					val pairs = downloadPlayFiles(update.id, link)
+					if (pairs.isEmpty()) {
 						snackBar.snackBar(viewModelScope, TextSnack(
 							stringer.get(R.string.play_no_files),
 							type = com.apkupdater.data.snack.SnackType.ERROR))
 						cancelInstall(update.id)
 						return@launch
 					}
-					val totalSize = playFiles.sumOf { it.size }
-					if (totalSize > 0) installLog.emitProgress(AppInstallProgress(update.id, 0L, totalSize))
-					var downloadedSoFar = 0L
-					playFiles.map { playFile ->
-						val offset = downloadedSoFar
-						val file = downloader.downloadFile(playFile.url, update.id) { progress, _ ->
-							if (totalSize > 0) installLog.emitProgress(AppInstallProgress(update.id, offset + progress, totalSize))
-						}
-						downloadedSoFar += file.length()
-						file
-					}
+					pairs.map { it.second }
 				}
 				else -> {
 					snackBar.snackBar(viewModelScope, TextSnack(stringer.get(R.string.shizuku_install_not_supported)))
@@ -964,7 +952,6 @@ class UpdatesViewModel(
 			val message = try {
 				when (val result = playRepository.switchAccount()) {
 					PlayAccountSwitch.Done -> stringer.get(R.string.play_account_switched)
-					PlayAccountSwitch.TooSoon -> stringer.get(R.string.play_account_switch_too_soon)
 					is PlayAccountSwitch.Failed ->
 						stringer.get(R.string.play_account_switch_failed, result.reason)
 				}

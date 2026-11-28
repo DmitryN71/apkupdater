@@ -35,7 +35,9 @@ import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.installErrorResId
 import com.apkupdater.util.SnackBar
 import com.apkupdater.util.Stringer
-import com.aurora.gplayapi.exceptions.GooglePlayException
+import com.aurora.gplayapi.PlayException
+import com.aurora.gplayapi.model.AppFile
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
@@ -409,6 +411,35 @@ abstract class InstallViewModel(
         return files
     }
 
+    /**
+     * Resolves and downloads every APK/split from Google Play under one combined progress bar,
+     * verifying each file's SHA-256 checksum when Play provides one. Deletes already-fetched
+     * temp files on any failure so no corrupted partial stays behind.
+     */
+    protected suspend fun downloadPlayFiles(id: Int, link: Link.Play): List<Pair<AppFile, File>> {
+        val files = link.getInstallFiles()
+        if (files.isEmpty()) return emptyList()
+        val totalSize = files.sumOf { it.size }
+        if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
+        val downloaded = mutableListOf<Pair<AppFile, File>>()
+        try {
+            var downloadedSoFar = 0L
+            files.forEach { playFile ->
+                val offset = downloadedSoFar
+                val file = downloader.downloadFile(playFile.url, id) { progress, _ ->
+                    if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
+                }
+                verifyPlayFileSha256(file, playFile.sha256)
+                downloadedSoFar += file.length()
+                downloaded += playFile to file
+            }
+        } catch (t: Throwable) {
+            downloaded.forEach { it.second.delete() }
+            throw t
+        }
+        return downloaded
+    }
+
     protected fun downloadAndRootInstall(id: Int, name: String, packageName: String, link: Link) = runCatching {
         val fake = prefs.fakePlayStore.get()
         when (link) {
@@ -454,25 +485,14 @@ abstract class InstallViewModel(
                 installer.shizukuInstall(file, fake)
             }
             is Link.Play -> {
-                val files = link.getInstallFiles()
-                // Belt only, as in downloadAndInstall: a refusal throws since gplayapi 3.6.
-                if (files.isEmpty()) {
+                val pairs = downloadPlayFiles(id, link)
+                if (pairs.isEmpty()) {
                     snackBar.snackBar(viewModelScope, TextSnack(
                         stringer.get(R.string.play_no_files), type = SnackType.ERROR))
                     cancelInstall(id)
                     return@runCatching
                 }
-                val totalSize = files.sumOf { it.size }
-                if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
-                var downloadedSoFar = 0L
-                val tempFiles = files.map { playFile ->
-                    val offset = downloadedSoFar
-                    val file = downloader.downloadFile(playFile.url, id) { progress, _ ->
-                        if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
-                    }
-                    downloadedSoFar += file.length()
-                    file
-                }
+                val tempFiles = pairs.map { it.second }
                 downloader.beginInstall(id)
                 if (shizukuGoneAfterDownload(id, name, packageName, link, tempFiles)) return@runCatching
                 installer.shizukuInstallSplit(tempFiles, fake)
@@ -522,38 +542,23 @@ abstract class InstallViewModel(
         when (link) {
             Link.Empty -> { Log.e("InstallViewModel", "downloadAndInstall: Unsupported.")}
             is Link.Play -> {
-                val files = link.getInstallFiles()
-                if (files.isEmpty()) {
-                    // Belt only: since gplayapi 3.6 a refused delivery THROWS (Unknown) and
-                    // is answered by playErrorResId, so this list cannot be empty any more.
-                    // Kept so a future library change cannot commit an empty session.
+                val pairs = downloadPlayFiles(id, link)
+                if (pairs.isEmpty()) {
                     snackBar.snackBar(viewModelScope, TextSnack(
                         stringer.get(R.string.play_no_files), type = SnackType.ERROR))
                     cancelInstall(id)
                     return@runCatching
                 }
-                installLog.emitProgress(AppInstallProgress(id, 0L, files.sumOf { it.size }))
-                // A null stream means the download failed or the user cancelled. The old !!
-                // raised a message-less NPE, which the error classifier could only call an
-                // unknown install error — so Cancel on a Play update answered with a red
-                // failure toast. Say which of the two it was and let the classifier do its job.
-                // Opened one at a time and closed on the way out if a later one fails —
-                // otherwise the earlier response bodies stayed open until the GC noticed.
+                val tempFiles = pairs.map { it.second }
+                downloader.beginInstall(id)
                 val streams = mutableListOf<java.io.InputStream>()
                 try {
-                    files.forEach { playFile ->
-                        streams += downloader.downloadStream(playFile.url, id) ?: throw IOException(
-                            if (downloader.isCancelled(id)) "Canceled" else "Download failed"
-                        )
-                    }
-                } catch (t: Throwable) {
+                    tempFiles.forEach { streams += it.inputStream() }
+                    installer.playInstall(id, packageName, streams)
+                } finally {
                     streams.forEach { runCatching { it.close() } }
-                    throw t
+                    tempFiles.forEach { it.delete() }
                 }
-                // No beginInstall() here: these streams carry the download itself, and it
-                // runs inside playInstall. SessionInstaller marks the point of no return once
-                // the bytes are actually in the session.
-                installer.playInstall(id, packageName, streams)
             }
             is Link.Url -> {
                 // Download to a temp file so we can verify the APK's package before
@@ -732,17 +737,12 @@ abstract class InstallViewModel(
      * minification, unlike hunting for substrings that aren't there in the first place.
      */
     private fun playErrorResId(error: Throwable): Int? = when (error) {
-        // A sealed class extending Exception since gplayapi 3.6, with a real message in it —
-        // the old ApiException nested types carried none, which is why every Play refusal
-        // once read "unexpected error". Matching on type is still the honest way to word it.
-        is GooglePlayException.AppNotSupported -> R.string.play_not_supported
-        is GooglePlayException.AppNotPurchased -> R.string.play_not_purchased
-        is GooglePlayException.AppRemoved, is GooglePlayException.NotFound -> R.string.play_app_removed
-        // A refused delivery THROWS now: a 429 throttle arrives as Unknown(429), an empty file
-        // list as Unknown(-1). Both mean "no link right now", which is what play_no_files says.
-        is GooglePlayException.EmptyDownloads, is GooglePlayException.Unknown -> R.string.play_no_files
-        is GooglePlayException.AuthException -> R.string.play_no_files
-        is GooglePlayException.Server -> R.string.download_failed
+        is PlayException.AppNotSupported -> R.string.play_not_supported
+        is PlayException.AppNotPurchased -> R.string.play_not_purchased
+        is PlayException.AppRemoved, is PlayException.NotFound -> R.string.play_app_removed
+        is PlayException.RateLimited, is PlayException.NoFilesAvailable, is PlayException.Unauthorized -> R.string.play_no_files
+        is PlayException.ServerError -> R.string.download_failed
+        is PlayException -> R.string.play_no_files
         else -> null
     }
 
@@ -872,29 +872,20 @@ abstract class InstallViewModel(
         }
     }
 
-    private fun downloadPlayToFolder(
+    private suspend fun downloadPlayToFolder(
         id: Int,
         safeName: String,
         version: String,
         sourceTag: String,
         link: Link.Play
     ) {
-        val files = link.getInstallFiles()
+        val pairs = downloadPlayFiles(id, link)
         // Without this the throttled case ends in a SUCCESS message: zipping zero entries does
         // not fail, it just writes an empty archive, so the user was told "Saved: Foo.apks" and
         // got a 22-byte file that opens in nothing.
-        if (files.isEmpty()) throw IOException("Download failed: no download link")
-        val totalSize = files.sumOf { it.size }
-        if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, 0L, totalSize))
+        if (pairs.isEmpty()) throw IOException("Download failed: no download link")
 
-        // Download all split APKs to temp files
-        var downloadedSoFar = 0L
-        val tempFiles = files.mapIndexed { index, playFile ->
-            val offset = downloadedSoFar
-            val tempFile = downloader.downloadFile(playFile.url, id) { progress, _ ->
-                if (totalSize > 0) installLog.emitProgress(AppInstallProgress(id, offset + progress, totalSize))
-            }
-            downloadedSoFar += tempFile.length()
+        val tempFiles = pairs.mapIndexed { index, (playFile, tempFile) ->
             // Use the real split APK name from Google Play (base.apk, config.ru.apk, etc.)
             // Fall back to numeric index if name is missing or malformed
             val zipName = playFile.name
@@ -991,4 +982,27 @@ abstract class InstallViewModel(
     protected abstract fun finishInstall(id: Int): Job
     protected abstract fun startDownloadProgress(id: Int)
     protected abstract fun finishDownloadProgress(id: Int)
+}
+
+/**
+ * Verifies [file] against the expected lowercase hex SHA-256 checksum reported by Google Play.
+ * Skips verification only when Play did not provide a valid 64-character hex digest.
+ */
+internal fun verifyPlayFileSha256(file: File, expectedSha256: String?) {
+    val expected = expectedSha256?.trim()?.lowercase().orEmpty()
+    if (expected.length != 64 || !expected.all { it in '0'..'9' || it in 'a'..'f' }) return
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    val actual = digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    if (actual != expected) {
+        file.delete()
+        throw IOException("Download failed: SHA-256 mismatch for ${file.name}")
+    }
 }

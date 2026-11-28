@@ -1,13 +1,13 @@
 package com.apkupdater.data.ui
 
-import com.aurora.gplayapi.data.models.PlayFile
+import com.aurora.gplayapi.model.AppFile
 
 
 sealed class Link {
     data object Empty: Link()
     data class Url(val link: String, val size: Long = 0L): Link()
     data class Xapk(val link: String, val size: Long = 0L): Link()
-    data class Play(val getInstallFiles: () -> List<PlayFile>): Link()
+    data class Play(val getInstallFiles: suspend () -> List<AppFile>): Link()
 
     /**
      * One app delivered as several APKs installed together: a base and the config splits this

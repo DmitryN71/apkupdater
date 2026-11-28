@@ -44,7 +44,7 @@ import com.apkupdater.util.UpdatesNotification
 import com.apkupdater.util.addUserAgentInterceptor
 import com.apkupdater.util.countrySignals
 import com.apkupdater.util.isAndroidTv
-import com.apkupdater.util.play.PlayHttpClient
+import com.apkupdater.util.play.PlayClientProvider
 import com.apkupdater.viewmodel.AppsViewModel
 import com.apkupdater.viewmodel.MainViewModel
 import com.apkupdater.viewmodel.SearchViewModel
@@ -285,7 +285,7 @@ val mainModule = module {
 
 	single { AptoideRepository(get(), get(), get()) }
 
-	single { PlayRepository(get(), get(), get(), get()) }
+	single { PlayRepository(get(), get()) }
 
 	single { RuStoreRepository(get(), get()) }
 
@@ -344,7 +344,7 @@ val mainModule = module {
 
 	single { BackgroundInstaller(androidContext(), get(), get(), get()) }
 
-	single { PlayHttpClient(get()) }
+	single { PlayClientProvider(androidContext(), get()) }
 
 	viewModel { MainViewModel(get()) }
 

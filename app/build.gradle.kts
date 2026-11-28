@@ -16,10 +16,10 @@ android {
     val buildNumber = System.getenv("BUILD_NUMBER").orEmpty()
     defaultConfig {
         applicationId = "com.apkupdater" + System.getenv("BUILD_TAG").orEmpty()
-        minSdk = 21
+        minSdk = 23
         targetSdk = 35
-        versionCode = 202
-        versionName = if (buildNumber.isEmpty()) "3.15.0" else "0.0.$buildNumber"
+        versionCode = 203
+        versionName = if (buildNumber.isEmpty()) "3.15.1" else "0.0.$buildNumber"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -122,7 +122,7 @@ dependencies {
     // serialization-json is a runtime-only dependency of the library, so it has to be named
     // here to be on our compile classpath: the Play session is persisted with the library's
     // own serialiser now, not Gson.
-    implementation("com.auroraoss:gplayapi:3.6.4")
+    implementation("com.auroraoss:gplayapi:4.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     // Also runtime-only in the AAR pom. Needed at COMPILE time to walk the search response
     // ourselves — see PlayRepository.search. Same version the library resolves, so nothing

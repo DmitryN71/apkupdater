@@ -218,10 +218,10 @@
     <string name="check_prompt_hint">or check just one source:</string>
     <string name="check_all_prompt">Press to check every source</string>
     <string name="source_no_updates">%1$s: no updates</string>
-    <string name="play_switch_account">Switch Google Play account</string>
-    <string name="play_switching_account">Switching the Google Play account…</string>
-    <string name="play_account_switched">Google Play account switched. You can check or install again.</string>
-    <string name="play_account_switch_failed">Could not switch the Google Play account: %1$s</string>
+    <string name="play_switch_account">New Google Play session</string>
+    <string name="play_switching_account">Creating a new Google Play session…</string>
+    <string name="play_account_switched">New Google Play session ready. You can check or install again.</string>
+    <string name="play_account_switch_failed">Could not create a new Google Play session: %1$s</string>
     <string name="play_account_switch_too_soon">Once a minute at most — try again shortly.</string>
     <string name="rustore_switch_device">Draw a new RuStore device</string>
     <string name="rustore_device_switched">New RuStore device. Check for updates again.</string>
@@ -272,7 +272,7 @@
     <string name="move_up_cd">Move up</string>
     <string name="move_down_cd">Move down</string>
     <string name="sources_settings">Sources settings</string>
-    <string name="play_switch_account_short">Switch account</string>
+    <string name="play_switch_account_short">New session</string>
     <string name="rustore_switch_device_short">New device</string>
     <string name="search_all_sources">All sources</string>
     <string name="search_all_sources_off">Only the sources switched on in Settings</string>
