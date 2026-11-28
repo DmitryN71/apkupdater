@@ -1,0 +1,77 @@
+<resources>
+
+    <string name="app_name" translatable="false">APKUpdater</string>
+    <string name="tab_apps">ऐप्स</string>
+    <string name="tab_search">खोजें</string>
+    <string name="tab_updates">अपडेट्स</string>
+    <string name="tab_settings">सेटिंग्स</string>
+    <string name="something_went_wrong">"कुछ गड़बड़ हो गई\n\uD83E\uDD26"</string>
+    <string name="ignore_version">वर्ज़न अनदेखा करें</string>
+    <string name="ignore_cd">ऐप अनदेखा करें</string>
+    <string name="unignore_cd">ऐप अनदेखा करना बंद करें</string>
+    <string name="refresh_updates">अपडेट्स खोजें</string>
+    <string name="exclude_system_apps">सिस्टम ऐप्स बाहर रखें</string>
+    <string name="include_system_apps">सिस्टम ऐप्स शामिल करें</string>
+    <string name="exclude_app_store">ऐप स्टोर बाहर रखें</string>
+    <string name="include_app_store">ऐप स्टोर शामिल करें</string>
+    <string name="exclude_disabled_apps">निष्क्रिय ऐप्स बाहर रखें</string>
+    <string name="include_disabled_apps">निष्क्रिय ऐप्स शामिल करें</string>
+    <string name="install_cd">ऐप इंस्टॉल करें</string>
+    <string name="install_all">सभी इंस्टॉल करें</string>
+    <string name="app_cd">ऐप आइकन</string>
+    <string name="install_success">%1$s इंस्टॉल हो गया।</string>
+    <string name="install_failure">%1$s इंस्टॉल नहीं हो सका।</string>
+    <string name="root_install_not_supported">इस ऐप का रूट इंस्टॉल समर्थित नहीं है।</string>
+
+    // Settings
+    <string name="settings_experimental_installer">प्रयोगात्मक नया इंस्टॉलर उपयोग करें</string>
+    <string name="settings_portrait_columns">पोर्ट्रेट कॉलम</string>
+    <string name="settings_landscape_columns">लैंडस्केप कॉलम</string>
+    <string name="play_text_animations">टेक्स्ट एनिमेशन चलाएं</string>
+    <string name="settings_sources">स्रोत</string>
+    <string name="settings_ui">यूआई</string>
+    <string name="settings_alarm">अलार्म</string>
+    <string name="settings_options">विकल्प</string>
+    <string name="settings_utils">उपकरण</string>
+    <string name="settings_hour">अलार्म का समय</string>
+    <string name="settings_alarm_daily">रोज़ाना</string>
+    <string name="settings_alarm_3day">हर 3 दिन में</string>
+    <string name="settings_alarm_weekly">साप्ताहिक</string>
+    <string name="settings_android_tv_ui" translatable="false">Android TV UI</string>
+    <string name="ignore_alpha">अल्फ़ा अनदेखा करें</string>
+    <string name="ignore_beta">बीटा अनदेखा करें</string>
+    <string name="ignore_preRelease">प्री-रिलीज़ अनदेखा करें</string>
+    <string name="use_safe_stores">सुरक्षित स्टोर का उपयोग करें (Aptoide)</string>
+    <string name="root_install">रूट इंस्टॉल</string>
+    <string name="source_apkmirror" translatable="false">ApkMirror</string>
+    <string name="source_fdroid" translatable="false">F-Droid Main</string>
+    <string name="source_izzy" translatable="false">F-Droid Izzy</string>
+    <string name="source_aptoide" translatable="false">Aptoide</string>
+    <string name="source_github" translatable="false">GitHub</string>
+    <string name="source_gitlab" translatable="false">GitLab</string>
+    <string name="source_apkpure" translatable="false">APKPure</string>
+    <string name="source_play" translatable="false">Play</string>
+    <string name="about">ऐप के बारे में</string>
+    <string name="frequency">आवृत्ति</string>
+    <string name="theme">थीम</string>
+    <string name="theme_system">सिस्टम</string>
+    <string name="theme_dark">डार्क</string>
+    <string name="theme_light">लाइट</string>
+    <string name="about_github">सोर्स कोड प्राप्त करें, बग्स की रिपोर्ट करें, नई सुविधाओं का अनुरोध करें और अनुवाद जोड़ें।</string>
+    <string name="about_donate">यदि आपको यह ऐप पसंद आया है, तो किसी नेक काम के लिए दान करने पर विचार करें।</string>
+    <string name="copy_to_clipboard">क्लिपबोर्ड पर कॉपी करें</string>
+    <string name="copy_app_list">ऐप सूची कॉपी करें</string>
+    <string name="copy_app_logs">ऐप लॉग्स कॉपी करें</string>
+
+    // Notifications
+    <string name="notification_channel_name">अपडेट्स</string>
+    <string name="notification_channel_description">अपडेट सूचनाओं के लिए चैनल।</string>
+    <string name="notification_channel_id" translatable="false">updateChannel</string>
+    <string name="notification_update_title">अपडेट्स</string>
+    <plurals name="notification_update_description">
+        <item quantity="zero">कोई अपडेट नहीं मिला।</item>
+        <item quantity="one">%1$d अपडेट मिला।</item>
+        <item quantity="other">%1$d अपडेट्स मिले।</item>
+    </plurals>
+
+</resources>
